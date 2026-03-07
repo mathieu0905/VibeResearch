@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-07 (session 30)
+
+### fix: Add Windows/Linux Prisma engine path candidates; add cross-platform binaryTargets
+
+- **Scope**: `src/main/index.ts`, `prisma/schema.prisma`
+- **Problem**: On Windows, `PRISMA_QUERY_ENGINE_LIBRARY` was never set because `engineCandidates` only listed macOS `.dylib.node` paths. PrismaClient failed to initialize with "did not initialize yet" error on every IPC call.
+- **Fix**:
+  1. `src/main/index.ts` — added Windows (`query_engine-windows-x64.dll.node`, `query_engine-windows-arm64.dll.node`) and Linux (`.so.node`) engine candidates to both packaged (`dist/native/`) and dev (`node_modules/.prisma/client/`) paths.
+  2. `prisma/schema.prisma` — added `binaryTargets` to generate engines for all supported platforms (`native`, `darwin`, `darwin-arm64`, `windows`, `debian-openssl-3.0.x`, `linux-musl-openssl-3.0.x`) so cross-platform builds from macOS include the Windows `.dll.node`.
+
 ## 2026-03-07 (session 29)
 
 ### fix: Guard window.electronAPI access; integrate vite-plugin-electron for unified dev workflow

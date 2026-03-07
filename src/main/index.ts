@@ -38,9 +38,19 @@ process.env.DATABASE_URL = `file:${dbPath}`;
 if (!process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
   const engineCandidates = [
     // Packaged app — asarUnpack extracts dist/native/ to app.asar.unpacked/dist/native/
+    // macOS
     path.join(__dirname, '../native/libquery_engine-darwin-arm64.dylib.node'),
     path.join(__dirname, '../native/libquery_engine-darwin-x64.dylib.node'),
+    // Windows
+    path.join(__dirname, '../native/query_engine-windows-x64.dll.node'),
+    path.join(__dirname, '../native/query_engine-windows-arm64.dll.node'),
+    // Linux
+    path.join(__dirname, '../native/libquery_engine-linux-musl-arm64-openssl-3.0.x.so.node'),
+    path.join(__dirname, '../native/libquery_engine-linux-musl-openssl-3.0.x.so.node'),
+    path.join(__dirname, '../native/libquery_engine-debian-openssl-3.0.x.so.node'),
+    path.join(__dirname, '../native/libquery_engine-debian-openssl-1.1.x.so.node'),
     // Dev fallback — query engine is in node_modules/.prisma/client/
+    // macOS
     path.join(
       __dirname,
       '../../node_modules/.prisma/client/libquery_engine-darwin-arm64.dylib.node',
@@ -53,6 +63,40 @@ if (!process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
     path.join(
       __dirname,
       '../../../node_modules/.prisma/client/libquery_engine-darwin-x64.dylib.node',
+    ),
+    // Windows dev fallback
+    path.join(
+      __dirname,
+      '../../node_modules/.prisma/client/query_engine-windows-x64.dll.node',
+    ),
+    path.join(
+      __dirname,
+      '../../../node_modules/.prisma/client/query_engine-windows-x64.dll.node',
+    ),
+    path.join(
+      __dirname,
+      '../../node_modules/.prisma/client/query_engine-windows-arm64.dll.node',
+    ),
+    path.join(
+      __dirname,
+      '../../../node_modules/.prisma/client/query_engine-windows-arm64.dll.node',
+    ),
+    // Linux dev fallback
+    path.join(
+      __dirname,
+      '../../node_modules/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node',
+    ),
+    path.join(
+      __dirname,
+      '../../../node_modules/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node',
+    ),
+    path.join(
+      __dirname,
+      '../../node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node',
+    ),
+    path.join(
+      __dirname,
+      '../../../node_modules/.prisma/client/libquery_engine-debian-openssl-3.0.x.so.node',
     ),
   ];
   const enginePath = engineCandidates.find((p) => fs.existsSync(p));
