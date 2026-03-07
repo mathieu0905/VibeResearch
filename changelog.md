@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-03-07 (session 34)
+
+### fix: Simplify postinstall to ensure prisma generate runs correctly on Windows
+
+- **Scope**: `package.json`
+- **Problem**: On Windows machines, "@prisma/client did not initialize yet" error still occurred. The `postinstall` script `prisma generate && electron-rebuild -f -w better-sqlite3 || true` had `|| true` at the end which masked `prisma generate` failures. If `prisma generate` failed, the command still returned success, but `.prisma/client` was never generated.
+- **Fix**: Simplified `postinstall` to just `prisma generate`. Removed `electron-rebuild` since `better-sqlite3` is not used at runtime (Prisma uses its own native engine). Removed `|| true` so errors are properly surfaced.
+
 ## 2026-03-07 (session 33)
 
 ### fix: Windows initialization issues for Prisma and Chrome import
