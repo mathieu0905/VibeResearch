@@ -959,6 +959,30 @@ function AddModelModal({
                   <ModelCombobox value={model} onChange={setModel} placeholder="选择或输入模型ID" />
                 </div>
 
+                {/* Base URL (optional override) */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                    Base URL{' '}
+                    <span className="font-normal text-notion-text-tertiary">
+                      (optional, for proxy/custom endpoint)
+                    </span>
+                  </label>
+                  <input
+                    value={baseURL}
+                    onChange={(e) => setBaseURL(e.target.value)}
+                    placeholder={
+                      provider === 'anthropic'
+                        ? 'https://api.anthropic.com (default)'
+                        : provider === 'openai'
+                          ? 'https://api.openai.com/v1 (default)'
+                          : provider === 'gemini'
+                            ? 'https://generativelanguage.googleapis.com (default)'
+                            : 'https://your-proxy.example.com/v1'
+                    }
+                    className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
                 {/* API Key */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
@@ -983,30 +1007,6 @@ function AddModelModal({
                       {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
-                </div>
-
-                {/* Base URL (optional override) */}
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
-                    Base URL{' '}
-                    <span className="font-normal text-notion-text-tertiary">
-                      (optional, for proxy/custom endpoint)
-                    </span>
-                  </label>
-                  <input
-                    value={baseURL}
-                    onChange={(e) => setBaseURL(e.target.value)}
-                    placeholder={
-                      provider === 'anthropic'
-                        ? 'https://api.anthropic.com (default)'
-                        : provider === 'openai'
-                          ? 'https://api.openai.com/v1 (default)'
-                          : provider === 'gemini'
-                            ? 'https://generativelanguage.googleapis.com (default)'
-                            : 'https://your-proxy.example.com/v1'
-                    }
-                    className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                  />
                 </div>
               </>
             ) : (
@@ -1109,7 +1109,7 @@ function EditModelModal({
   const [baseURL, setBaseURL] = useState(model.baseURL ?? '');
   const [command, setCommand] = useState(model.command ?? '');
   const [envVars, setEnvVars] = useState(model.envVars ?? '');
-  const [showKey, setShowKey] = useState(true);
+  const [showKey, setShowKey] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; error?: string } | null>(null);
@@ -1293,6 +1293,30 @@ function EditModelModal({
                   <ModelCombobox value={modelName} onChange={setModelName} placeholder="选择或输入模型ID" />
                 </div>
 
+                {/* Base URL (optional override) */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                    Base URL{' '}
+                    <span className="font-normal text-notion-text-tertiary">
+                      (optional, for proxy/custom endpoint)
+                    </span>
+                  </label>
+                  <input
+                    value={baseURL}
+                    onChange={(e) => setBaseURL(e.target.value)}
+                    placeholder={
+                      provider === 'anthropic'
+                        ? 'https://api.anthropic.com (default)'
+                        : provider === 'openai'
+                          ? 'https://api.openai.com/v1 (default)'
+                          : provider === 'gemini'
+                            ? 'https://generativelanguage.googleapis.com (default)'
+                            : 'https://your-proxy.example.com/v1'
+                    }
+                    className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+
                 {/* API Key */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
@@ -1317,30 +1341,6 @@ function EditModelModal({
                       {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
                     </button>
                   </div>
-                </div>
-
-                {/* Base URL (optional override) */}
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
-                    Base URL{' '}
-                    <span className="font-normal text-notion-text-tertiary">
-                      (optional, for proxy/custom endpoint)
-                    </span>
-                  </label>
-                  <input
-                    value={baseURL}
-                    onChange={(e) => setBaseURL(e.target.value)}
-                    placeholder={
-                      provider === 'anthropic'
-                        ? 'https://api.anthropic.com (default)'
-                        : provider === 'openai'
-                          ? 'https://api.openai.com/v1 (default)'
-                          : provider === 'gemini'
-                            ? 'https://generativelanguage.googleapis.com (default)'
-                            : 'https://your-proxy.example.com/v1'
-                    }
-                    className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                  />
                 </div>
               </>
             ) : (
