@@ -2,8 +2,11 @@ import fs from 'fs/promises';
 import { existsSync, copyFileSync, readFileSync } from 'fs';
 import path from 'path';
 import os from 'os';
-import initSqlJs from 'sql.js';
 import { BrowserWindow } from 'electron';
+
+// sql.js is a CommonJS module - use require for proper initialization
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const initSqlJs = require('sql.js');
 
 import { PapersService } from './papers.service';
 import { DownloadService } from './download.service';
