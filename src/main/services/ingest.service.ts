@@ -150,21 +150,9 @@ export async function scanChromeHistory(days: number | null = 1): Promise<ScanRe
       const sql = `SELECT title, url FROM urls WHERE ${whereClause} ORDER BY last_visit_time DESC LIMIT 500;`;
 
       // Use sql.js (pure JS SQLite) instead of system sqlite3 CLI
+      // In Node.js, sql.js can load WASM synchronously from its package location
       const SQL = await initSqlJs({
-        // sql.js needs to locate its WASM file; in Node.js it finds it automatically
-        locateFile: (file: string) => {
-          // Try multiple locations for the WASM file
-          const candidates = [
-            path.join(__dirname, '..', '..', '..', 'node_modules', 'sql.js', 'dist', file),
-            path.join(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', file),
-            require.resolve(`sql.js/dist/${file}`),
-          ];
-          for (const p of candidates) {
-            if (existsSync(p)) return p;
-          }
-          // Fallback: let sql.js use its default behavior
-          return file;
-        },
+        locateFile: (file: string) => require.resolve(`sql.js/dist/${file}`),
       });
       const dbBuffer = readFileSync(tmpPath);
       const db = new SQL.Database(dbBuffer);
@@ -359,17 +347,7 @@ export async function importChromeHistoryAuto(days: number | null = 1) {
 
       // Use sql.js (pure JS SQLite) instead of system sqlite3 CLI
       const SQL = await initSqlJs({
-        locateFile: (file: string) => {
-          const candidates = [
-            path.join(__dirname, '..', '..', '..', 'node_modules', 'sql.js', 'dist', file),
-            path.join(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', file),
-            require.resolve(`sql.js/dist/${file}`),
-          ];
-          for (const p of candidates) {
-            if (existsSync(p)) return p;
-          }
-          return file;
-        },
+        locateFile: (file: string) => require.resolve(`sql.js/dist/${file}`),
       });
       const dbBuffer = readFileSync(tmpPath);
       const db = new SQL.Database(dbBuffer);
