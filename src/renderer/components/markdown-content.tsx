@@ -1,4 +1,7 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import rehypeHighlight from 'rehype-highlight';
+import remarkGfm from 'remark-gfm';
 
 interface MarkdownContentProps {
   content: string;
@@ -6,145 +9,104 @@ interface MarkdownContentProps {
   proseClassName?: string;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+function getLanguageLabel(className?: string): string | null {
+  if (!className) return null;
+  const match = className.match(/language-([\w-]+)/i);
+  if (!match) return null;
+  return match[1];
 }
 
-function renderInline(value: string): string {
-  let text = escapeHtml(value);
-  text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
-  text = text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  text = text.replace(/(^|\W)\*([^*]+)\*(?=\W|$)/g, '$1<em>$2</em>');
-  text = text.replace(
-    /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noreferrer">$1</a>',
-  );
-  return text;
-}
-
-function markdownToHtml(markdown: string): string {
-  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
-  const parts: string[] = [];
-  let inUnorderedList = false;
-  let inOrderedList = false;
-  let inCodeBlock = false;
-  let codeLines: string[] = [];
-
-  const closeLists = () => {
-    if (inUnorderedList) {
-      parts.push('</ul>');
-      inUnorderedList = false;
-    }
-    if (inOrderedList) {
-      parts.push('</ol>');
-      inOrderedList = false;
-    }
-  };
-
-  const flushCodeBlock = () => {
-    if (inCodeBlock) {
-      parts.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
-      codeLines = [];
-      inCodeBlock = false;
-    }
-  };
-
-  for (const rawLine of lines) {
-    const line = rawLine.trimEnd();
-
-    if (line.startsWith('```')) {
-      closeLists();
-      if (inCodeBlock) {
-        flushCodeBlock();
-      } else {
-        inCodeBlock = true;
-      }
-      continue;
-    }
-
-    if (inCodeBlock) {
-      codeLines.push(rawLine);
-      continue;
-    }
-
-    const trimmed = line.trim();
-    if (!trimmed) {
-      closeLists();
-      parts.push('<p></p>');
-      continue;
-    }
-
-    const heading = trimmed.match(/^(#{1,3})\s+(.*)$/);
-    if (heading) {
-      closeLists();
-      const level = heading[1].length;
-      parts.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
-      continue;
-    }
-
-    if (trimmed === '---' || trimmed === '***') {
-      closeLists();
-      parts.push('<hr />');
-      continue;
-    }
-
-    if (trimmed.startsWith('> ')) {
-      closeLists();
-      parts.push(`<blockquote><p>${renderInline(trimmed.slice(2))}</p></blockquote>`);
-      continue;
-    }
-
-    const ordered = trimmed.match(/^\d+\.\s+(.*)$/);
-    if (ordered) {
-      if (inUnorderedList) {
-        parts.push('</ul>');
-        inUnorderedList = false;
-      }
-      if (!inOrderedList) {
-        parts.push('<ol>');
-        inOrderedList = true;
-      }
-      parts.push(`<li>${renderInline(ordered[1])}</li>`);
-      continue;
-    }
-
-    const unordered = trimmed.match(/^[-*]\s+(.*)$/);
-    if (unordered) {
-      if (inOrderedList) {
-        parts.push('</ol>');
-        inOrderedList = false;
-      }
-      if (!inUnorderedList) {
-        parts.push('<ul>');
-        inUnorderedList = true;
-      }
-      parts.push(`<li>${renderInline(unordered[1])}</li>`);
-      continue;
-    }
-
-    closeLists();
-    parts.push(`<p>${renderInline(trimmed)}</p>`);
+function normalizeCode(children: ReactNode): string {
+  if (typeof children === 'string') return children;
+  if (Array.isArray(children)) return children.map(normalizeCode).join('');
+  if (children && typeof children === 'object' && 'props' in children) {
+    return normalizeCode((children as { props?: { children?: ReactNode } }).props?.children ?? '');
   }
+  return '';
+}
 
-  closeLists();
-  flushCodeBlock();
-  return parts.join('');
+function CodeBlock({ className, children }: { className?: string; children: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const language = getLanguageLabel(className);
+  const code = useMemo(() => normalizeCode(children).replace(/\n$/, ''), [children]);
+
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(false), 1500);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="my-3 overflow-hidden rounded-xl border border-slate-800/80 bg-slate-950/95 shadow-sm">
+      <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2 text-[11px] uppercase tracking-[0.14em] text-slate-300">
+        <span className="rounded bg-slate-800 px-2 py-1 font-medium text-slate-200">
+          {language ?? 'text'}
+        </span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="rounded bg-slate-800 px-2.5 py-1 font-medium text-slate-200 transition hover:bg-slate-700"
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre className="overflow-x-auto p-4">
+        <code className={className}>{children}</code>
+      </pre>
+    </div>
+  );
 }
 
 export function MarkdownContent({ content, className, proseClassName }: MarkdownContentProps) {
-  const html = useMemo(() => markdownToHtml(content || ''), [content]);
-
   return (
-    <div className={className}>
-      <div
-        className={proseClassName ?? 'prose prose-sm max-w-none break-words'}
-        dangerouslySetInnerHTML={{ __html: html }}
-      />
+    <div className={['markdown-content', className].filter(Boolean).join(' ')}>
+      <div className={proseClassName ?? 'prose prose-sm max-w-none break-words'}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[[rehypeHighlight, { detect: true }]]}
+          components={{
+            a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+            code: ({ node: _node, className, children, ...props }) => {
+              const isInline = !className;
+              if (isInline) {
+                return (
+                  <code className="rounded bg-black/5 px-1 py-0.5" {...props}>
+                    {children}
+                  </code>
+                );
+              }
+
+              return <CodeBlock className={className}>{children}</CodeBlock>;
+            },
+            pre: ({ node: _node, children }) => <>{children}</>,
+            table: ({ node: _node, ...props }) => (
+              <div className="my-3 overflow-x-auto">
+                <table className="min-w-full border-collapse text-sm" {...props} />
+              </div>
+            ),
+            th: ({ node: _node, ...props }) => (
+              <th
+                className="border border-notion-border bg-notion-sidebar px-3 py-2 text-left font-semibold"
+                {...props}
+              />
+            ),
+            td: ({ node: _node, ...props }) => (
+              <td className="border border-notion-border px-3 py-2 align-top" {...props} />
+            ),
+          }}
+        >
+          {content}
+        </ReactMarkdown>
+      </div>
     </div>
   );
 }
