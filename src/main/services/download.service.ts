@@ -5,12 +5,13 @@ import { extractArxivId } from '@shared';
 import { getPapersDir, getProxy, getProxyScope } from '../store/app-settings-store';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { Agent } from 'node:http';
+import { proxyFetch } from './proxy-fetch';
 
 function getProxyAgent(): Agent | undefined {
   const proxy = getProxy();
   const scope = getProxyScope();
   if (!proxy || !scope.pdfDownload) return undefined;
-  return new HttpsProxyAgent(proxy) as unknown as Agent;
+  return new HttpsProxyAgent(proxy);
 }
 
 async function fetchArxivMetadata(arxivId: string): Promise<{
@@ -20,18 +21,14 @@ async function fetchArxivMetadata(arxivId: string): Promise<{
   year: number;
 } | null> {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
     const agent = getProxyAgent();
-    const response = await fetch(`https://arxiv.org/abs/${arxivId}`, {
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VibeResearch/1.0)' },
-      ...(agent ? { agent } : {}),
+    const response = await proxyFetch(`https://arxiv.org/abs/${arxivId}`, {
+      agent,
+      timeoutMs: 15000,
     });
-    clearTimeout(timeoutId);
 
     if (!response.ok) return null;
-    const html = await response.text();
+    const html = response.text();
 
     const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
     let title = titleMatch ? titleMatch[1].trim() : '';
@@ -162,26 +159,15 @@ export class DownloadService {
     }
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 60000);
       const agent = getProxyAgent();
-      const response = await fetch(pdfUrl, {
-        signal: controller.signal,
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VibeResearch/1.0)' },
-        ...(agent ? { agent } : {}),
+      const response = await proxyFetch(pdfUrl, {
+        agent,
+        timeoutMs: 60000,
       });
-      clearTimeout(timeoutId);
 
-      if (!response.ok || !response.body) throw new Error(`Failed: ${response.status}`);
+      if (!response.ok) throw new Error(`Failed: ${response.status}`);
 
-      const reader = response.body.getReader();
-      const chunks: Uint8Array[] = [];
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-      }
-      const buffer = Buffer.concat(chunks);
+      const buffer = response.body;
       await fs.writeFile(filePath, buffer);
       await this.papersRepository.updatePdfPath(paperId, filePath);
 

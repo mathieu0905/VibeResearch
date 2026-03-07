@@ -10,9 +10,9 @@ import {
   type FilePart,
 } from 'ai';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import type { Agent } from 'node:http';
 import { spawnSync } from 'child_process';
 import { getProxy, getProxyScope } from '../store/app-settings-store';
+import { proxyFetch } from './proxy-fetch';
 
 /** Get a custom fetch function with proxy support if configured */
 function getProxyFetch(): typeof fetch | undefined {
@@ -20,11 +20,23 @@ function getProxyFetch(): typeof fetch | undefined {
   const proxyUrl = getProxy();
   if (!proxyUrl || !scope.aiApi) return undefined;
 
-  const agent = new HttpsProxyAgent(proxyUrl) as unknown as Agent;
-  const originalFetch = globalThis.fetch;
+  const agent = new HttpsProxyAgent(proxyUrl);
 
   return async (url, init) => {
-    return originalFetch(url, { ...init, agent } as RequestInit);
+    const method = (init?.method as string) ?? 'GET';
+    const headers: Record<string, string> = {};
+    if (init?.headers) {
+      const h = new Headers(init.headers as HeadersInit);
+      h.forEach((v, k) => { headers[k] = v; });
+    }
+    let body: Buffer | string | undefined;
+    if (init?.body) {
+      if (typeof init.body === 'string') body = init.body;
+      else if (init.body instanceof ArrayBuffer) body = Buffer.from(init.body);
+      else if (init.body instanceof Uint8Array) body = Buffer.from(init.body);
+    }
+    const res = await proxyFetch(url.toString(), { method, headers, body, agent, timeoutMs: 60_000 });
+    return new Response(res.body, { status: res.status, headers });
   };
 }
 

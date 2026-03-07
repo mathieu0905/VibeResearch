@@ -18,7 +18,7 @@ import {
   getStorageRoot as getStorageRootPath,
   type ProxyScope,
 } from '../store/app-settings-store';
-import { testProxyConnectivity, type ProxyTestResult } from './proxy-test.service';
+import { testProxy as runTestProxy, type ProxyTestResult } from './proxy-test.service';
 
 export class ProvidersService {
   listProviders(): (ProviderConfig & { hasApiKey: boolean })[] {
@@ -88,13 +88,8 @@ export class ProvidersService {
     return { success: true };
   }
 
-  async testProxy(): Promise<{ hasProxy: boolean; results: ProxyTestResult[] }> {
-    const proxy = getProxy();
-    const results = await testProxyConnectivity();
-    return {
-      hasProxy: !!proxy,
-      results,
-    };
+  async testProxy(proxyUrl?: string): Promise<{ hasProxy: boolean; results: ProxyTestResult[] }> {
+    return runTestProxy(proxyUrl);
   }
 
   getStorageRoot(): string {

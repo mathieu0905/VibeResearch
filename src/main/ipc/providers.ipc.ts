@@ -143,9 +143,9 @@ export function setupProvidersIpc() {
     },
   );
 
-  ipcMain.handle('settings:testProxy', async (): Promise<IpcResult<unknown>> => {
+  ipcMain.handle('settings:testProxy', async (_, proxyUrl?: string): Promise<IpcResult<unknown>> => {
     try {
-      const result = await providersService.testProxy();
+      const result = await providersService.testProxy(proxyUrl);
       return ok(result);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

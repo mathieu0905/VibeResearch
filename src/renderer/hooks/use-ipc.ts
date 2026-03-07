@@ -409,7 +409,7 @@ export const ipc = {
   setEditor: (cmd: string) => invoke<{ success: boolean }>('settings:setEditor', cmd),
   setProxy: (proxy: string | undefined) => invoke<{ success: boolean }>('settings:setProxy', proxy),
   setProxyScope: (scope: ProxyScope) => invoke<{ success: boolean }>('settings:setProxyScope', scope),
-  testProxy: () => invoke<{ hasProxy: boolean; results: ProxyTestResult[] }>('settings:testProxy'),
+  testProxy: (proxyUrl?: string) => invoke<{ hasProxy: boolean; results: ProxyTestResult[] }>('settings:testProxy', proxyUrl),
   selectFolder: () => invoke<string | null>('settings:selectFolder'),
   getStorageRoot: () => invoke<string>('settings:getStorageRoot'),
 

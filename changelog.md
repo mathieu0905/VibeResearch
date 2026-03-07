@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-07 (session 37)
+
+### feat: Redesign proxy settings UI and fix proxy not actually being applied
+
+- **Scope**: `src/renderer/pages/settings/page.tsx`, `src/renderer/hooks/use-ipc.ts`, `src/main/services/proxy-fetch.ts` (new), `src/main/services/proxy-test.service.ts`, `src/main/services/download.service.ts`, `src/main/services/ai-provider.service.ts`, `src/main/services/providers.service.ts`, `src/main/ipc/providers.ipc.ts`
+- **Bug fix**: `globalThis.fetch` ignores the `agent` parameter (Web Fetch API doesn't support it), so proxy was never actually used for PDF downloads or AI API calls. Created `proxy-fetch.ts` using `node:https`/`node:http` directly so `HttpsProxyAgent` is honoured. Updated `download.service.ts` and `ai-provider.service.ts` to use it.
+- **Bug fix**: `proxy-test.service.ts` also used `fetch` + agent — rewrote with `node:https.request`.
+- **Bug fix**: `testProxy` IPC now accepts a `proxyUrl` argument so the UI can test the currently-entered (unsaved) proxy instead of always reading from store.
+- **UI redesign**:
+  - Proxy URL input split into scheme dropdown (http/https/socks5) + host + port fields, with Save button inline
+  - Enable/disable pill toggle; card shows blue border when enabled
+  - Proxy scope options redesigned as 3-column cards with icons (HardDrive / Cpu / Code2); "CLI Tools" renamed to "Agents"
+  - Connectivity check cards (Google / GitHub / YouTube) always visible with brand icons; Test button below cards
+  - Test results update cards in-place (pending / loading spinner / green success / red failure)
+
 ## 2026-03-07 (session 36)
 
 ### feat: Add proxy test button and configurable proxy scope

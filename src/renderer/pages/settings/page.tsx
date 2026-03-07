@@ -430,25 +430,35 @@ function CliToolCard({
         </div>
       </div>
 
-      {/* Test result */}
-      {testResult && (
-        <div
-          className={`mt-3 rounded-lg px-3 py-2.5 font-mono text-xs ${
-            testResult.success
-              ? 'border border-green-200 bg-green-50 text-green-700'
-              : 'border border-red-200 bg-red-50 text-red-700'
-          }`}
-        >
-          {testResult.success ? '✓ ' : '✗ '}
-          {testResult.error?.slice(0, 120)}
-        </div>
-      )}
-
-      <div className="mt-4 flex justify-end">
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <AnimatePresence mode="wait">
+          {testResult && (
+            <motion.div
+              initial={{ opacity: 0, x: -4 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -4 }}
+              transition={{ duration: 0.15 }}
+              className={`flex flex-1 items-center gap-2 rounded-lg px-3 py-2 text-xs ${
+                testResult.success
+                  ? 'bg-green-50 text-green-700'
+                  : 'bg-red-50 text-red-600'
+              }`}
+            >
+              {testResult.success ? (
+                <Check size={13} className="shrink-0 text-green-600" strokeWidth={2.5} />
+              ) : (
+                <X size={13} className="shrink-0 text-red-500" strokeWidth={2.5} />
+              )}
+              <span className="font-mono truncate">
+                {testResult.success ? 'Command found' : (testResult.error?.slice(0, 100) ?? 'Failed')}
+              </span>
+            </motion.div>
+          )}
+        </AnimatePresence>
         <button
           onClick={handleTest}
           disabled={testing || !tool.command.trim()}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border px-4 py-2 text-sm font-medium text-notion-text transition-all hover:bg-notion-sidebar hover:shadow-sm disabled:opacity-50"
+          className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-notion-border px-3.5 py-2 text-sm font-medium text-notion-text transition-all hover:bg-notion-sidebar hover:shadow-sm disabled:opacity-50"
         >
           {testing ? (
             <Loader2 size={13} className="animate-spin text-notion-text-tertiary" />
@@ -1084,15 +1094,30 @@ function AddModelModal({
           </div>
 
           {/* Test result */}
-          {testResult && (
-            <div
-              className={`mt-3 rounded-lg px-3 py-2 text-sm ${testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}
-            >
-              {testResult.success
-                ? '✓ Connection successful!'
-                : `✗ ${testResult.error || 'Connection failed'}`}
-            </div>
-          )}
+          <AnimatePresence>
+            {testResult && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className={`mt-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${
+                  testResult.success
+                    ? 'border-green-200 bg-green-50 text-green-700'
+                    : 'border-red-200 bg-red-50 text-red-600'
+                }`}
+              >
+                {testResult.success ? (
+                  <Check size={15} className="mt-px shrink-0 text-green-600" strokeWidth={2.5} />
+                ) : (
+                  <X size={15} className="mt-px shrink-0 text-red-500" strokeWidth={2.5} />
+                )}
+                <span className="leading-snug">
+                  {testResult.success ? 'Connection successful!' : (testResult.error || 'Connection failed')}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="mt-5 flex justify-end gap-2">
             <button
@@ -1423,15 +1448,30 @@ function EditModelModal({
           </div>
 
           {/* Test result */}
-          {testResult && (
-            <div
-              className={`mt-3 rounded-lg px-3 py-2 text-sm ${testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}
-            >
-              {testResult.success
-                ? '✓ Connection successful!'
-                : `✗ ${testResult.error || 'Connection failed'}`}
-            </div>
-          )}
+          <AnimatePresence>
+            {testResult && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className={`mt-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${
+                  testResult.success
+                    ? 'border-green-200 bg-green-50 text-green-700'
+                    : 'border-red-200 bg-red-50 text-red-600'
+                }`}
+              >
+                {testResult.success ? (
+                  <Check size={15} className="mt-px shrink-0 text-green-600" strokeWidth={2.5} />
+                ) : (
+                  <X size={15} className="mt-px shrink-0 text-red-500" strokeWidth={2.5} />
+                )}
+                <span className="leading-snug">
+                  {testResult.success ? 'Connection successful!' : (testResult.error || 'Connection failed')}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="mt-5 flex justify-end gap-2">
             <button
@@ -1566,18 +1606,30 @@ function ModelCard({
         </div>
       </div>
 
-      {/* Test result */}
-      {testResult && (
-        <div
-          className={`mt-3 rounded-lg px-3 py-2 text-xs ${
-            testResult.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-          }`}
-        >
-          {testResult.success
-            ? '✓ Connection successful!'
-            : `✗ ${testResult.error || 'Connection failed'}`}
-        </div>
-      )}
+      <AnimatePresence>
+        {testResult && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 4 }}
+            transition={{ duration: 0.15 }}
+            className={`mt-3 flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs ${
+              testResult.success
+                ? 'border-green-200 bg-green-50 text-green-700'
+                : 'border-red-200 bg-red-50 text-red-600'
+            }`}
+          >
+            {testResult.success ? (
+              <Check size={13} className="shrink-0 text-green-600" strokeWidth={2.5} />
+            ) : (
+              <X size={13} className="shrink-0 text-red-500" strokeWidth={2.5} />
+            )}
+            <span className="leading-snug">
+              {testResult.success ? 'Connection successful!' : (testResult.error || 'Connection failed')}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -2058,8 +2110,70 @@ function UsageSettings() {
 
 // ─── Proxy Settings ──────────────────────────────────────────────────────────
 
+const GoogleIcon = () => (
+  <svg viewBox="0 0 24 24" className="h-5 w-5" xmlns="http://www.w3.org/2000/svg">
+    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+  </svg>
+);
+
+const GitHubIcon = () => (
+  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0 1 12 6.844a9.59 9.59 0 0 1 2.504.337c1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.02 10.02 0 0 0 22 12.017C22 6.484 17.522 2 12 2z"/>
+  </svg>
+);
+
+const YouTubeIcon = () => (
+  <svg viewBox="0 0 24 24" className="h-5 w-5" xmlns="http://www.w3.org/2000/svg">
+    <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" fill="#FF0000"/>
+  </svg>
+);
+
+const SITE_ICONS: Record<string, React.ElementType> = {
+  Google: GoogleIcon,
+  GitHub: GitHubIcon,
+  YouTube: YouTubeIcon,
+};
+
+const PROXY_SCOPE_OPTIONS: Array<{
+  key: keyof ProxyScope;
+  label: string;
+  desc: string;
+  Icon: React.ElementType;
+}> = [
+  { key: 'pdfDownload', label: 'PDF Downloads', desc: 'Fetch papers via proxy', Icon: HardDrive },
+  { key: 'aiApi', label: 'AI API Calls', desc: 'Route LLM requests via proxy', Icon: Cpu },
+  { key: 'cliTools', label: 'Agents', desc: 'Inject proxy env into CLI agents', Icon: Code2 },
+];
+
+const PROXY_SCHEMES = ['http', 'https', 'socks5'] as const;
+type ProxyScheme = (typeof PROXY_SCHEMES)[number];
+
+function parseProxyUrl(url: string): { scheme: ProxyScheme; host: string; port: string } {
+  try {
+    const u = new URL(url);
+    const scheme = (PROXY_SCHEMES as readonly string[]).includes(u.protocol.replace(':', ''))
+      ? (u.protocol.replace(':', '') as ProxyScheme)
+      : 'http';
+    return { scheme, host: u.hostname, port: u.port };
+  } catch {
+    return { scheme: 'http', host: '', port: '' };
+  }
+}
+
+function buildProxyUrl(scheme: ProxyScheme, host: string, port: string): string {
+  if (!host.trim()) return '';
+  return `${scheme}://${host.trim()}${port.trim() ? `:${port.trim()}` : ''}`;
+}
+
 function ProxySettings() {
-  const [proxy, setProxy] = useState('');
+  const [proxyEnabled, setProxyEnabled] = useState(false);
+  const [scheme, setScheme] = useState<ProxyScheme>('http');
+  const [host, setHost] = useState('');
+  const [port, setPort] = useState('');
+  const [schemeOpen, setSchemeOpen] = useState(false);
   const [proxyScope, setProxyScope] = useState<ProxyScope>({
     pdfDownload: true,
     aiApi: true,
@@ -2074,7 +2188,13 @@ function ProxySettings() {
     ipc
       .getSettings()
       .then((s) => {
-        setProxy(s.proxy ?? '');
+        if (s.proxy) {
+          const parsed = parseProxyUrl(s.proxy);
+          setScheme(parsed.scheme);
+          setHost(parsed.host);
+          setPort(parsed.port);
+          setProxyEnabled(true);
+        }
         if (s.proxyScope) {
           setProxyScope(s.proxyScope as ProxyScope);
         }
@@ -2082,10 +2202,21 @@ function ProxySettings() {
       .catch(() => {});
   }, []);
 
+  const proxy = buildProxyUrl(scheme, host, port);
+
+  useEffect(() => {
+    if (!schemeOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-scheme-select]')) setSchemeOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [schemeOpen]);
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      await ipc.setProxy(proxy.trim() || undefined);
+      await ipc.setProxy(proxyEnabled && proxy ? proxy : undefined);
       await ipc.setProxyScope(proxyScope);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -2100,7 +2231,7 @@ function ProxySettings() {
     setTesting(true);
     setTestResults(null);
     try {
-      const result = await ipc.testProxy();
+      const result = await ipc.testProxy(proxyEnabled && proxy ? proxy : undefined);
       setTestResults(result.results);
     } catch {
       // silent
@@ -2114,118 +2245,181 @@ function ProxySettings() {
   };
 
   return (
-    <div>
-      <p className="mb-5 text-sm text-notion-text-secondary">
-        Configure HTTP or SOCKS proxy for network requests.
-      </p>
-      <div className="rounded-xl border border-notion-border bg-white p-5">
-        <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
-          HTTP/SOCKS Proxy <span className="font-normal text-notion-text-tertiary">(optional)</span>
-        </label>
-        <input
-          value={proxy}
-          onChange={(e) => setProxy(e.target.value)}
-          placeholder="e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080"
-          className="w-full rounded-lg border border-notion-border bg-notion-sidebar px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-        />
-
-        {/* Proxy Scope Section */}
-        <div className="mt-4">
-          <label className="mb-2 block text-xs font-medium text-notion-text-secondary">
-            Use Proxy For
-          </label>
-          <div className="flex flex-wrap gap-4">
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={proxyScope.pdfDownload}
-                onChange={() => toggleScope('pdfDownload')}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm text-notion-text">PDF Downloads</span>
-            </label>
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={proxyScope.aiApi}
-                onChange={() => toggleScope('aiApi')}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm text-notion-text">AI API Calls</span>
-            </label>
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={proxyScope.cliTools}
-                onChange={() => toggleScope('cliTools')}
-                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span className="text-sm text-notion-text">CLI Tools</span>
-            </label>
-          </div>
-        </div>
-
-        {/* Test Connection Button */}
-        <div className="mt-4 flex items-center gap-3">
+    <div className="space-y-4">
+      {/* Proxy URL */}
+      <div className={`rounded-xl border p-5 transition-colors ${proxyEnabled ? 'border-blue-200 bg-blue-50/60' : 'border-notion-border bg-white'}`}>
+        <div className="mb-3 flex items-center justify-between">
+          <label className="text-xs font-medium text-notion-text-secondary">HTTP / SOCKS Proxy</label>
+          {/* Pill toggle */}
           <button
-            onClick={handleTest}
-            disabled={testing || !proxy.trim()}
-            className="inline-flex items-center gap-2 rounded-lg border border-notion-border bg-white px-4 py-2 text-sm font-medium text-notion-text shadow-sm transition-all hover:bg-notion-sidebar disabled:opacity-40"
+            type="button"
+            onClick={() => setProxyEnabled((v) => !v)}
+            className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${proxyEnabled ? 'bg-blue-500' : 'bg-notion-border'}`}
           >
-            {testing ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : (
-              <Globe size={14} />
-            )}
-            Test Connection
+            <span
+              className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${proxyEnabled ? 'translate-x-4' : 'translate-x-0.5'}`}
+            />
           </button>
-          {!proxy.trim() && (
-            <span className="text-xs text-notion-text-tertiary">Enter a proxy URL to test</span>
-          )}
         </div>
-
-        {/* Test Results */}
-        {testResults && (
-          <div className="mt-4 space-y-2">
-            <p className="text-xs font-medium text-notion-text-secondary">Test Results</p>
-            {testResults.map((result) => (
-              <div
-                key={result.url}
-                className="flex items-center gap-3 rounded-lg bg-notion-sidebar px-3 py-2"
+        <div className={`flex items-stretch gap-2 transition-opacity ${proxyEnabled ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
+          <div className="flex flex-1 items-stretch rounded-lg border border-notion-border bg-notion-sidebar focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+            {/* Scheme selector */}
+            <div className="relative shrink-0" data-scheme-select>
+              <button
+                type="button"
+                onClick={() => setSchemeOpen((o) => !o)}
+                className="flex h-full items-center gap-1 rounded-l-lg border-r border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
               >
-                {result.success ? (
-                  <Check size={16} className="text-green-600" />
-                ) : (
-                  <X size={16} className="text-red-500" />
-                )}
-                <span className="text-sm font-medium text-notion-text">{result.name}</span>
-                {result.latency && (
-                  <span className="text-xs text-notion-text-tertiary">{result.latency}ms</span>
-                )}
-                {result.error && (
-                  <span className="text-xs text-red-500">{result.error}</span>
-                )}
-              </div>
-            ))}
+                {scheme}
+                <ChevronDown size={12} className={`transition-transform ${schemeOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {schemeOpen && (
+                <div className="absolute left-0 top-full z-50 mt-1 min-w-[90px] overflow-hidden rounded-lg border border-notion-border bg-white shadow-lg">
+                  {PROXY_SCHEMES.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => { setScheme(s); setSchemeOpen(false); }}
+                      className={`flex w-full items-center justify-between px-3 py-2 font-mono text-sm transition-colors hover:bg-notion-sidebar ${scheme === s ? 'bg-blue-50 text-blue-700' : 'text-notion-text'}`}
+                    >
+                      {s}
+                      {scheme === s && <Check size={12} className="text-blue-600" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* Host */}
+            <input
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+              placeholder="127.0.0.1"
+              className="min-w-0 flex-1 bg-transparent px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none"
+            />
+            {/* Port */}
+            <div className="flex items-center border-l border-notion-border">
+              <input
+                value={port}
+                onChange={(e) => setPort(e.target.value.replace(/\D/g, ''))}
+                placeholder="7890"
+                maxLength={5}
+                className="w-16 rounded-r-lg bg-transparent px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none"
+              />
+            </div>
           </div>
-        )}
-
-        {/* Save Button */}
-        <div className="mt-4 flex justify-end">
+          {/* Save */}
           <button
             onClick={handleSave}
             disabled={saving}
-            className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white hover:opacity-80 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
           >
-            {saving ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : saved ? (
-              <Check size={14} />
-            ) : null}
+            {saving ? <Loader2 size={14} className="animate-spin" /> : saved ? <Check size={14} /> : null}
             {saved ? 'Saved' : saving ? 'Saving…' : 'Save'}
           </button>
         </div>
+        {proxy && (
+          <p className="mt-1.5 font-mono text-2xs text-notion-text-tertiary">{proxy}</p>
+        )}
       </div>
+
+      {/* Proxy Scope */}
+      <div className="rounded-xl border border-notion-border bg-white p-5">
+        <p className="mb-3 text-xs font-medium text-notion-text-secondary">Apply Proxy To</p>
+        <div className="grid grid-cols-3 gap-3">
+          {PROXY_SCOPE_OPTIONS.map(({ key, label, desc, Icon }) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => toggleScope(key)}
+              className={`flex flex-col items-center gap-2.5 rounded-xl border px-3 py-4 text-center transition-all ${
+                proxyScope[key]
+                  ? 'border-blue-200 bg-blue-50/60 shadow-sm'
+                  : 'border-notion-border bg-white hover:border-notion-text-tertiary hover:bg-notion-sidebar/40'
+              }`}
+            >
+              <div
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+                  proxyScope[key] ? 'bg-blue-100' : 'bg-notion-sidebar'
+                }`}
+              >
+                <Icon size={16} className={proxyScope[key] ? 'text-blue-600' : 'text-notion-text-secondary'} />
+              </div>
+              <div>
+                <p className={`text-sm font-medium leading-tight ${proxyScope[key] ? 'text-blue-700' : 'text-notion-text'}`}>
+                  {label}
+                </p>
+                <p className="mt-0.5 text-2xs text-notion-text-tertiary">{desc}</p>
+              </div>
+              <div
+                className={`flex h-4 w-4 items-center justify-center rounded-full border-2 transition-colors ${
+                  proxyScope[key] ? 'border-blue-500 bg-blue-500' : 'border-notion-border bg-white'
+                }`}
+              >
+                {proxyScope[key] && <Check size={9} className="text-white" strokeWidth={3} />}
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Test site cards — always visible */}
+      <div className="rounded-xl border border-notion-border bg-white p-5">
+        <p className="mb-3 text-xs font-medium text-notion-text-secondary">Connectivity Check</p>
+        <div className="grid grid-cols-3 gap-3">
+          {Object.entries(SITE_ICONS).map(([name, SiteIcon]) => {
+            const result = testResults?.find((r) => r.name === name);
+            const isPending = !result && !testing;
+            const isLoading = testing && !result;
+            return (
+              <div
+                key={name}
+                className={`flex flex-col items-center gap-2 rounded-xl border px-3 py-4 text-center transition-all ${
+                  result
+                    ? result.success
+                      ? 'border-green-200 bg-green-50'
+                      : 'border-red-200 bg-red-50'
+                    : 'border-notion-border bg-notion-sidebar/40'
+                }`}
+              >
+                <div className={`flex h-10 w-10 items-center justify-center rounded-full bg-white shadow-sm ${isPending ? 'opacity-50' : ''}`}>
+                  <SiteIcon />
+                </div>
+                <span className={`text-sm font-semibold ${isPending ? 'text-notion-text-tertiary' : 'text-notion-text'}`}>
+                  {name}
+                </span>
+                <div className="flex h-4 items-center justify-center">
+                  {isLoading ? (
+                    <Loader2 size={12} className="animate-spin text-notion-text-tertiary" />
+                  ) : result ? (
+                    result.success ? (
+                      <div className="flex items-center gap-1">
+                        <Check size={12} className="text-green-600" strokeWidth={2.5} />
+                        <span className="text-xs text-green-700">{result.latency ? `${result.latency}ms` : 'OK'}</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <X size={12} className="text-red-500" strokeWidth={2.5} />
+                        <span className="max-w-[80px] truncate text-xs text-red-600" title={result.error}>{result.error ?? 'Failed'}</span>
+                      </div>
+                    )
+                  ) : (
+                    <span className="text-2xs text-notion-text-tertiary">—</span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <button
+          onClick={handleTest}
+          disabled={testing}
+          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-notion-border bg-white px-4 py-2 text-sm font-medium text-notion-text shadow-sm transition-all hover:border-notion-text-tertiary hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {testing ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
+          {testing ? 'Testing…' : 'Test Connection'}
+        </button>
+      </div>
+
     </div>
   );
 }

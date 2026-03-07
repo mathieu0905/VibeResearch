@@ -1,5 +1,6 @@
+import * as https from 'node:https';
+import * as http from 'node:http';
 import { HttpsProxyAgent } from 'https-proxy-agent';
-import type { Agent } from 'node:http';
 import { getProxy } from '../store/app-settings-store';
 
 export interface ProxyTestResult {
@@ -17,87 +18,82 @@ const TEST_ENDPOINTS = [
   { url: 'https://www.youtube.com', name: 'YouTube' },
 ];
 
-function getProxyAgent(): Agent | undefined {
-  const proxy = getProxy();
-  if (!proxy) return undefined;
-  return new HttpsProxyAgent(proxy) as unknown as Agent;
+function makeProxyAgent(proxyUrl: string | undefined): http.Agent | undefined {
+  if (!proxyUrl) return undefined;
+  return new HttpsProxyAgent(proxyUrl);
 }
 
 /**
- * Test a single endpoint with optional proxy
+ * Test a single endpoint using node:https so the agent is actually honoured.
  */
-async function testEndpoint(
-  url: string,
-  agent?: Agent,
+function testEndpoint(
+  urlStr: string,
+  agent?: http.Agent,
 ): Promise<{ success: boolean; latency?: number; error?: string }> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+  return new Promise((resolve) => {
+    const startTime = Date.now();
+    const timeout = 10_000;
 
-  const startTime = Date.now();
+    const req = https.request(
+      urlStr,
+      {
+        method: 'HEAD',
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VibeResearch/1.0)' },
+        ...(agent ? { agent } : {}),
+        timeout,
+      },
+      (res) => {
+        const latency = Date.now() - startTime;
+        res.resume(); // drain
+        const status = res.statusCode ?? 0;
+        if (status > 0 && status < 400) {
+          resolve({ success: true, latency });
+        } else {
+          resolve({ success: false, latency, error: `HTTP ${status}` });
+        }
+      },
+    );
 
-  try {
-    const response = await fetch(url, {
-      method: 'HEAD', // Only check connectivity, don't download body
-      signal: controller.signal,
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VibeResearch/1.0)' },
-      ...(agent ? { agent } : {}),
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ success: false, latency: timeout, error: 'Timeout (10s)' });
     });
 
-    clearTimeout(timeoutId);
-    const latency = Date.now() - startTime;
+    req.on('error', (err) => {
+      const latency = Date.now() - startTime;
+      resolve({ success: false, latency, error: err.message });
+    });
 
-    // Consider 2xx and 3xx as success
-    if (response.ok || response.status < 400) {
-      return { success: true, latency };
-    }
-
-    return { success: false, latency, error: `HTTP ${response.status}` };
-  } catch (err) {
-    clearTimeout(timeoutId);
-    const latency = Date.now() - startTime;
-    const message = err instanceof Error ? err.message : String(err);
-
-    // Handle abort separately
-    if (message.includes('abort')) {
-      return { success: false, latency, error: 'Timeout (10s)' };
-    }
-
-    return { success: false, latency, error: message };
-  }
+    req.end();
+  });
 }
 
 /**
- * Test proxy connectivity to common endpoints
- * Returns results for each endpoint
+ * Test proxy connectivity to common endpoints.
+ * proxyUrl overrides the saved store value when provided.
  */
-export async function testProxyConnectivity(): Promise<ProxyTestResult[]> {
-  const agent = getProxyAgent();
+export async function testProxyConnectivity(proxyUrl?: string): Promise<ProxyTestResult[]> {
+  const url = proxyUrl !== undefined ? proxyUrl : getProxy();
+  const agent = makeProxyAgent(url);
   const results: ProxyTestResult[] = [];
 
   for (const endpoint of TEST_ENDPOINTS) {
     const result = await testEndpoint(endpoint.url, agent);
-    results.push({
-      url: endpoint.url,
-      name: endpoint.name,
-      ...result,
-    });
+    results.push({ url: endpoint.url, name: endpoint.name, ...result });
   }
 
   return results;
 }
 
 /**
- * Test if proxy is configured and working
+ * Test if proxy is configured and working.
+ * proxyUrl overrides the saved store value when provided.
  */
-export async function testProxy(): Promise<{
+export async function testProxy(proxyUrl?: string): Promise<{
   hasProxy: boolean;
   results: ProxyTestResult[];
 }> {
-  const proxy = getProxy();
-  const results = await testProxyConnectivity();
-
-  return {
-    hasProxy: !!proxy,
-    results,
-  };
+  const url = proxyUrl !== undefined ? proxyUrl : getProxy();
+  const results = await testProxyConnectivity(url);
+  return { hasProxy: !!url, results };
 }
