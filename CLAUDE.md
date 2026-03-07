@@ -54,6 +54,10 @@ scripts/      # build-main.mjs, build-release.sh
    - This prevents accidental loss of code from git operations (checkout, reset, etc.).
    - Commit message format: `feat/fix/refactor: brief description`
 
+6. **Only commit and push files you modified**
+   - Always use `git add <specific files>` — never `git add .` or `git add -A`.
+   - Do not stage or push files you did not touch, even if they appear in `git status`.
+
 ## Expected coding sequence
 
 1. Create changelog entry for the coding session.
