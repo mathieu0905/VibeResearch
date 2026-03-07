@@ -88,6 +88,14 @@ export const CliRunOptionsSchema = z.object({
   cwd: z.string().optional(),
   envVars: z.string().optional(),
   useProxy: z.boolean().optional(),
+  homeFiles: z
+    .array(
+      z.object({
+        relativePath: z.string().min(1, 'Relative path is required'),
+        content: z.string(),
+      }),
+    )
+    .optional(),
 });
 
 /** Environment variable name pattern - only allow safe names */

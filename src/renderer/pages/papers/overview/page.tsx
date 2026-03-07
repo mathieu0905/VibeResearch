@@ -8,12 +8,11 @@ import {
   type ReadingNote,
   type TagInfo,
   type ModelConfig,
+  type TaggingStatus,
   type CliConfig,
-  type SourceEvent,
 } from '../../../hooks/use-ipc';
 import { WysiwygEditor } from '../../../components/wysiwyg-editor';
 import { PdfViewer } from '../../../components/pdf-viewer';
-import { LoadingSpinner } from '../../../components/loading-spinner';
 import {
   ArrowLeft,
   Loader2,
@@ -26,6 +25,7 @@ import {
   X,
   Trash2,
   Wand2,
+  RefreshCw,
   GitBranch,
   GitCommit,
   Download,
@@ -289,6 +289,20 @@ function TagEditor({
   const [allTags, setAllTags] = useState<TagInfo[]>([]);
   const [saving, setSaving] = useState(false);
   const [autoTagging, setAutoTagging] = useState(false);
+  const [organizing, setOrganizing] = useState(false);
+  const [taggingStatus, setTaggingStatus] = useState<TaggingStatus | null>(null);
+
+  const stageLabel: Record<NonNullable<TaggingStatus['stage']>, string> = {
+    idle: 'Idle',
+    building_prompt: 'Preparing',
+    requesting_model: 'Requesting model',
+    streaming: 'Streaming output',
+    parsing: 'Parsing tags',
+    saving: 'Saving tags',
+    fallback: 'Fallback',
+    done: 'Done',
+    error: 'Error',
+  };
 
   // Load all tags for autocomplete
   useEffect(() => {
@@ -298,13 +312,27 @@ function TagEditor({
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = onIpc('tagging:status', (_event, status) => {
+      const nextStatus = status as TaggingStatus;
+      if (nextStatus.currentPaperId === paper.id || (!nextStatus.active && autoTagging)) {
+        setTaggingStatus(nextStatus);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [paper.id, autoTagging]);
+
   // Group categorized tags by category
   const categorizedTags = paper.categorizedTags || [];
   const tagsByCategory: Record<TagCategory, CategorizedTag[]> = {
-    domain: categorizedTags.filter((t) => t.category === 'domain'),
-    method: categorizedTags.filter((t) => t.category === 'method'),
-    topic: categorizedTags.filter((t) => t.category === 'topic'),
+    domain: categorizedTags.filter((t): t is CategorizedTag => t.category === 'domain'),
+    method: categorizedTags.filter((t): t is CategorizedTag => t.category === 'method'),
+    topic: categorizedTags.filter((t): t is CategorizedTag => t.category === 'topic'),
   };
+
+  // Filter out system tags from counts
+  const visibleTags = categorizedTags.filter((t) => !EXCLUDED_TAGS.includes(t.name.toLowerCase()));
 
   const handleAddTag = async (tagName: string, category: TagCategory) => {
     if (!tagName.trim()) return;
@@ -343,13 +371,37 @@ function TagEditor({
     setAutoTagging(true);
     try {
       const result = await ipc.tagPaper(paper.id);
-      // Reload paper to get updated tags
-      const updated = await ipc.getPaper(paper.id);
+      onUpdate({
+        ...paper,
+        categorizedTags: result,
+        tagNames: result.map((tag) => tag.name),
+      });
+
+      const updated = await ipc.getPaper(paper.id).catch(() => null);
       if (updated) onUpdate(updated);
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Auto-tagging failed');
     } finally {
       setAutoTagging(false);
+    }
+  };
+
+  const handleOrganize = async () => {
+    setOrganizing(true);
+    try {
+      const result = await ipc.organizePaperTags(paper.id);
+      onUpdate({
+        ...paper,
+        categorizedTags: result,
+        tagNames: result.map((tag) => tag.name),
+      });
+
+      const updated = await ipc.getPaper(paper.id).catch(() => null);
+      if (updated) onUpdate(updated);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to organize tags');
+    } finally {
+      setOrganizing(false);
     }
   };
 
@@ -371,10 +423,50 @@ function TagEditor({
             {autoTagging ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
             Auto Tag
           </button>
+          {visibleTags.length > 0 && (
+            <button
+              onClick={handleOrganize}
+              disabled={organizing || saving}
+              className="inline-flex items-center gap-1.5 rounded-md border border-notion-border px-2.5 py-1 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar hover:text-notion-text disabled:opacity-40"
+            >
+              {organizing ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              Organize
+            </button>
+          )}
         </div>
       </div>
 
       <div className="space-y-3">
+        {autoTagging && taggingStatus && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+            <div className="flex items-center gap-2 font-medium">
+              <Loader2 size={12} className="animate-spin" />
+              <span>{taggingStatus.message || 'Auto-tagging in progress…'}</span>
+            </div>
+            {taggingStatus.currentPaperTitle && (
+              <div className="mt-1 text-blue-600/80">{taggingStatus.currentPaperTitle}</div>
+            )}
+            {taggingStatus.stage && taggingStatus.stage !== 'idle' && (
+              <div className="mt-2 inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">
+                {stageLabel[taggingStatus.stage]}
+              </div>
+            )}
+            {taggingStatus.partialText?.trim() && (
+              <div className="mt-2 rounded border border-blue-200 bg-white/80 p-2">
+                <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-blue-500">
+                  Model Output
+                </div>
+                <pre className="max-h-36 overflow-auto whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-slate-700">
+                  {taggingStatus.partialText}
+                </pre>
+              </div>
+            )}
+          </div>
+        )}
         {TAG_CATEGORIES.map((category) => (
           <CategoryTagRow
             key={category}
@@ -383,7 +475,7 @@ function TagEditor({
             allTags={allTags}
             onAdd={handleAddTag}
             onRemove={handleRemoveTag}
-            saving={saving || autoTagging}
+            saving={saving || autoTagging || organizing}
           />
         ))}
       </div>
@@ -400,7 +492,6 @@ export function OverviewPage() {
 
   const [paper, setPaper] = useState<PaperItem | null>(null);
   const [notes, setNotes] = useState<ReadingNote[]>([]);
-  const [sourceEvents, setSourceEvents] = useState<SourceEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState(false);
   const [paperDir, setPaperDir] = useState<string | null>(null);
@@ -424,19 +515,6 @@ export function OverviewPage() {
       .catch(() => undefined);
   }, []);
 
-  // Handle ESC key for Clone Repo Modal
-  useEffect(() => {
-    if (!showCloneModal) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setShowCloneModal(false);
-        setRepoUrl('');
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showCloneModal]);
-
   useEffect(() => {
     if (!shortId) return;
 
@@ -446,11 +524,10 @@ export function OverviewPage() {
         setPaperDir(`${settings.papersDir}/${p.shortId}`);
         const shortTitle = p.title.replace(/^\[\d{4}\.\d{4,5}\]\s*/, '').slice(0, 30) || p.shortId;
         updateTabLabel(location.pathname, shortTitle);
-        return Promise.all([ipc.listReading(p.id), ipc.getSourceEvents(p.id)]);
+        return ipc.listReading(p.id);
       })
-      .then(([readingNotes, events]) => {
+      .then((readingNotes) => {
         setNotes(readingNotes);
-        setSourceEvents(events);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -498,13 +575,14 @@ export function OverviewPage() {
     setCloning(true);
     try {
       const parts = activeCli.command.trim().split(/\s+/);
+      const prompt = `Clone the repository at ${repoUrl} into the ./code directory`;
+      const args =
+        parts[0] === 'codex'
+          ? [...parts.slice(1), 'exec', prompt]
+          : [...parts.slice(1), '-p', prompt];
       await ipc.runCli({
         tool: parts[0],
-        args: [
-          ...parts.slice(1),
-          '-p',
-          `Clone the repository at ${repoUrl} into the ./code directory`,
-        ],
+        args,
         sessionId: `clone-${Date.now()}`,
         cwd: paperDir,
         envVars: activeCli.envVars || undefined,
@@ -560,7 +638,7 @@ export function OverviewPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <LoadingSpinner size="md" />
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-notion-border border-t-notion-text" />
       </div>
     );
   }
@@ -620,18 +698,12 @@ export function OverviewPage() {
               </button>
             )}
             <button
-              onClick={() => {
-                if (!activeCli) {
-                  alert('Please configure a CLI tool in Settings first.');
-                  return;
-                }
-                setShowCloneModal(true);
-              }}
+              onClick={() => setShowCloneModal(true)}
+              disabled={!activeCli}
               className="inline-flex items-center gap-2 rounded-lg border border-notion-border bg-white px-4 py-2.5 text-sm font-medium text-notion-text shadow-sm transition-all hover:bg-notion-sidebar disabled:opacity-40"
             >
               <Github size={16} />
               Clone Repo
-              {!activeCli && <span className="text-xs text-notion-text-tertiary">(需配置CLI)</span>}
             </button>
             <button
               onClick={handleDeletePaper}
@@ -661,73 +733,6 @@ export function OverviewPage() {
             </div>
           )}
 
-          {/* Import Sources */}
-          {sourceEvents.length > 0 && (
-            <div className="rounded-xl border border-notion-border p-5">
-              <h2 className="text-sm font-semibold text-notion-text-secondary uppercase tracking-wider mb-3">
-                Import History
-              </h2>
-              <div className="space-y-2">
-                {sourceEvents.map((event) => (
-                  <div key={event.id} className="flex items-center gap-3 text-sm">
-                    <div
-                      className={clsx(
-                        'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg',
-                        event.source === 'chrome' && 'bg-yellow-50',
-                        event.source === 'arxiv' && 'bg-red-50',
-                        event.source === 'manual' && 'bg-blue-50',
-                      )}
-                    >
-                      {event.source === 'chrome' && (
-                        <FolderOpen size={14} className="text-yellow-600" />
-                      )}
-                      {event.source === 'arxiv' && <FileText size={14} className="text-red-600" />}
-                      {event.source === 'manual' && (
-                        <FilePenLine size={14} className="text-blue-600" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <span className="text-notion-text-secondary">
-                        Imported from <span className="font-medium capitalize">{event.source}</span>
-                      </span>
-                      <span className="text-notion-text-tertiary ml-2">
-                        {formatDate(event.importedAt)}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Rating */}
-          <div className="rounded-xl border border-notion-border p-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Star size={14} className="text-notion-text-secondary" />
-                <h2 className="text-sm font-semibold text-notion-text-secondary uppercase tracking-wider">
-                  Rating
-                </h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <StarRating
-                  rating={paper.rating ?? null}
-                  onChange={async (r) => {
-                    try {
-                      const updated = await ipc.updatePaperRating(paper.id, r);
-                      setPaper(updated);
-                    } catch {
-                      alert('Failed to update rating');
-                    }
-                  }}
-                />
-                {paper.rating && (
-                  <span className="text-sm text-notion-text-secondary">{paper.rating}/5</span>
-                )}
-              </div>
-            </div>
-          </div>
-
           {/* Tags */}
           <TagEditor paper={paper} onUpdate={setPaper} />
 
@@ -749,6 +754,13 @@ export function OverviewPage() {
               <h2 className="text-sm font-semibold text-notion-text-secondary uppercase tracking-wider">
                 Reading Notes
               </h2>
+              <button
+                onClick={handleCreateNote}
+                className="inline-flex items-center gap-1.5 rounded-md border border-notion-border px-2.5 py-1 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar hover:text-notion-text"
+              >
+                <Plus size={12} />
+                New Note
+              </button>
             </div>
             {readingNotes.length === 0 ? (
               <div className="rounded-xl border border-dashed border-notion-border py-8 text-center">
@@ -765,17 +777,15 @@ export function OverviewPage() {
             ) : (
               <div className="space-y-2">
                 {readingNotes.map((note) => (
-                  <div
+                  <button
                     key={note.id}
-                    className="flex items-center gap-4 rounded-lg border border-notion-border px-4 py-3 transition-colors hover:bg-notion-sidebar/50"
+                    onClick={() => openTab(`/papers/${paper.shortId}/notes?noteId=${note.id}`)}
+                    className="w-full flex items-center gap-4 rounded-lg border border-notion-border px-4 py-3 text-left transition-colors hover:bg-notion-sidebar/50"
                   >
                     <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-purple-50">
                       <FileText size={16} className="text-purple-600" />
                     </div>
-                    <button
-                      onClick={() => openTab(`/papers/${paper.shortId}/notes?noteId=${note.id}`)}
-                      className="flex-1 min-w-0 text-left"
-                    >
+                    <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-notion-text truncate">
                         {note.title}
                       </div>
@@ -783,24 +793,8 @@ export function OverviewPage() {
                         <Calendar size={11} />
                         {formatDate(note.updatedAt)}
                       </div>
-                    </button>
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!confirm(`Delete "${note.title}"?`)) return;
-                        try {
-                          await ipc.deleteReading(note.id);
-                          setNotes((prev) => prev.filter((n) => n.id !== note.id));
-                        } catch {
-                          alert('Failed to delete note');
-                        }
-                      }}
-                      className="flex-shrink-0 rounded-md p-1.5 text-notion-text-tertiary transition-colors hover:bg-red-50 hover:text-red-600"
-                      title="Delete note"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -830,17 +824,15 @@ export function OverviewPage() {
             ) : (
               <div className="space-y-2">
                 {chatNotes.map((note) => (
-                  <div
+                  <button
                     key={note.id}
-                    className="flex items-center gap-4 rounded-lg border border-notion-border px-4 py-3 transition-colors hover:bg-notion-sidebar/50"
+                    onClick={() => openTab(`/papers/${paper.shortId}/reader?chatId=${note.id}`)}
+                    className="w-full flex items-center gap-4 rounded-lg border border-notion-border px-4 py-3 text-left transition-colors hover:bg-notion-sidebar/50"
                   >
                     <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50">
                       <MessageSquare size={16} className="text-blue-600" />
                     </div>
-                    <button
-                      onClick={() => openTab(`/papers/${paper.shortId}/reader?chatId=${note.id}`)}
-                      className="flex-1 min-w-0 text-left"
-                    >
+                    <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-notion-text truncate">
                         {note.title.replace('Chat: ', '')}
                       </div>
@@ -848,24 +840,8 @@ export function OverviewPage() {
                         <Calendar size={11} />
                         {formatDate(note.updatedAt)}
                       </div>
-                    </button>
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!confirm(`Delete "${note.title.replace('Chat: ', '')}"?`)) return;
-                        try {
-                          await ipc.deleteReading(note.id);
-                          setNotes((prev) => prev.filter((n) => n.id !== note.id));
-                        } catch {
-                          alert('Failed to delete chat');
-                        }
-                      }}
-                      className="flex-shrink-0 rounded-md p-1.5 text-notion-text-tertiary transition-colors hover:bg-red-50 hover:text-red-600"
-                      title="Delete chat"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
+                    </div>
+                  </button>
                 ))}
               </div>
             )}
@@ -874,77 +850,61 @@ export function OverviewPage() {
       </div>
 
       {/* Clone Repo Modal */}
-      <AnimatePresence>
-        {showCloneModal && (
-          <motion.div
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-          >
-            <motion.div
-              className="w-full max-w-md rounded-xl border border-notion-border bg-white p-6 shadow-xl"
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ duration: 0.15 }}
-            >
-              <h3 className="text-base font-semibold text-notion-text mb-4">Clone Repository</h3>
+      {showCloneModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-xl border border-notion-border bg-white p-6 shadow-xl">
+            <h3 className="text-base font-semibold text-notion-text mb-4">Clone Repository</h3>
 
-              {detectedRepo && (
-                <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
-                  <p className="text-xs text-green-700">Detected repository:</p>
-                  <p className="text-sm font-mono text-green-800 break-all">{detectedRepo}</p>
-                </div>
-              )}
-
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-notion-text">Repository URL</label>
-                <input
-                  type="text"
-                  value={repoUrl || detectedRepo || ''}
-                  onChange={(e) => setRepoUrl(e.target.value)}
-                  placeholder="https://github.com/user/repo"
-                  className="w-full rounded-lg border border-notion-border px-3 py-2 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                />
-                <p className="text-xs text-notion-text-tertiary">
-                  Will be cloned to {paperDir}/code
-                </p>
+            {detectedRepo && (
+              <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-3 py-2">
+                <p className="text-xs text-green-700">Detected repository:</p>
+                <p className="text-sm font-mono text-green-800 break-all">{detectedRepo}</p>
               </div>
+            )}
 
-              <div className="mt-6 flex justify-end gap-2">
-                <button
-                  onClick={() => {
-                    setShowCloneModal(false);
-                    setRepoUrl('');
-                  }}
-                  className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCloneRepo}
-                  disabled={cloning || (!repoUrl.trim() && !detectedRepo)}
-                  className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-40"
-                >
-                  {cloning ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin" />
-                      Cloning...
-                    </>
-                  ) : (
-                    <>
-                      <FolderDown size={14} />
-                      Clone
-                    </>
-                  )}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-notion-text">Repository URL</label>
+              <input
+                type="text"
+                value={repoUrl || detectedRepo || ''}
+                onChange={(e) => setRepoUrl(e.target.value)}
+                placeholder="https://github.com/user/repo"
+                className="w-full rounded-lg border border-notion-border px-3 py-2 text-sm focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+              <p className="text-xs text-notion-text-tertiary">Will be cloned to {paperDir}/code</p>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowCloneModal(false);
+                  setRepoUrl('');
+                }}
+                className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCloneRepo}
+                disabled={cloning || (!repoUrl.trim() && !detectedRepo)}
+                className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-40"
+              >
+                {cloning ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    Cloning...
+                  </>
+                ) : (
+                  <>
+                    <FolderDown size={14} />
+                    Clone
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import {
   type ModelConfig,
   type ModelKind,
   type ModelBackend,
+  type AgentToolKind,
   type ProviderKind,
   type CliConfig,
   type TokenUsageRecord,
@@ -845,6 +846,55 @@ const API_PROVIDER_OPTIONS: Array<{
   { id: 'custom', label: 'Custom (OpenAI-compatible)' },
 ];
 
+const AGENT_TOOL_OPTIONS: Array<{
+  id: AgentToolKind;
+  label: string;
+  defaultName: string;
+  defaultCommand: string;
+  configLabel: string;
+  configPlaceholder: string;
+  authLabel?: string;
+  authPlaceholder?: string;
+}> = [
+  {
+    id: 'claude-code',
+    label: 'Claude Code',
+    defaultName: 'Claude Code',
+    defaultCommand: 'claude',
+    configLabel: 'Claude Settings JSON',
+    configPlaceholder: `{
+  "theme": "system"
+}`,
+  },
+  {
+    id: 'codex',
+    label: 'Codex',
+    defaultName: 'Codex',
+    defaultCommand: 'codex',
+    configLabel: 'Codex Config TOML',
+    configPlaceholder: `model = "gpt-5"
+reasoning_effort = "high"`,
+    authLabel: 'Codex Auth JSON',
+    authPlaceholder: `{
+  "OPENAI_API_KEY": "..."
+}`,
+  },
+  {
+    id: 'custom',
+    label: 'Custom CLI',
+    defaultName: 'Custom Agent',
+    defaultCommand: '',
+    configLabel: 'Config File Content',
+    configPlaceholder: 'Optional config content managed by the app',
+    authLabel: 'Auth File Content',
+    authPlaceholder: 'Optional auth content managed by the app',
+  },
+];
+
+function getAgentToolMeta(tool: AgentToolKind) {
+  return AGENT_TOOL_OPTIONS.find((option) => option.id === tool) ?? AGENT_TOOL_OPTIONS[2];
+}
+
 function makeModelId() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -855,7 +905,10 @@ function AddModelModal({
   onClose,
 }: {
   defaultKind: ModelKind;
-  onAdd: (config: Omit<ModelConfig, 'hasApiKey'> & { apiKey?: string }) => void;
+  onAdd: (
+    config: Omit<ModelConfig, 'hasApiKey'> & { apiKey?: string },
+    activateKind?: ModelKind,
+  ) => void;
   onClose: () => void;
 }) {
   const backend = KIND_BACKEND[defaultKind];
@@ -864,8 +917,13 @@ function AddModelModal({
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [baseURL, setBaseURL] = useState('');
-  const [command, setCommand] = useState('');
+  const [agentTool, setAgentTool] = useState<AgentToolKind>(
+    defaultKind === 'agent' ? 'claude-code' : 'custom',
+  );
+  const [command, setCommand] = useState(defaultKind === 'agent' ? 'claude' : '');
   const [envVars, setEnvVars] = useState('');
+  const [configContent, setConfigContent] = useState('');
+  const [authContent, setAuthContent] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -879,41 +937,66 @@ function AddModelModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
+  useEffect(() => {
+    if (defaultKind !== 'agent') return;
+    const meta = getAgentToolMeta(agentTool);
+    setCommand((prev) => (prev.trim() ? prev : meta.defaultCommand));
+    setName((prev) => (prev.trim() ? prev : meta.defaultName));
+  }, [agentTool, defaultKind]);
+
   const handleAdd = async () => {
     const displayName =
       name.trim() || (backend === 'api' ? `${provider}/${model}` : command.split(' ')[0]);
     if (!displayName) return;
-    await onAdd({
-      id: makeModelId(),
-      name: displayName,
-      kind: defaultKind,
-      backend,
-      ...(backend === 'api'
-        ? {
-            provider,
-            model,
-            apiKey: apiKey.trim() || undefined,
-            baseURL: baseURL.trim() || undefined,
-          }
-        : {}),
-      ...(backend === 'cli' ? { command: command.trim(), envVars: envVars.trim() } : {}),
-    });
+    await onAdd(
+      {
+        id: makeModelId(),
+        name: displayName,
+        backend,
+        ...(backend === 'api'
+          ? {
+              provider,
+              model,
+              apiKey: apiKey.trim() || undefined,
+              baseURL: baseURL.trim() || undefined,
+            }
+          : {}),
+        ...(backend === 'cli'
+          ? {
+              command: command.trim(),
+              envVars: envVars.trim(),
+              agentTool: defaultKind === 'agent' ? agentTool : undefined,
+              configContent: configContent.trim() || undefined,
+              authContent: authContent.trim() || undefined,
+            }
+          : {}),
+      },
+      defaultKind,
+    );
     onClose();
   };
 
   const isValid = backend === 'api' ? !!model.trim() : !!command.trim();
 
   const handleTest = async () => {
-    if (backend !== 'api' || !model.trim()) return;
+    if (backend === 'api') {
+      if (!model.trim()) return;
+    } else if (!command.trim()) {
+      return;
+    }
+
     setTesting(true);
     setTestResult(null);
     try {
-      const result = await ipc.testModelConnection({
-        provider,
-        model: model.trim(),
-        apiKey: apiKey.trim() || undefined,
-        baseURL: baseURL.trim() || undefined,
-      });
+      const result =
+        backend === 'api'
+          ? await ipc.testModelConnection({
+              provider,
+              model: model.trim(),
+              apiKey: apiKey.trim() || undefined,
+              baseURL: baseURL.trim() || undefined,
+            })
+          : await ipc.testCli(command.trim(), undefined, envVars.trim() || undefined);
       setTestResult(result);
     } catch (err) {
       setTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
@@ -942,7 +1025,9 @@ function AddModelModal({
             Add {MODEL_KIND_META[defaultKind].label} Model
           </h2>
           <p className="mb-4 text-xs text-notion-text-tertiary">
-            {backend === 'cli' ? 'CLI subprocess' : 'API direct'}
+            {backend === 'cli'
+              ? 'CLI subprocess'
+              : 'API direct · saved once, reusable across Lightweight and Chat'}
           </p>
 
           <div className="space-y-4">
@@ -1064,6 +1149,34 @@ function AddModelModal({
               </>
             ) : (
               <>
+                {defaultKind === 'agent' && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                      Agent Preset
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {AGENT_TOOL_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => {
+                            setAgentTool(option.id);
+                            setCommand(option.defaultCommand);
+                            if (!name.trim()) setName(option.defaultName);
+                          }}
+                          className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                            agentTool === option.id
+                              ? 'border-notion-text bg-notion-text text-white'
+                              : 'border-notion-border text-notion-text hover:bg-notion-sidebar'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* CLI Command */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
@@ -1089,6 +1202,38 @@ function AddModelModal({
                     className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
+                {defaultKind === 'agent' && (
+                  <>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                        {getAgentToolMeta(agentTool).configLabel}{' '}
+                        <span className="font-normal text-notion-text-tertiary">(optional)</span>
+                      </label>
+                      <textarea
+                        value={configContent}
+                        onChange={(e) => setConfigContent(e.target.value)}
+                        rows={6}
+                        placeholder={getAgentToolMeta(agentTool).configPlaceholder}
+                        className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                    {getAgentToolMeta(agentTool).authLabel && (
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                          {getAgentToolMeta(agentTool).authLabel}{' '}
+                          <span className="font-normal text-notion-text-tertiary">(optional)</span>
+                        </label>
+                        <textarea
+                          value={authContent}
+                          onChange={(e) => setAuthContent(e.target.value)}
+                          rows={5}
+                          placeholder={getAgentToolMeta(agentTool).authPlaceholder}
+                          className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1126,10 +1271,10 @@ function AddModelModal({
             >
               Cancel
             </button>
-            {backend === 'api' && (
+            {(backend === 'api' || backend === 'cli') && (
               <button
                 onClick={handleTest}
-                disabled={testing || !model.trim()}
+                disabled={testing || (backend === 'api' ? !model.trim() : !command.trim())}
                 className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
               >
                 {testing ? (
@@ -1175,8 +1320,11 @@ function EditModelModal({
   const [modelName, setModelName] = useState(model.model ?? '');
   const [apiKey, setApiKey] = useState('');
   const [baseURL, setBaseURL] = useState(model.baseURL ?? '');
+  const [agentTool, setAgentTool] = useState<AgentToolKind>(model.agentTool ?? 'custom');
   const [command, setCommand] = useState(model.command ?? '');
   const [envVars, setEnvVars] = useState(model.envVars ?? '');
+  const [configContent, setConfigContent] = useState(model.configContent ?? '');
+  const [authContent, setAuthContent] = useState(model.authContent ?? '');
   const [showKey, setShowKey] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -1211,7 +1359,6 @@ function EditModelModal({
     await onSave({
       id: model.id,
       name: displayName,
-      kind: model.kind,
       backend,
       ...(backend === 'api'
         ? {
@@ -1221,7 +1368,15 @@ function EditModelModal({
             baseURL: baseURL.trim() || undefined,
           }
         : {}),
-      ...(backend === 'cli' ? { command: command.trim(), envVars: envVars.trim() } : {}),
+      ...(backend === 'cli'
+        ? {
+            command: command.trim(),
+            envVars: envVars.trim(),
+            agentTool: model.backend === 'cli' ? agentTool : undefined,
+            configContent: configContent.trim() || undefined,
+            authContent: authContent.trim() || undefined,
+          }
+        : {}),
     });
     onClose();
   };
@@ -1229,16 +1384,24 @@ function EditModelModal({
   const isValid = backend === 'api' ? !!modelName.trim() : !!command.trim();
 
   const handleTest = async () => {
-    if (backend !== 'api' || !modelName.trim()) return;
+    if (backend === 'api') {
+      if (!modelName.trim()) return;
+    } else if (!command.trim()) {
+      return;
+    }
+
     setTesting(true);
     setTestResult(null);
     try {
-      const result = await ipc.testModelConnection({
-        provider,
-        model: modelName.trim(),
-        apiKey: apiKey.trim() || undefined,
-        baseURL: baseURL.trim() || undefined,
-      });
+      const result =
+        backend === 'api'
+          ? await ipc.testModelConnection({
+              provider,
+              model: modelName.trim(),
+              apiKey: apiKey.trim() || undefined,
+              baseURL: baseURL.trim() || undefined,
+            })
+          : await ipc.testCli(command.trim(), undefined, envVars.trim() || undefined);
       setTestResult(result);
     } catch (err) {
       setTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
@@ -1289,11 +1452,11 @@ function EditModelModal({
           transition={{ duration: 0.15 }}
           className="w-full max-w-lg rounded-2xl border border-notion-border bg-white p-6 shadow-xl"
         >
-          <h2 className="mb-1 text-base font-semibold text-notion-text">
-            Edit {MODEL_KIND_META[model.kind].label} Model
-          </h2>
+          <h2 className="mb-1 text-base font-semibold text-notion-text">Edit Model</h2>
           <p className="mb-4 text-xs text-notion-text-tertiary">
-            {backend === 'cli' ? 'CLI subprocess' : 'API direct'}
+            {backend === 'cli'
+              ? 'CLI subprocess'
+              : 'API direct · changes apply anywhere this model is selected'}
           </p>
 
           <div className="space-y-4">
@@ -1418,6 +1581,33 @@ function EditModelModal({
               </>
             ) : (
               <>
+                {model.backend === 'cli' && (
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                      Agent Preset
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {AGENT_TOOL_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => {
+                            setAgentTool(option.id);
+                            setCommand(option.defaultCommand);
+                            if (!name.trim()) setName(option.defaultName);
+                          }}
+                          className={`rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${
+                            agentTool === option.id
+                              ? 'border-notion-text bg-notion-text text-white'
+                              : 'border-notion-border text-notion-text hover:bg-notion-sidebar'
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {/* CLI Command */}
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
@@ -1443,6 +1633,38 @@ function EditModelModal({
                     className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                   />
                 </div>
+                {model.backend === 'cli' && (
+                  <>
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                        {getAgentToolMeta(agentTool).configLabel}{' '}
+                        <span className="font-normal text-notion-text-tertiary">(optional)</span>
+                      </label>
+                      <textarea
+                        value={configContent}
+                        onChange={(e) => setConfigContent(e.target.value)}
+                        rows={6}
+                        placeholder={getAgentToolMeta(agentTool).configPlaceholder}
+                        className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                    {getAgentToolMeta(agentTool).authLabel && (
+                      <div>
+                        <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                          {getAgentToolMeta(agentTool).authLabel}{' '}
+                          <span className="font-normal text-notion-text-tertiary">(optional)</span>
+                        </label>
+                        <textarea
+                          value={authContent}
+                          onChange={(e) => setAuthContent(e.target.value)}
+                          rows={5}
+                          placeholder={getAgentToolMeta(agentTool).authPlaceholder}
+                          className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1480,10 +1702,10 @@ function EditModelModal({
             >
               Cancel
             </button>
-            {backend === 'api' && (
+            {(backend === 'api' || backend === 'cli') && (
               <button
                 onClick={handleTest}
-                disabled={testing || !modelName.trim()}
+                disabled={testing || (backend === 'api' ? !modelName.trim() : !command.trim())}
                 className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:opacity-50"
               >
                 {testing ? (
@@ -1532,11 +1754,13 @@ function ModelCard({
       : (model.command ?? '—');
 
   const handleTest = async () => {
-    if (model.backend !== 'api') return;
     setTesting(true);
     setTestResult(null);
     try {
-      const result = await ipc.testSavedModelConnection(model.id);
+      const result =
+        model.backend === 'api'
+          ? await ipc.testSavedModelConnection(model.id)
+          : await ipc.testCli(model.command ?? '', undefined, model.envVars || undefined);
       setTestResult(result);
     } catch (err) {
       setTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
@@ -1565,7 +1789,7 @@ function ModelCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {model.backend === 'api' && (
+          {(model.backend === 'api' || model.backend === 'cli') && (
             <button
               onClick={handleTest}
               disabled={testing}
@@ -1699,6 +1923,10 @@ function ModelKindSection({
   );
 }
 
+function getModelsForKind(models: ModelConfig[], kind: ModelKind): ModelConfig[] {
+  return models.filter((model) => model.backend === KIND_BACKEND[kind]);
+}
+
 function ModelsSettings() {
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [activeIds, setActiveIds] = useState<Record<ModelKind, string | null>>({
@@ -1725,10 +1953,16 @@ function ModelsSettings() {
     load();
   }, []);
 
-  const handleAdd = async (config: Omit<ModelConfig, 'hasApiKey'> & { apiKey?: string }) => {
+  const handleAdd = async (
+    config: Omit<ModelConfig, 'hasApiKey'> & { apiKey?: string },
+    activateKind?: ModelKind,
+  ) => {
     try {
       setSaveError(null);
       await ipc.saveModel(config);
+      if (activateKind && !activeIds[activateKind]) {
+        await ipc.setActiveModel(activateKind, config.id);
+      }
       const [ms, ids] = await Promise.all([ipc.listModels(), ipc.getActiveModelIds()]);
       setModels(ms);
       setActiveIds(ids);
@@ -1760,7 +1994,8 @@ function ModelsSettings() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-notion-text-secondary">
-        Configure models for each role. You can add multiple and activate one per role.
+        Configure models for each role. API models are saved once and can be reused by both
+        Lightweight and Chat.
       </p>
       {saveError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-mono text-xs text-red-700">
@@ -1771,7 +2006,7 @@ function ModelsSettings() {
         <ModelKindSection
           key={kind}
           kind={kind}
-          models={models.filter((m) => m.kind === kind)}
+          models={getModelsForKind(models, kind)}
           activeId={activeIds[kind]}
           onSetActive={(id) => handleSetActive(kind, id)}
           onEdit={setEditingModel}

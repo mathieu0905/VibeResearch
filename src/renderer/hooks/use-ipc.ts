@@ -89,6 +89,18 @@ export interface TaggingStatus {
   completed: number;
   failed: number;
   currentPaperId: string | null;
+  currentPaperTitle?: string | null;
+  stage?:
+    | 'idle'
+    | 'building_prompt'
+    | 'requesting_model'
+    | 'streaming'
+    | 'parsing'
+    | 'saving'
+    | 'fallback'
+    | 'done'
+    | 'error';
+  partialText?: string;
   message: string;
 }
 
@@ -223,6 +235,7 @@ export type ProviderKind = 'anthropic' | 'openai' | 'gemini' | 'custom';
 
 export type ModelKind = 'agent' | 'lightweight' | 'chat';
 export type ModelBackend = 'api' | 'cli';
+export type AgentToolKind = 'claude-code' | 'codex' | 'custom';
 
 export interface ProxyScope {
   pdfDownload: boolean;
@@ -262,13 +275,15 @@ export interface TokenUsageSummary {
 export interface ModelConfig {
   id: string;
   name: string;
-  kind: ModelKind;
   backend: ModelBackend;
   provider?: 'anthropic' | 'openai' | 'gemini' | 'custom';
   model?: string;
   baseURL?: string;
   command?: string;
   envVars?: string;
+  agentTool?: AgentToolKind;
+  configContent?: string;
+  authContent?: string;
   hasApiKey?: boolean;
 }
 
@@ -445,6 +460,7 @@ export const ipc = {
     cwd?: string;
     envVars?: string;
     useProxy?: boolean;
+    homeFiles?: Array<{ relativePath: string; content: string }>;
   }) => invoke<{ sessionId: string; started: boolean }>('cli:run', options),
   killCli: (sessionId: string) => invoke<{ killed: boolean }>('cli:kill', sessionId),
 

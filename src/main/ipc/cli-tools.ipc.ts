@@ -1,19 +1,46 @@
 import { ipcMain, BrowserWindow } from 'electron';
-import { detectAllCliTools, runCliToWindow, getShellPath } from '../services/cli-runner.service';
+import {
+  buildNonInteractiveCliArgs,
+  detectAllCliTools,
+  runCliToWindow,
+  getShellPath,
+  type CliUsageSummary,
+} from '../services/cli-runner.service';
 import { spawnSync } from 'child_process';
 import { getCliTools, saveCliTools, type CliConfig } from '../store/cli-tools-store';
+import { recordTokenUsage } from '../store/token-usage-store';
 import { CliRunOptionsSchema, EnvVarsStringSchema, parseEnvVars, validate } from './validate';
 import { type IpcResult, ok, err } from '@shared';
 
 const activeProcesses = new Map<string, { kill: () => void }>();
+const sessionUsage = new Map<
+  string,
+  { provider: string; model: string; usage?: CliUsageSummary }
+>();
+
+function finalizeSessionUsage(sessionId: string) {
+  const usageState = sessionUsage.get(sessionId);
+  if (usageState?.usage) {
+    recordTokenUsage({
+      timestamp: new Date().toISOString(),
+      provider: usageState.provider,
+      model: usageState.usage.model ?? usageState.model,
+      promptTokens: usageState.usage.promptTokens,
+      completionTokens: usageState.usage.completionTokens,
+      totalTokens: usageState.usage.totalTokens,
+      kind: 'agent',
+    });
+  }
+  sessionUsage.delete(sessionId);
+  activeProcesses.delete(sessionId);
+}
 
 export function setupCliToolsIpc() {
   // ─── CLI Tool Config Persistence ───────────────────────────────────────────
 
   ipcMain.handle('cliTools:list', async (): Promise<IpcResult<unknown>> => {
     try {
-      const result = getCliTools();
-      return ok(result);
+      return ok(getCliTools());
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[cliTools:list] Error:', msg);
@@ -34,13 +61,13 @@ export function setupCliToolsIpc() {
       }
     },
   );
+  });
 
   // ─── CLI Detection & Execution ─────────────────────────────────────────────
 
   ipcMain.handle('cli:detect', async (): Promise<IpcResult<unknown>> => {
     try {
-      const result = await detectAllCliTools();
-      return ok(result);
+      return ok(await detectAllCliTools());
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[cli:detect] Error:', msg);
@@ -48,7 +75,7 @@ export function setupCliToolsIpc() {
     }
   });
 
-  /** Test a CLI tool by running `<command> [extraArgs] -p "ping"` and checking output */
+  /** Test a CLI tool by running a minimal non-interactive prompt and checking output */
   ipcMain.handle(
     'cli:test',
     async (
@@ -56,37 +83,32 @@ export function setupCliToolsIpc() {
       command: string,
       extraArgs?: string,
       envVars?: string,
-    ): Promise<IpcResult<{ output?: string }>> => {
+    ): Promise<IpcResult<{ success: boolean; output?: string; error?: string }>> => {
       try {
-        // Validate command
         if (!command || typeof command !== 'string') {
-          return err('Command is required');
+          return ok({ success: false, error: 'Command is required' });
         }
 
-        // Validate envVars if provided
         if (envVars) {
           const envResult = validate(EnvVarsStringSchema, envVars);
           if (!envResult.success) {
-            return err(`Invalid environment variables: ${envResult.error}`);
+            return ok({ success: false, error: `Invalid environment variables: ${envResult.error}` });
           }
         }
 
         const env: Record<string, string | undefined> = { ...process.env, PATH: getShellPath() };
         delete env.CLAUDECODE;
-        // Inject extra env vars using safe parser
         if (envVars) {
           Object.assign(env, parseEnvVars(envVars));
         }
 
-        // Parse command into binary and args to avoid command injection
         const cmdParts = command.trim().split(/\s+/);
         const binary = cmdParts[0];
         const extraArgsList = extraArgs ? extraArgs.trim().split(/\s+/) : [];
         const args = [
           ...cmdParts.slice(1),
           ...extraArgsList,
-          '-p',
-          'Reply with just the word: pong',
+          ...buildNonInteractiveCliArgs(binary, 'Reply with just the word: pong'),
         ];
 
         const result = spawnSync(binary, args, {
@@ -96,17 +118,17 @@ export function setupCliToolsIpc() {
         });
 
         if (result.error) {
-          return err(result.error.message.slice(0, 300));
+          return ok({ success: false, error: result.error.message.slice(0, 300) });
         }
 
         if (result.status !== 0 && result.stderr) {
-          return err(result.stderr.slice(0, 300));
+          return ok({ success: false, error: result.stderr.slice(0, 300) });
         }
 
-        return ok({ output: result.stdout.trim().slice(0, 300) });
+        return ok({ success: true, output: result.stdout.trim().slice(0, 300) });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        return err(msg.slice(0, 300));
+        return ok({ success: false, error: msg.slice(0, 300) });
       }
     },
   );
@@ -115,10 +137,17 @@ export function setupCliToolsIpc() {
     'cli:run',
     async (
       event,
-      options: unknown,
+      options: {
+        tool: string;
+        args: string[];
+        sessionId: string;
+        cwd?: string;
+        envVars?: string; // space-separated KEY=value pairs
+        useProxy?: boolean;
+        homeFiles?: Array<{ relativePath: string; content: string }>;
+      },
     ): Promise<IpcResult<{ sessionId: string; started: boolean }>> => {
       try {
-        // Validate input
         const validation = validate(CliRunOptionsSchema, options);
         if (!validation.success) {
           return err(`Invalid options: ${validation.error}`);
@@ -128,20 +157,45 @@ export function setupCliToolsIpc() {
         const win = BrowserWindow.fromWebContents(event.sender);
         if (!win) return err('No window found');
 
-        // Kill existing session if any
         const existing = activeProcesses.get(opts.sessionId);
         if (existing) existing.kill();
 
-        // Parse env vars string into object using safe parser
         const parsedEnv = parseEnvVars(opts.envVars || '');
+        const cmdParts = opts.tool.trim().split(/\s+/);
+        const command = cmdParts[0];
+        const commandArgs = [...cmdParts.slice(1), ...(opts.args ?? [])];
 
-        const proc = runCliToWindow(win, opts.tool, opts.args ?? [], {
+        sessionUsage.set(opts.sessionId, { provider: command, model: opts.tool });
+
+        const proc = runCliToWindow(win, command, commandArgs, opts.sessionId, {
           cwd: opts.cwd,
           env: parsedEnv,
           useProxy: opts.useProxy,
+          homeFiles: 'homeFiles' in (options as Record<string, unknown>)
+            ? ((options as { homeFiles?: Array<{ relativePath: string; content: string }> }).homeFiles)
+            : undefined,
+          onUsage: (usage) => {
+            const existingUsage = sessionUsage.get(opts.sessionId);
+            if (!existingUsage) return;
+            sessionUsage.set(opts.sessionId, {
+              ...existingUsage,
+              usage,
+              model: usage.model ?? existingUsage.model,
+            });
+          },
+          onDone: () => {
+            finalizeSessionUsage(opts.sessionId);
+          },
         });
 
-        activeProcesses.set(opts.sessionId, proc);
+        const wrappedProc = {
+          kill: () => {
+            proc.kill();
+            finalizeSessionUsage(opts.sessionId);
+          },
+        };
+
+        activeProcesses.set(opts.sessionId, wrappedProc);
         return ok({ sessionId: opts.sessionId, started: true });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -158,7 +212,6 @@ export function setupCliToolsIpc() {
         const proc = activeProcesses.get(sessionId);
         if (proc) {
           proc.kill();
-          activeProcesses.delete(sessionId);
           return ok({ killed: true });
         }
         return ok({ killed: false });

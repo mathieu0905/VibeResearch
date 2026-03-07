@@ -5,29 +5,92 @@ import { encryptString, decryptString, isEncryptionAvailable } from '../utils/en
 
 export type ModelKind = 'agent' | 'lightweight' | 'chat';
 export type ModelBackend = 'api' | 'cli';
+export type AgentToolKind = 'claude-code' | 'codex' | 'custom';
 
 export interface ModelConfig {
   id: string;
   name: string;
-  kind: ModelKind;
   backend: ModelBackend;
   provider?: 'anthropic' | 'openai' | 'gemini' | 'custom';
   model?: string;
   baseURL?: string;
   command?: string;
   envVars?: string;
+  agentTool?: AgentToolKind;
+  configContent?: string;
+  authContent?: string;
   apiKeyEncrypted?: string;
 }
 
+interface StoredModelConfig extends ModelConfig {
+  kind?: ModelKind;
+}
+
 interface ModelStoreData {
-  models: ModelConfig[];
+  models: StoredModelConfig[];
   activeIds: Record<ModelKind, string | null>;
 }
 
-const DEFAULT_DATA: ModelStoreData = {
-  models: [],
-  activeIds: { agent: null, lightweight: null, chat: null },
-};
+const DEFAULT_AGENT_MODELS: ModelConfig[] = [
+  {
+    id: 'agent-claude-code',
+    name: 'Claude Code',
+    backend: 'cli',
+    command: 'claude',
+    envVars: '',
+    agentTool: 'claude-code',
+    configContent: '',
+    authContent: '',
+  },
+  {
+    id: 'agent-codex',
+    name: 'Codex',
+    backend: 'cli',
+    command: 'codex',
+    envVars: '',
+    agentTool: 'codex',
+    configContent: '',
+    authContent: '',
+  },
+];
+
+function normalizeModel(model: StoredModelConfig): ModelConfig {
+  return {
+    id: model.id,
+    name: model.name,
+    backend: model.backend,
+    provider: model.provider,
+    model: model.model,
+    baseURL: model.baseURL,
+    command: model.command,
+    envVars: model.envVars,
+    apiKeyEncrypted: model.apiKeyEncrypted,
+  };
+}
+
+function withDefaultAgentModels(data: ModelStoreData): ModelStoreData {
+  const models = data.models.map(normalizeModel);
+  let changed = false;
+
+  for (const preset of DEFAULT_AGENT_MODELS) {
+    const exists = models.some(
+      (model) =>
+        model.id === preset.id || (model.backend === 'cli' && model.command === preset.command),
+    );
+    if (!exists) {
+      models.push(preset);
+      changed = true;
+    }
+  }
+
+  const activeIds = { ...data.activeIds };
+  if (!activeIds.agent || !models.some((model) => model.id === activeIds.agent)) {
+    activeIds.agent = DEFAULT_AGENT_MODELS[0].id;
+    changed = true;
+  }
+
+  return changed ? { models, activeIds } : data;
+}
 
 function getStorePath(): string {
   return path.join(getStorageDir(), 'model-configs.json');
@@ -37,10 +100,19 @@ function readStore(): ModelStoreData {
   const storePath = getStorePath();
   try {
     const content = fs.readFileSync(storePath, 'utf-8');
-    const data = JSON.parse(content) as Partial<ModelStoreData>;
-    return { ...DEFAULT_DATA, ...data };
+    const parsed = JSON.parse(content) as ModelStoreData;
+    const normalized = withDefaultAgentModels(parsed);
+    if (normalized !== parsed) {
+      writeStore(normalized);
+    }
+    return normalized;
   } catch {
-    return { ...DEFAULT_DATA };
+    const initial = withDefaultAgentModels({
+      models: [],
+      activeIds: { agent: null, lightweight: null, chat: null },
+    });
+    writeStore(initial);
+    return initial;
   }
 }
 
@@ -85,13 +157,15 @@ export function saveModelConfig(config: ModelConfig & { apiKey?: string }): void
   const updated: ModelConfig = {
     id: config.id,
     name: config.name,
-    kind: config.kind,
     backend: config.backend,
     provider: config.provider,
     model: config.model,
     baseURL: config.baseURL,
     command: config.command,
     envVars: config.envVars,
+    agentTool: config.agentTool,
+    configContent: config.configContent,
+    authContent: config.authContent,
   };
 
   // Encrypt API key if provided
@@ -111,11 +185,6 @@ export function saveModelConfig(config: ModelConfig & { apiKey?: string }): void
     data.models[idx] = updated;
   } else {
     data.models.push(updated);
-  }
-
-  // Auto-activate if this is a new model and no active model for this kind
-  if (isNewModel && !data.activeIds[config.kind]) {
-    data.activeIds[config.kind] = config.id;
   }
 
   writeStore(data);
