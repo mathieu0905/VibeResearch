@@ -284,6 +284,37 @@ export interface TokenUsageSummary {
   lastUpdated: string | null;
 }
 
+export interface AgentConfigFileStatus {
+  label: string;
+  path: string;
+  exists: boolean;
+}
+
+export interface AgentConfigStatus {
+  tool: AgentToolKind;
+  files: AgentConfigFileStatus[];
+  missingRequired: boolean;
+}
+
+export interface AgentConfigContents {
+  tool: AgentToolKind;
+  configContent?: string;
+  authContent?: string;
+}
+
+export interface CliTestDiagnostics {
+  command: string;
+  args: string[];
+  exitCode?: number | null;
+  timedOut?: boolean;
+  stdout?: string;
+  stderr?: string;
+  structuredOutput?: string;
+  stdoutFile?: string;
+  stderrFile?: string;
+  structuredOutputFile?: string;
+}
+
 export interface ModelConfig {
   id: string;
   name: string;
@@ -463,12 +494,28 @@ export const ipc = {
   // CLI tools
   detectCliTools: () => invoke<CliTool[]>('cli:detect'),
   testCli: (command: string, extraArgs?: string, envVars?: string) =>
-    invoke<{ success: boolean; output?: string; error?: string }>(
-      'cli:test',
-      command,
-      extraArgs,
-      envVars,
-    ),
+    invoke<{
+      success: boolean;
+      output?: string;
+      error?: string;
+      diagnostics?: CliTestDiagnostics;
+      logFile?: string;
+    }>('cli:test', command, extraArgs, envVars),
+  testAgentCli: (options: {
+    command: string;
+    extraArgs?: string;
+    envVars?: string;
+    agentTool?: AgentToolKind;
+    configContent?: string;
+    authContent?: string;
+  }) =>
+    invoke<{
+      success: boolean;
+      output?: string;
+      error?: string;
+      diagnostics?: CliTestDiagnostics;
+      logFile?: string;
+    }>('cli:testAgent', options),
   runCli: (options: {
     tool: string;
     args: string[];
@@ -478,6 +525,7 @@ export const ipc = {
     useProxy?: boolean;
     displayLabel?: string;
     homeFiles?: Array<{ relativePath: string; content: string }>;
+    modelId?: string;
   }) => invoke<{ sessionId: string; started: boolean }>('cli:run', options),
   killCli: (sessionId: string) => invoke<{ killed: boolean }>('cli:kill', sessionId),
 
@@ -495,8 +543,18 @@ export const ipc = {
   setActiveModel: (kind: ModelKind, id: string) =>
     invoke<{ success: boolean }>('models:setActive', kind, id),
   testSavedModelConnection: (id: string) =>
-    invoke<{ success: boolean; error?: string }>('models:testSavedConnection', id),
+    invoke<{
+      success: boolean;
+      error?: string;
+      output?: string;
+      diagnostics?: CliTestDiagnostics;
+      logFile?: string;
+    }>('models:testSavedConnection', id),
   getModelApiKey: (id: string) => invoke<string | null>('models:getApiKey', id),
+  getAgentConfigStatus: (tool: AgentToolKind) =>
+    invoke<AgentConfigStatus>('models:getAgentConfigStatus', tool),
+  getAgentConfigContents: (tool: AgentToolKind) =>
+    invoke<AgentConfigContents>('models:getAgentConfigContents', tool),
   testModelConnection: (params: {
     provider: 'anthropic' | 'openai' | 'gemini' | 'custom';
     model: string;

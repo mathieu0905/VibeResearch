@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { ensureStorageDir, getStorageDir } from './storage-path';
 import { encryptString, decryptString, isEncryptionAvailable } from '../utils/encryption';
+import { appendLog } from '../services/app-log.service';
 
 export type ModelKind = 'agent' | 'lightweight' | 'chat';
 export type ModelBackend = 'api' | 'cli';
@@ -64,6 +65,9 @@ function normalizeModel(model: StoredModelConfig): ModelConfig {
     baseURL: model.baseURL,
     command: model.command,
     envVars: model.envVars,
+    agentTool: model.agentTool,
+    configContent: model.configContent,
+    authContent: model.authContent,
     apiKeyEncrypted: model.apiKeyEncrypted,
   };
 }
@@ -145,12 +149,25 @@ export function getActiveModelIds(): Record<ModelKind, string | null> {
 }
 
 export function setActiveModel(kind: ModelKind, id: string): void {
+  appendLog('models', 'setActiveModel:start', { kind, id }, 'models.log');
   const data = readStore();
   data.activeIds[kind] = id;
   writeStore(data);
+  appendLog('models', 'setActiveModel:done', { kind, id }, 'models.log');
 }
 
 export function saveModelConfig(config: ModelConfig & { apiKey?: string }): void {
+  appendLog(
+    'models',
+    'saveModelConfig:start',
+    {
+      id: config.id,
+      backend: config.backend,
+      agentTool: config.agentTool,
+      name: config.name,
+    },
+    'models.log',
+  );
   const data = readStore();
   const idx = data.models.findIndex((m) => m.id === config.id);
 
@@ -188,9 +205,21 @@ export function saveModelConfig(config: ModelConfig & { apiKey?: string }): void
   }
 
   writeStore(data);
+  appendLog(
+    'models',
+    'saveModelConfig:done',
+    {
+      id: config.id,
+      backend: config.backend,
+      agentTool: config.agentTool,
+      isNewModel,
+    },
+    'models.log',
+  );
 }
 
 export function deleteModelConfig(id: string): void {
+  appendLog('models', 'deleteModelConfig', { id }, 'models.log');
   const data = readStore();
   data.models = data.models.filter((m) => m.id !== id);
   // Clear active if deleted

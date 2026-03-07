@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, type ReactNode } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useTabs } from '../../../hooks/use-tabs';
 import {
   ipc,
   onIpc,
   type PaperItem,
+  type PaperAnalysis,
   type ReadingNote,
   type TagInfo,
   type ModelConfig,
@@ -43,6 +44,7 @@ import {
   NotebookPen,
   Github,
   FolderDown,
+  Sparkles,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
@@ -102,6 +104,325 @@ function markdownToSections(md: string): Record<string, string> {
     if (heading) sections[heading] = body;
   }
   return sections;
+}
+
+function isPaperAnalysis(value: unknown): value is PaperAnalysis {
+  if (!value || typeof value !== 'object') return false;
+  const source = value as Record<string, unknown>;
+  return [
+    'summary',
+    'problem',
+    'method',
+    'contributions',
+    'evidence',
+    'limitations',
+    'applications',
+    'questions',
+    'tags',
+  ].some((key) => key in source);
+}
+
+function normalizeAnalysis(value: unknown): PaperAnalysis {
+  const source = value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const toText = (input: unknown) => (typeof input === 'string' ? input : '');
+  const toList = (input: unknown) => {
+    if (Array.isArray(input)) {
+      return input.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean);
+    }
+    if (typeof input === 'string') {
+      return input
+        .split(/\n|,/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  return {
+    summary: toText(source.summary),
+    problem: toText(source.problem),
+    method: toText(source.method),
+    contributions: toList(source.contributions),
+    evidence: toText(source.evidence),
+    limitations: toList(source.limitations),
+    applications: toList(source.applications),
+    questions: toList(source.questions),
+    tags: toList(source.tags),
+  };
+}
+
+function AnalysisList({ title, items }: { title: string; items: string[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-notion-text-secondary">
+        {title}
+      </div>
+      <ul className="space-y-1.5 text-sm text-notion-text">
+        {items.map((item) => (
+          <li key={item} className="flex gap-2">
+            <span className="mt-1 h-1.5 w-1.5 rounded-full bg-notion-text-secondary" />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AnalysisSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-notion-border bg-white p-4 shadow-sm">
+      <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-notion-text-secondary">
+        {title}
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function analysisToDraft(analysis: PaperAnalysis) {
+  return {
+    summary: analysis.summary ?? '',
+    problem: analysis.problem ?? '',
+    method: analysis.method ?? '',
+    evidence: analysis.evidence ?? '',
+    contributions: (analysis.contributions ?? []).join('\n'),
+    limitations: (analysis.limitations ?? []).join('\n'),
+    applications: (analysis.applications ?? []).join('\n'),
+    questions: (analysis.questions ?? []).join('\n'),
+    tags: (analysis.tags ?? []).join(', '),
+  };
+}
+
+function draftToAnalysis(draft: ReturnType<typeof analysisToDraft>): PaperAnalysis {
+  const splitLines = (value: string) =>
+    value
+      .split('\n')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  const splitTags = (value: string) =>
+    value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  return {
+    summary: draft.summary.trim(),
+    problem: draft.problem.trim(),
+    method: draft.method.trim(),
+    evidence: draft.evidence.trim(),
+    contributions: splitLines(draft.contributions),
+    limitations: splitLines(draft.limitations),
+    applications: splitLines(draft.applications),
+    questions: splitLines(draft.questions),
+    tags: splitTags(draft.tags),
+  };
+}
+
+function AnalysisCard({
+  note,
+  onSaved,
+}: {
+  note: ReadingNote;
+  onSaved: (note: ReadingNote) => void;
+}) {
+  const analysis = normalizeAnalysis(note.content);
+  const contributions = analysis.contributions ?? [];
+  const limitations = analysis.limitations ?? [];
+  const applications = analysis.applications ?? [];
+  const questions = analysis.questions ?? [];
+  const tags = analysis.tags ?? [];
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [draft, setDraft] = useState(() => analysisToDraft(analysis));
+
+  useEffect(() => {
+    setDraft(analysisToDraft(analysis));
+  }, [note.id, note.updatedAt]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const next = draftToAnalysis(draft);
+      const updated = await ipc.updateReading(note.id, next as unknown as Record<string, unknown>);
+      onSaved(updated);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-notion-border bg-gradient-to-b from-white to-notion-sidebar/20 shadow-sm">
+      <div className="border-b border-notion-border bg-white/80 px-5 py-4 backdrop-blur-sm">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-notion-text-secondary">
+            AI Analysis
+          </h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setDraft(analysisToDraft(analysis));
+                setEditing((prev) => !prev);
+              }}
+              className="rounded-md border border-notion-border px-2 py-1 text-xs font-medium text-notion-text-secondary hover:bg-notion-sidebar"
+            >
+              {editing ? 'Cancel' : 'Edit'}
+            </button>
+            {editing && (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="rounded-md bg-notion-text px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            )}
+            <div className="text-xs text-notion-text-tertiary">
+              Updated {formatDate(note.updatedAt)}
+            </div>
+          </div>
+        </div>
+        {editing ? (
+          <textarea
+            value={draft.summary}
+            onChange={(e) => setDraft((prev) => ({ ...prev, summary: e.target.value }))}
+            className="min-h-[120px] w-full rounded-xl border border-notion-border bg-white px-3 py-2 text-[15px] leading-7 text-notion-text outline-none"
+          />
+        ) : (
+          analysis.summary && (
+            <p className="max-w-3xl whitespace-pre-wrap text-[15px] leading-7 text-notion-text">
+              {analysis.summary}
+            </p>
+          )
+        )}
+      </div>
+
+      <div className="grid gap-4 p-5 md:grid-cols-2">
+        {(analysis.problem || editing) && (
+          <AnalysisSection title="Problem">
+            {editing ? (
+              <textarea
+                value={draft.problem}
+                onChange={(e) => setDraft((prev) => ({ ...prev, problem: e.target.value }))}
+                className="min-h-[96px] w-full rounded-lg border border-notion-border px-3 py-2 text-sm outline-none"
+              />
+            ) : (
+              <p className="whitespace-pre-wrap text-sm leading-6 text-notion-text">
+                {analysis.problem}
+              </p>
+            )}
+          </AnalysisSection>
+        )}
+        {(analysis.method || editing) && (
+          <AnalysisSection title="Method">
+            {editing ? (
+              <textarea
+                value={draft.method}
+                onChange={(e) => setDraft((prev) => ({ ...prev, method: e.target.value }))}
+                className="min-h-[96px] w-full rounded-lg border border-notion-border px-3 py-2 text-sm outline-none"
+              />
+            ) : (
+              <p className="whitespace-pre-wrap text-sm leading-6 text-notion-text">
+                {analysis.method}
+              </p>
+            )}
+          </AnalysisSection>
+        )}
+        {(analysis.evidence || editing) && (
+          <AnalysisSection title="Evidence">
+            {editing ? (
+              <textarea
+                value={draft.evidence}
+                onChange={(e) => setDraft((prev) => ({ ...prev, evidence: e.target.value }))}
+                className="min-h-[96px] w-full rounded-lg border border-notion-border px-3 py-2 text-sm outline-none"
+              />
+            ) : (
+              <p className="whitespace-pre-wrap text-sm leading-6 text-notion-text">
+                {analysis.evidence}
+              </p>
+            )}
+          </AnalysisSection>
+        )}
+        {(tags.length > 0 || editing) && (
+          <AnalysisSection title="Suggested Tags">
+            {editing ? (
+              <input
+                value={draft.tags}
+                onChange={(e) => setDraft((prev) => ({ ...prev, tags: e.target.value }))}
+                placeholder="comma,separated,tags"
+                className="w-full rounded-lg border border-notion-border px-3 py-2 text-sm outline-none"
+              />
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-700"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+          </AnalysisSection>
+        )}
+        {(contributions.length > 0 || editing) && (
+          <AnalysisSection title="Contributions">
+            {editing ? (
+              <textarea
+                value={draft.contributions}
+                onChange={(e) => setDraft((prev) => ({ ...prev, contributions: e.target.value }))}
+                className="min-h-[120px] w-full rounded-lg border border-notion-border px-3 py-2 text-sm outline-none"
+              />
+            ) : (
+              <AnalysisList title="" items={contributions} />
+            )}
+          </AnalysisSection>
+        )}
+        {(limitations.length > 0 || editing) && (
+          <AnalysisSection title="Limitations">
+            {editing ? (
+              <textarea
+                value={draft.limitations}
+                onChange={(e) => setDraft((prev) => ({ ...prev, limitations: e.target.value }))}
+                className="min-h-[120px] w-full rounded-lg border border-notion-border px-3 py-2 text-sm outline-none"
+              />
+            ) : (
+              <AnalysisList title="" items={limitations} />
+            )}
+          </AnalysisSection>
+        )}
+        {(applications.length > 0 || editing) && (
+          <AnalysisSection title="Applications">
+            {editing ? (
+              <textarea
+                value={draft.applications}
+                onChange={(e) => setDraft((prev) => ({ ...prev, applications: e.target.value }))}
+                className="min-h-[120px] w-full rounded-lg border border-notion-border px-3 py-2 text-sm outline-none"
+              />
+            ) : (
+              <AnalysisList title="" items={applications} />
+            )}
+          </AnalysisSection>
+        )}
+        {(questions.length > 0 || editing) && (
+          <AnalysisSection title="Questions">
+            {editing ? (
+              <textarea
+                value={draft.questions}
+                onChange={(e) => setDraft((prev) => ({ ...prev, questions: e.target.value }))}
+                className="min-h-[120px] w-full rounded-lg border border-notion-border px-3 py-2 text-sm outline-none"
+              />
+            ) : (
+              <AnalysisList title="" items={questions} />
+            )}
+          </AnalysisSection>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ─── StarRating ───────────────────────────────────────────────────────────────
@@ -496,6 +817,10 @@ export function OverviewPage() {
   const [deleting, setDeleting] = useState(false);
   const [paperDir, setPaperDir] = useState<string | null>(null);
   const [activeCli, setActiveCli] = useState<CliConfig | null>(null);
+  const [analysisStreaming, setAnalysisStreaming] = useState(false);
+  const [analysisStreamText, setAnalysisStreamText] = useState('');
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const analysisSessionRef = useRef<string | null>(null);
 
   // Clone repo modal
   const [showCloneModal, setShowCloneModal] = useState(false);
@@ -534,8 +859,42 @@ export function OverviewPage() {
   }, [shortId]);
 
   // Separate notes by type
-  const readingNotes = notes.filter((n) => !n.title.startsWith('Chat:'));
+  const analysisNote = notes.find(
+    (n) => n.title.startsWith('Analysis:') && isPaperAnalysis(n.content),
+  );
+  const readingNotes = notes.filter(
+    (n) => !n.title.startsWith('Chat:') && !n.title.startsWith('Analysis:'),
+  );
   const chatNotes = notes.filter((n) => n.title.startsWith('Chat:'));
+
+  useEffect(() => {
+    const offOutput = onIpc('analysis:output', (_event, payload) => {
+      const data = payload as { sessionId?: string; chunk?: string };
+      if (data.sessionId !== analysisSessionRef.current || !data.chunk) return;
+      setAnalysisStreamText((prev) => prev + data.chunk);
+    });
+
+    const offDone = onIpc('analysis:done', async (_event, payload) => {
+      const data = payload as { sessionId?: string };
+      if (data.sessionId !== analysisSessionRef.current || !paper) return;
+      setAnalysisStreaming(false);
+      const updated = await ipc.listReading(paper.id).catch(() => null);
+      if (updated) setNotes(updated);
+    });
+
+    const offError = onIpc('analysis:error', (_event, payload) => {
+      const data = payload as { sessionId?: string; error?: string };
+      if (data.sessionId !== analysisSessionRef.current) return;
+      setAnalysisStreaming(false);
+      setAnalysisError(data.error ?? 'Analysis failed');
+    });
+
+    return () => {
+      offOutput();
+      offDone();
+      offError();
+    };
+  }, [paper]);
 
   const handleOpenReader = useCallback(() => {
     if (!paper) return;
@@ -611,6 +970,25 @@ export function OverviewPage() {
       alert(err instanceof Error ? err.message : 'Failed to create note');
     }
   }, [paper, notes.length]);
+
+  const handleAnalyzePaper = useCallback(async () => {
+    if (!paper) return;
+    const sessionId = `analysis-${Date.now()}`;
+    analysisSessionRef.current = sessionId;
+    setAnalysisStreaming(true);
+    setAnalysisStreamText('');
+    setAnalysisError(null);
+    try {
+      await ipc.analyzePaper({
+        sessionId,
+        paperId: paper.id,
+        pdfUrl: inferPdfUrl(paper) ?? undefined,
+      });
+    } catch (err) {
+      setAnalysisStreaming(false);
+      setAnalysisError(err instanceof Error ? err.message : 'Analysis failed');
+    }
+  }, [paper]);
 
   const handleDeletePaper = useCallback(async () => {
     if (!paper) return;
@@ -698,6 +1076,18 @@ export function OverviewPage() {
               </button>
             )}
             <button
+              onClick={handleAnalyzePaper}
+              disabled={analysisStreaming}
+              className="inline-flex items-center gap-2 rounded-lg border border-notion-border bg-white px-4 py-2.5 text-sm font-medium text-notion-text shadow-sm transition-all hover:bg-notion-sidebar disabled:opacity-40"
+            >
+              {analysisStreaming ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Sparkles size={16} />
+              )}
+              Analyze
+            </button>
+            <button
               onClick={() => setShowCloneModal(true)}
               disabled={!activeCli}
               className="inline-flex items-center gap-2 rounded-lg border border-notion-border bg-white px-4 py-2.5 text-sm font-medium text-notion-text shadow-sm transition-all hover:bg-notion-sidebar disabled:opacity-40"
@@ -745,6 +1135,35 @@ export function OverviewPage() {
               <p className="text-sm text-notion-text leading-relaxed whitespace-pre-wrap">
                 {paper.abstract}
               </p>
+            </div>
+          )}
+
+          {(analysisNote || analysisStreaming || analysisError) && (
+            <div className="space-y-3">
+              {analysisNote && isPaperAnalysis(analysisNote.content) && (
+                <AnalysisCard
+                  note={analysisNote}
+                  onSaved={(updated) =>
+                    setNotes((prev) => prev.map((n) => (n.id === updated.id ? updated : n)))
+                  }
+                />
+              )}
+              {analysisStreaming && (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-5">
+                  <div className="mb-3 flex items-center gap-2 text-sm font-medium text-blue-700">
+                    <Loader2 size={14} className="animate-spin" />
+                    Analyzing paper...
+                  </div>
+                  <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-blue-100 bg-white/80 p-3 font-mono text-xs leading-5 text-slate-700">
+                    {analysisStreamText || 'Waiting for model output...'}
+                  </pre>
+                </div>
+              )}
+              {analysisError && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {analysisError}
+                </div>
+              )}
             </div>
           )}
 

@@ -22,6 +22,19 @@ export interface CliUsageSummary {
   model?: string;
 }
 
+export interface CliTestDiagnostics {
+  command: string;
+  args: string[];
+  exitCode?: number | null;
+  timedOut?: boolean;
+  stdout?: string;
+  stderr?: string;
+  structuredOutput?: string;
+  stdoutFile?: string;
+  stderrFile?: string;
+  structuredOutputFile?: string;
+}
+
 /** Resolve PATH including common install locations */
 export function getShellPath(): string {
   const base = process.env.PATH ?? '';
@@ -74,6 +87,239 @@ function getCliProvider(command: string): 'codex' | 'claude' | 'unknown' {
   if (command === 'codex') return 'codex';
   if (command === 'claude') return 'claude';
   return 'unknown';
+}
+
+export function classifyCliTestError(command: string, raw: string): string {
+  const message = raw.trim();
+  const lower = message.toLowerCase();
+
+  if (lower.includes('enoent') || lower.includes('not found') || lower.includes('spawn ')) {
+    return `${command} is not installed or not available in PATH.`;
+  }
+
+  if (command === 'codex') {
+    if (lower.includes('login') || lower.includes('auth') || lower.includes('authentication')) {
+      return 'Codex is installed, but login/auth is missing. Please sign in or provide valid Codex auth content.';
+    }
+    if (lower.includes('api key')) {
+      return 'Codex needs a valid API key or auth configuration before it can run.';
+    }
+  }
+
+  if (command === 'claude') {
+    if (lower.includes('login') || lower.includes('auth') || lower.includes('authentication')) {
+      return 'Claude Code is installed, but login/auth is missing. Please sign in or provide valid Claude configuration.';
+    }
+    if (lower.includes('api key')) {
+      return 'Claude Code needs a valid API key or authenticated session before it can run.';
+    }
+    if (lower.includes('timed out')) {
+      return 'Claude Code did not finish the health check in time. This often means login, network, or model response is slow.';
+    }
+  }
+
+  if (lower.includes('timed out')) {
+    return 'The CLI health check timed out. Please verify login, network access, and model responsiveness.';
+  }
+
+  if (
+    lower.includes('network') ||
+    lower.includes('econn') ||
+    lower.includes('socket') ||
+    lower.includes('timeout')
+  ) {
+    return 'The CLI appears installed, but the network request failed. Please verify connectivity or proxy settings.';
+  }
+
+  return message.slice(0, 300);
+}
+
+function parseEnvVarsString(envVars?: string): Record<string, string> {
+  const parsed: Record<string, string> = {};
+  if (!envVars) return parsed;
+
+  for (const pair of envVars.trim().split(/\s+/)) {
+    const eq = pair.indexOf('=');
+    if (eq > 0) parsed[pair.slice(0, eq)] = pair.slice(eq + 1);
+  }
+
+  return parsed;
+}
+
+function createTempHome(
+  homeFiles?: Array<{ relativePath: string; content: string }>,
+): string | null {
+  if (!homeFiles || homeFiles.length === 0) return null;
+
+  const tempHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-agent-home-'));
+  for (const file of homeFiles) {
+    const destination = path.join(tempHomeDir, file.relativePath);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, file.content, 'utf-8');
+  }
+
+  return tempHomeDir;
+}
+
+function cleanupTempHome(tempHomeDir: string | null) {
+  if (!tempHomeDir) return;
+  try {
+    fs.rmSync(tempHomeDir, { recursive: true, force: true });
+  } catch {
+    // ignore cleanup failures
+  }
+}
+
+export async function testCliCommand(options: {
+  command: string;
+  extraArgs?: string;
+  envVars?: string;
+  homeFiles?: Array<{ relativePath: string; content: string }>;
+  timeoutMs?: number;
+}): Promise<{
+  success: boolean;
+  output?: string;
+  error?: string;
+  usage?: CliUsageSummary;
+  diagnostics?: CliTestDiagnostics;
+}> {
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    PATH: getShellPath(),
+    ...parseEnvVarsString(options.envVars),
+  };
+  delete env.CLAUDECODE;
+
+  const cmdParts = options.command.trim().split(/\s+/).filter(Boolean);
+  const binary = cmdParts[0];
+  if (!binary) {
+    return { success: false, error: 'CLI command is empty.' };
+  }
+
+  const extraArgsList = options.extraArgs
+    ? options.extraArgs.trim().split(/\s+/).filter(Boolean)
+    : [];
+  const prompt = 'Reply with just the word: pong';
+  const args = [
+    ...cmdParts.slice(1),
+    ...extraArgsList,
+    ...buildNonInteractiveCliArgs(binary, prompt),
+  ];
+
+  const tempHomeDir = createTempHome(options.homeFiles);
+  if (tempHomeDir) {
+    env.HOME = tempHomeDir;
+    env.USERPROFILE = tempHomeDir;
+  }
+
+  try {
+    return await new Promise<{
+      success: boolean;
+      output?: string;
+      error?: string;
+      usage?: CliUsageSummary;
+      diagnostics?: CliTestDiagnostics;
+    }>((resolve) => {
+      const proc = spawn(binary, args, { env, shell: false });
+      let stdout = '';
+      let stderr = '';
+      let finished = false;
+      const timeoutMs = options.timeoutMs ?? (binary === 'claude' ? 60000 : 20000);
+
+      const timer = setTimeout(() => {
+        if (finished) return;
+        finished = true;
+        try {
+          proc.kill('SIGTERM');
+        } catch {
+          // ignore
+        }
+        cleanupTempHome(tempHomeDir);
+        const parsed = parseStructuredCliOutput(binary, stdout);
+        resolve({
+          success: false,
+          error: `CLI test timed out after ${Math.round(timeoutMs / 1000)}s`,
+          diagnostics: {
+            command: binary,
+            args,
+            timedOut: true,
+            stdout: stdout.trim() || undefined,
+            stderr: stderr.trim() || undefined,
+            structuredOutput: parsed.text.trim() || undefined,
+          },
+        });
+      }, timeoutMs);
+
+      proc.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      proc.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      proc.on('error', (err) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        cleanupTempHome(tempHomeDir);
+        resolve({
+          success: false,
+          error: err.message,
+          diagnostics: {
+            command: binary,
+            args,
+            stdout: stdout.trim() || undefined,
+            stderr: stderr.trim() || undefined,
+          },
+        });
+      });
+
+      proc.on('close', (code) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        cleanupTempHome(tempHomeDir);
+
+        const combined = stdout.trim() || stderr.trim();
+        const parsed = parseStructuredCliOutput(binary, stdout);
+        const diagnostics = {
+          command: binary,
+          args,
+          exitCode: code,
+          stdout: stdout.trim() || undefined,
+          stderr: stderr.trim() || undefined,
+          structuredOutput: parsed.text.trim() || undefined,
+        };
+
+        if (code === 0) {
+          resolve({
+            success: true,
+            output: parsed.text.trim() || combined || `${binary} responded successfully.`,
+            usage: parsed.usage,
+            diagnostics,
+          });
+          return;
+        }
+
+        resolve({
+          success: false,
+          error: combined || `Exited with code ${code}`,
+          diagnostics,
+        });
+      });
+    });
+  } catch (err) {
+    cleanupTempHome(tempHomeDir);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : String(err),
+      diagnostics: {
+        command: binary,
+        args,
+      },
+    };
+  }
 }
 
 export function buildNonInteractiveCliArgs(command: string, prompt: string): string[] {
@@ -283,15 +529,7 @@ export function runCli(
     proxyEnv.all_proxy = proxyUrl;
   }
 
-  let tempHomeDir: string | null = null;
-  if (options.homeFiles && options.homeFiles.length > 0) {
-    tempHomeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'vibe-agent-home-'));
-    for (const file of options.homeFiles) {
-      const destination = path.join(tempHomeDir, file.relativePath);
-      fs.mkdirSync(path.dirname(destination), { recursive: true });
-      fs.writeFileSync(destination, file.content, 'utf-8');
-    }
-  }
+  let tempHomeDir: string | null = createTempHome(options.homeFiles);
 
   const env: Record<string, string | undefined> = {
     ...process.env,
@@ -307,12 +545,7 @@ export function runCli(
   const cwd = options.cwd ?? os.homedir();
 
   const cleanup = () => {
-    if (!tempHomeDir) return;
-    try {
-      fs.rmSync(tempHomeDir, { recursive: true, force: true });
-    } catch {
-      // ignore cleanup failures
-    }
+    cleanupTempHome(tempHomeDir);
     tempHomeDir = null;
   };
 

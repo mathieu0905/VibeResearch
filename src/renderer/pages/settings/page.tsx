@@ -8,6 +8,9 @@ import {
   type ModelKind,
   type ModelBackend,
   type AgentToolKind,
+  type AgentConfigStatus,
+  type AgentConfigContents,
+  type CliTestDiagnostics,
   type ProviderKind,
   type CliConfig,
   type TokenUsageRecord,
@@ -191,7 +194,6 @@ function AddToolModal({ onAdd, onClose }: { onAdd: (t: CliConfig) => void; onClo
   const [command, setCommand] = useState('');
   const [provider, setProvider] = useState<ProviderKind>('anthropic');
   const [envVars, setEnvVars] = useState(PROVIDER_ENV_DEFAULTS['anthropic']);
-
   // ESC to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -333,6 +335,8 @@ function CliToolCard({
     success: boolean;
     error?: string;
     output?: string;
+    diagnostics?: CliTestDiagnostics;
+    logFile?: string;
   } | null>(null);
   const [showEnv, setShowEnv] = useState(false);
 
@@ -901,6 +905,177 @@ function getAgentToolMeta(tool: AgentToolKind) {
   return AGENT_TOOL_OPTIONS.find((option) => option.id === tool) ?? AGENT_TOOL_OPTIONS[2];
 }
 
+function getAgentConfigFieldState(
+  tool: AgentToolKind,
+  status: AgentConfigStatus | null,
+  configContent: string,
+  authContent: string,
+) {
+  if (!status || tool === 'custom')
+    return [] as Array<{ label: string; source: 'app' | 'system' | 'missing'; path: string }>;
+
+  if (tool === 'claude-code') {
+    const file = status.files[0];
+    return [
+      {
+        label: 'Claude settings',
+        source: configContent.trim() ? 'app' : file?.exists ? 'system' : 'missing',
+        path: file?.path ?? '~/.claude/settings.json',
+      },
+    ];
+  }
+
+  const configFile = status.files.find((file) => file.path.endsWith('config.toml'));
+  const authFile = status.files.find((file) => file.path.endsWith('auth.json'));
+  return [
+    {
+      label: 'Codex config',
+      source: configContent.trim() ? 'app' : configFile?.exists ? 'system' : 'missing',
+      path: configFile?.path ?? '~/.codex/config.toml',
+    },
+    {
+      label: 'Codex auth',
+      source: authContent.trim() ? 'app' : authFile?.exists ? 'system' : 'missing',
+      path: authFile?.path ?? '~/.codex/auth.json',
+    },
+  ];
+}
+
+function AgentConfigHint({
+  tool,
+  configContent,
+  authContent,
+}: {
+  tool: AgentToolKind;
+  configContent: string;
+  authContent: string;
+}) {
+  const [status, setStatus] = useState<AgentConfigStatus | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (tool === 'custom') {
+      setStatus(null);
+      return;
+    }
+    ipc.getAgentConfigStatus(tool).then((result) => {
+      if (!cancelled) setStatus(result);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tool]);
+
+  if (tool === 'custom') return null;
+
+  const entries = getAgentConfigFieldState(tool, status, configContent, authContent);
+  if (!status || entries.length === 0) {
+    return (
+      <div className="rounded-lg border border-notion-border bg-notion-sidebar px-3 py-2 text-xs text-notion-text-tertiary">
+        Checking local agent config files…
+      </div>
+    );
+  }
+
+  const missingEntries = entries.filter((entry) => entry.source === 'missing');
+  const usingSystemEntries = entries.filter((entry) => entry.source === 'system');
+  const usingAppEntries = entries.filter((entry) => entry.source === 'app');
+
+  if (missingEntries.length > 0) {
+    return (
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        Missing required agent config: {missingEntries.map((entry) => entry.path).join(' · ')}.
+        Paste it here or add it under your home directory.
+      </div>
+    );
+  }
+
+  if (usingAppEntries.length > 0) {
+    return (
+      <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+        Using app-managed agent config. System files stay as fallback only for any field you leave
+        empty.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+      Auto-reading system config from {usingSystemEntries.map((entry) => entry.path).join(' · ')}.
+    </div>
+  );
+}
+
+function CliDiagnosticsPanel({
+  diagnostics,
+  logFile,
+}: {
+  diagnostics?: CliTestDiagnostics;
+  logFile?: string;
+}) {
+  if (!diagnostics) return null;
+
+  const blocks = [
+    diagnostics.structuredOutput
+      ? { label: 'Structured output', value: diagnostics.structuredOutput }
+      : null,
+    diagnostics.stdout ? { label: 'Raw stdout / JSONL', value: diagnostics.stdout } : null,
+    diagnostics.stderr ? { label: 'Raw stderr', value: diagnostics.stderr } : null,
+  ].filter(Boolean) as Array<{ label: string; value: string }>;
+
+  return (
+    <details className="mt-2 rounded-lg border border-notion-border bg-white/70">
+      <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-notion-text-secondary">
+        Show CLI diagnostics
+      </summary>
+      <div className="space-y-2 border-t border-notion-border px-3 py-3">
+        <div className="text-[11px] text-notion-text-tertiary">
+          <span className="font-medium text-notion-text-secondary">Command:</span>{' '}
+          {diagnostics.command} {diagnostics.args.join(' ')}
+          {diagnostics.timedOut
+            ? ' · timed out'
+            : diagnostics.exitCode !== undefined
+              ? ` · exit ${String(diagnostics.exitCode)}`
+              : ''}
+        </div>
+        {blocks.map((block) => (
+          <div key={block.label}>
+            <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-notion-text-tertiary">
+              {block.label}
+            </div>
+            <pre className="max-h-56 overflow-auto rounded-md bg-notion-sidebar px-3 py-2 text-[11px] leading-5 text-notion-text whitespace-pre-wrap break-words">
+              {block.value}
+            </pre>
+          </div>
+        ))}
+        {logFile && (
+          <div className="text-[11px] text-notion-text-tertiary">
+            <span className="font-medium text-notion-text-secondary">Log file:</span> {logFile}
+          </div>
+        )}
+        {diagnostics.stdoutFile && (
+          <div className="text-[11px] text-notion-text-tertiary">
+            <span className="font-medium text-notion-text-secondary">Stdout file:</span>{' '}
+            {diagnostics.stdoutFile}
+          </div>
+        )}
+        {diagnostics.stderrFile && (
+          <div className="text-[11px] text-notion-text-tertiary">
+            <span className="font-medium text-notion-text-secondary">Stderr file:</span>{' '}
+            {diagnostics.stderrFile}
+          </div>
+        )}
+        {diagnostics.structuredOutputFile && (
+          <div className="text-[11px] text-notion-text-tertiary">
+            <span className="font-medium text-notion-text-secondary">Structured file:</span>{' '}
+            {diagnostics.structuredOutputFile}
+          </div>
+        )}
+      </div>
+    </details>
+  );
+}
+
 function makeModelId() {
   return Math.random().toString(36).slice(2, 10);
 }
@@ -930,6 +1105,7 @@ function AddModelModal({
   const [envVars, setEnvVars] = useState('');
   const [configContent, setConfigContent] = useState('');
   const [authContent, setAuthContent] = useState('');
+  const [systemAgentContents, setSystemAgentContents] = useState<AgentConfigContents | null>(null);
   const [showKey, setShowKey] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -937,6 +1113,8 @@ function AddModelModal({
     success: boolean;
     error?: string;
     output?: string;
+    diagnostics?: CliTestDiagnostics;
+    logFile?: string;
   } | null>(null);
   // ESC to close
   useEffect(() => {
@@ -953,6 +1131,23 @@ function AddModelModal({
     setCommand((prev) => (prev.trim() ? prev : meta.defaultCommand));
     setName((prev) => (prev.trim() ? prev : meta.defaultName));
   }, [agentTool, defaultKind]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (backend !== 'cli' || agentTool === 'custom') {
+      setSystemAgentContents(null);
+      return;
+    }
+    ipc.getAgentConfigContents(agentTool).then((contents) => {
+      if (!cancelled) setSystemAgentContents(contents);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [backend, agentTool]);
+
+  const displayedConfigContent = configContent || systemAgentContents?.configContent || '';
+  const displayedAuthContent = authContent || systemAgentContents?.authContent || '';
 
   const handleAdd = async () => {
     const displayName =
@@ -1006,7 +1201,13 @@ function AddModelModal({
               apiKey: apiKey.trim() || undefined,
               baseURL: baseURL.trim() || undefined,
             })
-          : await ipc.testCli(command.trim(), undefined, envVars.trim() || undefined);
+          : await ipc.testAgentCli({
+              command: command.trim(),
+              envVars: envVars.trim() || undefined,
+              agentTool,
+              configContent: configContent.trim() || undefined,
+              authContent: authContent.trim() || undefined,
+            });
       setTestResult(result);
     } catch (err) {
       setTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
@@ -1214,13 +1415,24 @@ function AddModelModal({
                 </div>
                 {defaultKind === 'agent' && (
                   <>
+                    <AgentConfigHint
+                      tool={agentTool}
+                      configContent={configContent}
+                      authContent={authContent}
+                    />
+                    {!configContent.trim() && !!systemAgentContents?.configContent && (
+                      <div className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+                        Showing config loaded from the system file. It will only be saved into the
+                        app if you edit this field.
+                      </div>
+                    )}
                     <div>
                       <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
                         {getAgentToolMeta(agentTool).configLabel}{' '}
                         <span className="font-normal text-notion-text-tertiary">(optional)</span>
                       </label>
                       <textarea
-                        value={configContent}
+                        value={displayedConfigContent}
                         onChange={(e) => setConfigContent(e.target.value)}
                         rows={6}
                         placeholder={getAgentToolMeta(agentTool).configPlaceholder}
@@ -1234,7 +1446,7 @@ function AddModelModal({
                           <span className="font-normal text-notion-text-tertiary">(optional)</span>
                         </label>
                         <textarea
-                          value={authContent}
+                          value={displayedAuthContent}
                           onChange={(e) => setAuthContent(e.target.value)}
                           rows={5}
                           placeholder={getAgentToolMeta(agentTool).authPlaceholder}
@@ -1249,32 +1461,38 @@ function AddModelModal({
           </div>
 
           {/* Test result */}
-          <AnimatePresence>
-            {testResult && (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
-                transition={{ duration: 0.15 }}
-                className={`mt-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${
-                  testResult.success
-                    ? 'border-green-200 bg-green-50 text-green-700'
-                    : 'border-red-200 bg-red-50 text-red-600'
-                }`}
-              >
-                {testResult.success ? (
-                  <Check size={15} className="mt-px shrink-0 text-green-600" strokeWidth={2.5} />
-                ) : (
-                  <X size={15} className="mt-px shrink-0 text-red-500" strokeWidth={2.5} />
-                )}
-                <span className="leading-snug">
-                  {testResult.success
-                    ? (testResult.output || 'Connection successful!')
-                    : (testResult.error || 'Connection failed')}
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {testResult && (
+            <div>
+              <AnimatePresence>
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.15 }}
+                  className={`mt-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${
+                    testResult.success
+                      ? 'border-green-200 bg-green-50 text-green-700'
+                      : 'border-red-200 bg-red-50 text-red-600'
+                  }`}
+                >
+                  {testResult.success ? (
+                    <Check size={15} className="mt-px shrink-0 text-green-600" strokeWidth={2.5} />
+                  ) : (
+                    <X size={15} className="mt-px shrink-0 text-red-500" strokeWidth={2.5} />
+                  )}
+                  <span className="leading-snug">
+                    {testResult.success
+                      ? (testResult.output || 'Connection successful!')
+                      : (testResult.error || 'Connection failed')}
+                  </span>
+                </motion.div>
+              </AnimatePresence>
+              <CliDiagnosticsPanel
+                diagnostics={testResult.diagnostics}
+                logFile={testResult.logFile}
+              />
+            </div>
+          )}
 
           <div className="mt-5 flex justify-end gap-2">
             <button
@@ -1337,6 +1555,7 @@ function EditModelModal({
   const [envVars, setEnvVars] = useState(model.envVars ?? '');
   const [configContent, setConfigContent] = useState(model.configContent ?? '');
   const [authContent, setAuthContent] = useState(model.authContent ?? '');
+  const [systemAgentContents, setSystemAgentContents] = useState<AgentConfigContents | null>(null);
   const [showKey, setShowKey] = useState(false);
   const [providerOpen, setProviderOpen] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -1344,6 +1563,8 @@ function EditModelModal({
     success: boolean;
     error?: string;
     output?: string;
+    diagnostics?: CliTestDiagnostics;
+    logFile?: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -1358,6 +1579,23 @@ function EditModelModal({
       setLoading(false);
     }
   }, [model.id, backend]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (backend !== 'cli' || agentTool === 'custom') {
+      setSystemAgentContents(null);
+      return;
+    }
+    ipc.getAgentConfigContents(agentTool).then((contents) => {
+      if (!cancelled) setSystemAgentContents(contents);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [backend, agentTool]);
+
+  const displayedConfigContent = configContent || systemAgentContents?.configContent || '';
+  const displayedAuthContent = authContent || systemAgentContents?.authContent || '';
 
   // ESC to close
   useEffect(() => {
@@ -1417,7 +1655,13 @@ function EditModelModal({
               apiKey: apiKey.trim() || undefined,
               baseURL: baseURL.trim() || undefined,
             })
-          : await ipc.testCli(command.trim(), undefined, envVars.trim() || undefined);
+          : await ipc.testAgentCli({
+              command: command.trim(),
+              envVars: envVars.trim() || undefined,
+              agentTool,
+              configContent: configContent.trim() || undefined,
+              authContent: authContent.trim() || undefined,
+            });
       setTestResult(result);
     } catch (err) {
       setTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
@@ -1651,13 +1895,18 @@ function EditModelModal({
                 </div>
                 {model.backend === 'cli' && (
                   <>
+                    <AgentConfigHint
+                      tool={agentTool}
+                      configContent={configContent}
+                      authContent={authContent}
+                    />
                     <div>
                       <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
                         {getAgentToolMeta(agentTool).configLabel}{' '}
                         <span className="font-normal text-notion-text-tertiary">(optional)</span>
                       </label>
                       <textarea
-                        value={configContent}
+                        value={displayedConfigContent}
                         onChange={(e) => setConfigContent(e.target.value)}
                         rows={6}
                         placeholder={getAgentToolMeta(agentTool).configPlaceholder}
@@ -1671,7 +1920,7 @@ function EditModelModal({
                           <span className="font-normal text-notion-text-tertiary">(optional)</span>
                         </label>
                         <textarea
-                          value={authContent}
+                          value={displayedAuthContent}
                           onChange={(e) => setAuthContent(e.target.value)}
                           rows={5}
                           placeholder={getAgentToolMeta(agentTool).authPlaceholder}
@@ -1686,32 +1935,38 @@ function EditModelModal({
           </div>
 
           {/* Test result */}
-          <AnimatePresence>
-            {testResult && (
-              <motion.div
-                initial={{ opacity: 0, y: 4 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 4 }}
-                transition={{ duration: 0.15 }}
-                className={`mt-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${
-                  testResult.success
-                    ? 'border-green-200 bg-green-50 text-green-700'
-                    : 'border-red-200 bg-red-50 text-red-600'
-                }`}
-              >
-                {testResult.success ? (
-                  <Check size={15} className="mt-px shrink-0 text-green-600" strokeWidth={2.5} />
-                ) : (
-                  <X size={15} className="mt-px shrink-0 text-red-500" strokeWidth={2.5} />
-                )}
-                <span className="leading-snug">
-                  {testResult.success
-                    ? (testResult.output || 'Connection successful!')
-                    : (testResult.error || 'Connection failed')}
-                </span>
-              </motion.div>
-            )}
-          </AnimatePresence>
+          {testResult && (
+            <div>
+              <AnimatePresence>
+                <motion.div
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.15 }}
+                  className={`mt-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${
+                    testResult.success
+                      ? 'border-green-200 bg-green-50 text-green-700'
+                      : 'border-red-200 bg-red-50 text-red-600'
+                  }`}
+                >
+                  {testResult.success ? (
+                    <Check size={15} className="mt-px shrink-0 text-green-600" strokeWidth={2.5} />
+                  ) : (
+                    <X size={15} className="mt-px shrink-0 text-red-500" strokeWidth={2.5} />
+                  )}
+                  <span className="leading-snug">
+                    {testResult.success
+                      ? (testResult.output || 'Connection successful!')
+                      : (testResult.error || 'Connection failed')}
+                  </span>
+                </motion.div>
+              </AnimatePresence>
+              <CliDiagnosticsPanel
+                diagnostics={testResult.diagnostics}
+                logFile={testResult.logFile}
+              />
+            </div>
+          )}
 
           <div className="mt-5 flex justify-end gap-2">
             <button
@@ -1768,6 +2023,8 @@ function ModelCard({
     success: boolean;
     error?: string;
     output?: string;
+    diagnostics?: CliTestDiagnostics;
+    logFile?: string;
   } | null>(null);
 
   const subtitle =
@@ -1779,10 +2036,8 @@ function ModelCard({
     setTesting(true);
     setTestResult(null);
     try {
-      const result =
-        model.backend === 'api'
-          ? await ipc.testSavedModelConnection(model.id)
-          : await ipc.testCli(model.command ?? '', undefined, model.envVars || undefined);
+      const result = await ipc.testSavedModelConnection(model.id);
+      console.log('[agent-test-result]', model.id, result);
       setTestResult(result);
     } catch (err) {
       setTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
@@ -1852,32 +2107,46 @@ function ModelCard({
         </div>
       </div>
 
-      <AnimatePresence>
-        {testResult && (
-          <motion.div
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 4 }}
-            transition={{ duration: 0.15 }}
-            className={`mt-3 flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs ${
-              testResult.success
-                ? 'border-green-200 bg-green-50 text-green-700'
-                : 'border-red-200 bg-red-50 text-red-600'
-            }`}
-          >
-            {testResult.success ? (
-              <Check size={13} className="shrink-0 text-green-600" strokeWidth={2.5} />
-            ) : (
-              <X size={13} className="shrink-0 text-red-500" strokeWidth={2.5} />
-            )}
-            <span className="leading-snug">
-              {testResult.success
-                ? (testResult.output || 'Connection successful!')
-                : (testResult.error || 'Connection failed')}
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Test result */}
+      {testResult && (
+        <div>
+          <AnimatePresence>
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 4 }}
+              transition={{ duration: 0.15 }}
+              className={`mt-3 flex items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-xs ${
+                testResult.success
+                  ? 'border-green-200 bg-green-50 text-green-700'
+                  : 'border-red-200 bg-red-50 text-red-600'
+              }`}
+            >
+              {testResult.success ? (
+                <Check size={13} className="shrink-0 text-green-600" strokeWidth={2.5} />
+              ) : (
+                <X size={13} className="shrink-0 text-red-500" strokeWidth={2.5} />
+              )}
+              <span className="leading-snug">
+                {testResult.success
+                  ? (testResult.output || 'Connection successful!')
+                  : (testResult.error || 'Connection failed')}
+              </span>
+            </motion.div>
+          </AnimatePresence>
+          <CliDiagnosticsPanel diagnostics={testResult.diagnostics} logFile={testResult.logFile} />
+          <details className="mt-2 rounded-lg border border-notion-border bg-white/70">
+            <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-notion-text-secondary">
+              Show raw test result
+            </summary>
+            <div className="border-t border-notion-border px-3 py-3">
+              <pre className="max-h-56 overflow-auto rounded-md bg-notion-sidebar px-3 py-2 text-[11px] leading-5 text-notion-text whitespace-pre-wrap break-words">
+                {JSON.stringify(testResult, null, 2)}
+              </pre>
+            </div>
+          </details>
+        </div>
+      )}
     </div>
   );
 }

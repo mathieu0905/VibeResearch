@@ -541,7 +541,7 @@ function CodeTab({ project, onChange }: { project: ProjectItem; onChange: () => 
     const unsubError = onIpc('cli:error', (...args) => {
       const payload = args[1] as { sessionId?: string; data?: string } | undefined;
       if (payload?.sessionId !== agentSessionId.current || !payload.data) return;
-      setAgentError((prev) => (prev ? prev + payload.data : payload.data));
+      setAgentError((prev) => (prev ? prev + payload.data : (payload.data ?? null)));
     });
     const unsubDone = onIpc('cli:done', (...args) => {
       const payload = args[1] as { sessionId?: string; code?: number | null } | undefined;
@@ -596,35 +596,6 @@ function CodeTab({ project, onChange }: { project: ProjectItem; onChange: () => 
       'Do not modify files unless explicitly asked.',
     ].join('\n');
 
-    const homeFiles: Array<{ relativePath: string; content: string }> = [];
-    if (activeAgentModel.agentTool === 'codex') {
-      if (activeAgentModel.configContent) {
-        homeFiles.push({
-          relativePath: '.codex/config.toml',
-          content: activeAgentModel.configContent,
-        });
-      }
-      if (activeAgentModel.authContent) {
-        homeFiles.push({
-          relativePath: '.codex/auth.json',
-          content: activeAgentModel.authContent,
-        });
-      }
-    } else if (activeAgentModel.agentTool === 'claude-code') {
-      if (activeAgentModel.configContent) {
-        homeFiles.push({
-          relativePath: '.claude/settings.json',
-          content: activeAgentModel.configContent,
-        });
-      }
-      if (activeAgentModel.authContent) {
-        homeFiles.push({
-          relativePath: '.claude/auth.json',
-          content: activeAgentModel.authContent,
-        });
-      }
-    }
-
     try {
       await ipc.runCli({
         tool: activeAgentModel.command,
@@ -634,7 +605,7 @@ function CodeTab({ project, onChange }: { project: ProjectItem; onChange: () => 
         envVars: activeAgentModel.envVars,
         useProxy: true,
         displayLabel: activeAgentModel.name,
-        homeFiles: homeFiles.length > 0 ? homeFiles : undefined,
+        modelId: activeAgentModel.id,
       });
     } catch (err) {
       setAgentRunning(false);

@@ -1,6 +1,8 @@
 import type { TagCategory } from '../types/domain';
 
-export const TAGGING_SYSTEM_PROMPT = `You are a research paper tagger. Given a paper's title and abstract, assign tags across three layers:
+export const TAGGING_SYSTEM_PROMPT = `You are a research paper tagger. Your task is to output tags only, not a chat response.
+
+Given a paper's title and abstract/excerpt, assign tags across three layers:
 
 1. **domain** (1-2 tags): Broad research field.
    Common: nlp, cv, rl, robotics, systems, security, multimodal, audio, math, biology, neuroscience, economics
@@ -17,9 +19,20 @@ Rules:
 - Do NOT use generic tags: "research", "paper", "study", "arxiv", "analysis", "preprint"
 - Prefer existing vocabulary from the list below when a close match exists
 - If the paper clearly doesn't fit a layer, use an empty array for that layer
+- Never ask clarifying questions
+- Never explain your reasoning
+- Never output markdown, code fences, prose, or bullets
+- If information is limited, still return the best possible JSON using the title/excerpt
+- If uncertain, prefer short specific tags over broad generic ones
 
 Return ONLY valid JSON (no markdown, no explanation):
-{"domain":["tag1"],"method":["tag1","tag2"],"topic":["tag1","tag2"]}`;
+{"domain":["tag1"],"method":["tag1","tag2"],"topic":["tag1","tag2"]}
+
+Valid example:
+{"domain":["systems"],"method":["program-repair"],"topic":["bug-fixing","software-maintenance"]}
+
+Invalid example:
+Here are some possible tags: ...`;
 
 export function buildTaggingUserPrompt(
   title: string,
@@ -52,6 +65,10 @@ export function buildTaggingUserPrompt(
     parts.push(`\nExisting tag vocabulary (prefer reusing these):\n${vocabLines.join('\n')}`);
   }
 
+  parts.push(
+    'Respond with exactly one JSON object with keys domain, method, topic. No extra text before or after JSON.',
+  );
+
   return parts.join('\n\n');
 }
 
@@ -74,12 +91,43 @@ export function parseTaggingResponse(text: string): CategorizedTagResult | null 
     const parsed = JSON.parse(jsonMatch[0]);
     if (typeof parsed === 'object' && parsed !== null) {
       const result: CategorizedTagResult = { domain: [], method: [], topic: [] };
-      for (const key of ['domain', 'method', 'topic'] as const) {
-        if (Array.isArray(parsed[key])) {
-          result[key] = parsed[key]
-            .map((t: unknown) => String(t).toLowerCase().trim().replace(/\s+/g, '-'))
-            .filter((t: string) => t.length > 0 && t.length < 50);
+
+      const MAX_TAG_LENGTH = 120;
+
+      const canonicalizeTag = (value: string): string => {
+        let normalized = value.toLowerCase().trim();
+        normalized = normalized.replace(/[“”"'`]/g, '');
+        normalized = normalized.replace(/\b(llms|llm)\b/g, 'llm');
+        normalized = normalized.replace(
+          /\s+with\s+static analysis and retrieval-augmented llm[s]?\b/g,
+          '',
+        );
+        normalized = normalized.replace(/\s+with\s+retrieval-augmented llm[s]?\b/g, '');
+        normalized = normalized.replace(/\s+for\s+low-resource programming languages\b/g, '');
+        normalized = normalized.replace(/[^a-z0-9+/\s-]/g, ' ');
+        normalized = normalized.replace(/\s+/g, '-');
+        normalized = normalized.replace(/-+/g, '-');
+        normalized = normalized.replace(/^-|-$/g, '');
+        return normalized;
+      };
+
+      const normalizeTags = (value: unknown): string[] => {
+        if (Array.isArray(value)) {
+          return value
+            .map((t: unknown) => canonicalizeTag(String(t)))
+            .filter((t: string) => t.length > 0 && t.length <= MAX_TAG_LENGTH);
         }
+
+        if (typeof value === 'string') {
+          const normalized = canonicalizeTag(value);
+          return normalized && normalized.length <= MAX_TAG_LENGTH ? [normalized] : [];
+        }
+
+        return [];
+      };
+
+      for (const key of ['domain', 'method', 'topic'] as const) {
+        result[key] = normalizeTags(parsed[key]);
       }
       const total = result.domain.length + result.method.length + result.topic.length;
       if (total > 0) return result;

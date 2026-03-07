@@ -5,6 +5,7 @@ import { setupPapersIpc } from './ipc/papers.ipc';
 import { setupReadingIpc } from './ipc/reading.ipc';
 import { setupIngestIpc } from './ipc/ingest.ipc';
 import { setupProjectsIpc } from './ipc/projects.ipc';
+import { appendLog, getLogFilePath } from './services/app-log.service';
 import { setupProvidersIpc } from './ipc/providers.ipc';
 import { setupCliToolsIpc } from './ipc/cli-tools.ipc';
 import { setupModelsIpc } from './ipc/models.ipc';
@@ -221,6 +222,7 @@ function setupFileIpc() {
 }
 
 app.whenReady().then(async () => {
+  appendLog('app', 'startup', { logFile: getLogFilePath('agent.log') }, 'agent.log');
   // Set macOS Dock icon explicitly (BrowserWindow icon param doesn't work on macOS)
   try {
     if (process.platform === 'darwin' && app.dock) {
