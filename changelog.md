@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-03-07 (session 27)
+
+### fix: Replace Windows build shell script with PowerShell to eliminate WSL dependency
+
+- **Scope**: `scripts/build-release-win.ps1` (new), `package.json`
+- **Problem**: `npm run release:win` on Windows invoked `bash`, which resolved to WSL bash. Machines with WSL 1 (or no WSL) got `WSL 1 is not supported` / `Could not determine Node.js install directory` errors.
+- **Fix**: Rewrote `build-release-win.sh` as `build-release-win.ps1` (pure PowerShell, no Unix tools). Updated `package.json` `release:win` script to `powershell -ExecutionPolicy Bypass -File scripts/build-release-win.ps1`. The old `.sh` file is kept for reference but is no longer invoked on Windows.
+
 ## 2026-03-07 (session 26)
 
 ### fix: Add .gitattributes to enforce LF line endings for shell scripts
