@@ -175,7 +175,7 @@ export class PapersService {
   ): Promise<{ fixed: number; failed: number }> {
     const all = await this.papersRepository.listAll();
 
-    const needsFix = all.filter((p) => {
+    const needsFix = all.filter((p: (typeof all)[number]) => {
       const t = p.title;
       return t.startsWith('http') || t.includes('arxiv.org') || /^\d{4}\.\d{4,5}(v\d+)?$/.test(t);
     });

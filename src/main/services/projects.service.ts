@@ -54,15 +54,15 @@ export class ProjectsService {
 
   async listProjects() {
     const projects = await this.repo.listProjects();
-    const mapped = projects.map((p) => ({
+    const mapped = projects.map((p: (typeof projects)[number]) => ({
       ...p,
-      ideas: p.ideas.map((idea) => ({
+      ideas: p.ideas.map((idea: (typeof p.ideas)[number]) => ({
         ...idea,
         paperIds: JSON.parse(idea.paperIdsJson) as string[],
       })),
     }));
     // Sort: recently accessed first, then by createdAt
-    return mapped.sort((a, b) => {
+    return mapped.sort((a: (typeof mapped)[number], b: (typeof mapped)[number]) => {
       const aTime = a.lastAccessedAt
         ? new Date(a.lastAccessedAt).getTime()
         : new Date(a.createdAt).getTime();
@@ -211,7 +211,7 @@ export class ProjectsService {
     if (input.repoIds && input.repoIds.length > 0) {
       const repoSections: string[] = [];
       for (const repoId of input.repoIds) {
-        const repo = project.repos.find((r) => r.id === repoId);
+        const repo = project.repos.find((r: (typeof project.repos)[number]) => r.id === repoId);
         if (!repo) continue;
         const repoName = repo.repoUrl
           .replace(/\.git$/, '')

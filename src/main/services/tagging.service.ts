@@ -288,7 +288,7 @@ export async function organizePaperTags(paperId: string): Promise<CategorizedTag
 
   // Filter out system tags
   const EXCLUDED = new Set(['arxiv', 'chrome', 'manual', 'pdf']);
-  const tagsToOrganize = existingTags.filter((t) => !EXCLUDED.has(t));
+  const tagsToOrganize = existingTags.filter((t: string) => !EXCLUDED.has(t));
   if (tagsToOrganize.length === 0) return [];
 
   const title = paper.title.replace(/^\[\d{4}\.\d{4,5}\]\s*/, '');
@@ -312,8 +312,8 @@ export async function organizePaperTags(paperId: string): Promise<CategorizedTag
 
       // Also re-add any system tags that were excluded
       const systemTags = existingTags
-        .filter((t) => EXCLUDED.has(t))
-        .map((name) => ({ name, category: 'topic' as TagCategory }));
+        .filter((t: string) => EXCLUDED.has(t))
+        .map((name: string) => ({ name, category: 'topic' as TagCategory }));
 
       await repo.updateTagsWithCategories(paperId, [...allTags, ...systemTags]);
       return allTags;
@@ -323,7 +323,7 @@ export async function organizePaperTags(paperId: string): Promise<CategorizedTag
   }
 
   // Fallback: categorize using known dictionaries
-  const result: CategorizedTag[] = tagsToOrganize.map((name) => {
+  const result: CategorizedTag[] = tagsToOrganize.map((name: string) => {
     if (KNOWN_DOMAINS.has(name)) return { name, category: 'domain' as TagCategory };
     if (KNOWN_METHODS.has(name)) return { name, category: 'method' as TagCategory };
     return { name, category: 'topic' as TagCategory };
