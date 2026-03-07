@@ -109,10 +109,11 @@ async function ensureDatabase() {
   // Push schema on first launch (creates all tables if missing)
   try {
     const { execSync } = await import('child_process');
-    // Try monorepo root path first (dev), then relative paths, then packaged app path
+    // On Windows, the prisma binary is prisma.cmd; on Unix it has no extension
+    const prismaBin = process.platform === 'win32' ? 'prisma.cmd' : 'prisma';
     const candidatePrisma = [
-      path.join(__dirname, '../../node_modules/.bin/prisma'), // dev: dist/main -> node_modules/
-      path.join(process.resourcesPath ?? '', 'node_modules/.bin/prisma'), // packaged app
+      path.join(__dirname, `../../node_modules/.bin/${prismaBin}`), // dev: dist/main -> node_modules/
+      path.join(process.resourcesPath ?? '', `node_modules/.bin/${prismaBin}`), // packaged app
     ];
     const candidateSchema = [
       path.join(__dirname, '../../prisma/schema.prisma'), // dev: dist/main -> prisma/

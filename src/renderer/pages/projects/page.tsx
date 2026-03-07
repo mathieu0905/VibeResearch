@@ -1234,14 +1234,19 @@ export function ProjectsPage() {
     const name = newName.trim();
     if (!name) return;
     setCreating(true);
-    const p = await ipc.createProject({ name, description: newDesc.trim() || undefined });
-    setNewName('');
-    setNewDesc('');
-    setShowForm(false);
-    setCreating(false);
-    await fetchProjects();
-    // Open the new project in a tab
-    openTab(`/projects/${p.id}`);
+    try {
+      const p = await ipc.createProject({ name, description: newDesc.trim() || undefined });
+      setNewName('');
+      setNewDesc('');
+      setShowForm(false);
+      await fetchProjects();
+      // Open the new project in a tab
+      openTab(`/projects/${p.id}`);
+    } catch (e) {
+      console.error('[createProject] failed:', e);
+    } finally {
+      setCreating(false);
+    }
   };
 
   const deleteProject = async (id: string) => {
