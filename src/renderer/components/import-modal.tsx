@@ -1,0 +1,524 @@
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ipc, type ScanResult, type ImportStatus } from '../hooks/use-ipc';
+import { onIpc } from '../hooks/use-ipc';
+import {
+  Download,
+  X,
+  Loader2,
+  Chrome,
+  FileText,
+  Check,
+  AlertCircle,
+  Clock,
+  Upload,
+} from 'lucide-react';
+
+// Animation variants
+const overlayVariants = {
+  hidden: { opacity: 0 },
+  visible: { opacity: 1 },
+  exit: { opacity: 0 },
+};
+
+const modalVariants = {
+  hidden: {
+    opacity: 0,
+    scale: 0.95,
+    y: 20,
+  },
+  visible: {
+    opacity: 1,
+    scale: 1,
+    y: 0,
+    transition: {
+      type: 'spring' as const,
+      stiffness: 300,
+      damping: 25,
+    },
+  },
+  exit: {
+    opacity: 0,
+    scale: 0.95,
+    y: 20,
+    transition: {
+      duration: 0.15,
+    },
+  },
+};
+
+type Tab = 'chrome' | 'local';
+type Step = 'initial' | 'scanning' | 'preview' | 'importing' | 'done';
+
+const DATE_OPTIONS = [
+  { label: 'Last 1 day', value: 1 },
+  { label: 'Last 7 days', value: 7 },
+  { label: 'Last 30 days', value: 30 },
+  { label: 'All time', value: null },
+];
+
+export function ImportModal({
+  onClose,
+  onImported,
+}: {
+  onClose: () => void;
+  onImported: () => void;
+}) {
+  const [tab, setTab] = useState<Tab>('chrome');
+  const [step, setStep] = useState<Step>('initial');
+  const [days, setDays] = useState<number | null>(1);
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [importStatus, setImportStatus] = useState<ImportStatus | null>(null);
+  const [localInput, setLocalInput] = useState('');
+  const [error, setError] = useState('');
+  const [isVisible, setIsVisible] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Handle ESC key to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Trigger entrance animation on mount
+  useEffect(() => {
+    setIsVisible(true);
+  }, []);
+
+  // Handle close with animation
+  const handleClose = useCallback(() => {
+    setIsVisible(false);
+  }, []);
+
+  // Call onClose after exit animation completes
+  const handleAnimationComplete = useCallback(() => {
+    if (!isVisible) {
+      onClose();
+    }
+  }, [isVisible, onClose]);
+
+  // Subscribe to import status updates
+  useEffect(() => {
+    const unsubscribe = onIpc('ingest:status', (_event, status: ImportStatus) => {
+      setImportStatus(status);
+      if (status.phase === 'completed' || status.phase === 'cancelled') {
+        setStep('done');
+        if (status.phase === 'completed' && status.success > 0) {
+          onImported();
+        }
+      }
+    });
+    return unsubscribe;
+  }, [onImported]);
+
+  // Handle Chrome history scan
+  const handleScan = useCallback(async () => {
+    setStep('scanning');
+    setError('');
+    try {
+      const result = await ipc.scanChromeHistory(days);
+      setScanResult(result);
+      setStep('preview');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to scan Chrome history');
+      setStep('initial');
+    }
+  }, [days]);
+
+  // Handle import from scan result
+  const handleImport = useCallback(async () => {
+    if (!scanResult) return;
+    setStep('importing');
+    setError('');
+    try {
+      // Filter to only new papers
+      const newPapers = scanResult.papers.filter((p) => {
+        // Check if this is a new paper by looking at the counts
+        // We need to check against the scan result
+        return true; // Let backend handle the filtering
+      });
+      await ipc.importScannedPapers(newPapers);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import papers');
+      setStep('preview');
+    }
+  }, [scanResult]);
+
+  // Handle cancel import
+  const handleCancel = useCallback(async () => {
+    await ipc.cancelImport();
+  }, []);
+
+  // Handle local PDF input
+  const handleLocalImport = useCallback(async () => {
+    const trimmed = localInput.trim();
+    if (!trimmed) return;
+    setStep('importing');
+    setError('');
+    try {
+      await ipc.downloadPaper(trimmed);
+      onImported();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import paper');
+      setStep('initial');
+    }
+  }, [localInput, onImported, onClose]);
+
+  // Reset state when switching tabs
+  const handleTabChange = useCallback((newTab: Tab) => {
+    setTab(newTab);
+    setStep('initial');
+    setScanResult(null);
+    setError('');
+    setLocalInput('');
+  }, []);
+
+  // Reset to initial state
+  const handleReset = useCallback(() => {
+    setStep('initial');
+    setScanResult(null);
+    setError('');
+  }, []);
+
+  return (
+    <AnimatePresence onExitComplete={handleAnimationComplete}>
+      {isVisible && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          variants={overlayVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          onClick={(e) => e.target === e.currentTarget && handleClose()}
+        >
+          <motion.div
+            ref={modalRef}
+            className="w-full max-w-lg rounded-2xl border border-notion-border bg-white shadow-xl"
+            variants={modalVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-notion-border px-5 py-4">
+              <div className="flex items-center gap-2.5">
+                <motion.div
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50"
+                  initial={{ rotate: -10 }}
+                  animate={{ rotate: 0 }}
+                  transition={{ type: 'spring' as const, stiffness: 300, damping: 20 }}
+                >
+                  <Download size={16} className="text-blue-600" />
+                </motion.div>
+                <h2 className="text-base font-semibold text-notion-text">Import Papers</h2>
+              </div>
+              <motion.button
+                onClick={handleClose}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-notion-text-tertiary hover:bg-notion-sidebar"
+                whileHover={{ scale: 1.1, rotate: 90 }}
+                whileTap={{ scale: 0.9 }}
+              >
+                <X size={16} />
+              </motion.button>
+            </div>
+
+            {/* Tab bar */}
+            {step === 'initial' && (
+              <div className="flex border-b border-notion-border">
+                <button
+                  onClick={() => handleTabChange('chrome')}
+                  className={`flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                    tab === 'chrome'
+                      ? 'border-b-2 border-blue-500 text-notion-text'
+                      : 'text-notion-text-secondary hover:text-notion-text'
+                  }`}
+                >
+                  <Chrome size={16} />
+                  Chrome History
+                </button>
+                <button
+                  onClick={() => handleTabChange('local')}
+                  className={`flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                    tab === 'local'
+                      ? 'border-b-2 border-blue-500 text-notion-text'
+                      : 'text-notion-text-secondary hover:text-notion-text'
+                  }`}
+                >
+                  <FileText size={16} />
+                  Local PDF
+                </button>
+              </div>
+            )}
+
+            {/* Content */}
+            <div className="p-5">
+              {/* Error */}
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600"
+                >
+                  <AlertCircle size={14} />
+                  {error}
+                </motion.div>
+              )}
+
+              {/* Chrome History Tab */}
+              {tab === 'chrome' && (
+                <>
+                  {step === 'initial' && (
+                    <div className="space-y-4">
+                      <p className="text-sm text-notion-text-secondary">
+                        Scan your Chrome browsing history for arXiv papers.
+                      </p>
+                      <div>
+                        <label className="mb-2 block text-xs font-medium text-notion-text-secondary">
+                          Time range
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {DATE_OPTIONS.map((opt) => (
+                            <button
+                              key={opt.label}
+                              onClick={() => setDays(opt.value)}
+                              className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                                days === opt.value
+                                  ? 'bg-blue-50 text-blue-600'
+                                  : 'bg-notion-sidebar text-notion-text-secondary hover:bg-notion-sidebar-hover'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {step === 'scanning' && (
+                    <div className="flex flex-col items-center py-8">
+                      <Loader2 size={24} className="animate-spin text-blue-500" />
+                      <p className="mt-3 text-sm text-notion-text-secondary">
+                        Scanning Chrome history...
+                      </p>
+                    </div>
+                  )}
+
+                  {step === 'preview' && scanResult && (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 rounded-lg bg-blue-50 px-4 py-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100">
+                          <Check size={16} className="text-blue-600" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-notion-text">
+                            Found {scanResult.papers.length} papers
+                          </p>
+                          <p className="text-xs text-notion-text-secondary">
+                            {scanResult.newCount} new, {scanResult.existingCount} already in library
+                          </p>
+                        </div>
+                      </div>
+
+                      {scanResult.newCount > 0 && (
+                        <div className="max-h-48 overflow-y-auto rounded-lg border border-notion-border">
+                          {scanResult.papers.slice(0, 10).map((paper) => (
+                            <div
+                              key={paper.arxivId}
+                              className="border-b border-notion-border px-3 py-2 last:border-b-0"
+                            >
+                              <p className="text-xs text-notion-text-tertiary">{paper.arxivId}</p>
+                              <p className="line-clamp-1 text-sm text-notion-text">{paper.title}</p>
+                            </div>
+                          ))}
+                          {scanResult.papers.length > 10 && (
+                            <div className="px-3 py-2 text-xs text-notion-text-tertiary">
+                              +{scanResult.papers.length - 10} more...
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {step === 'importing' && importStatus && (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <Loader2 size={20} className="animate-spin text-blue-500" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-notion-text">
+                            {importStatus.message}
+                          </p>
+                          <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-notion-sidebar">
+                            <motion.div
+                              className="h-full rounded-full bg-blue-500"
+                              initial={{ width: 0 }}
+                              animate={{
+                                width: `${
+                                  importStatus.total > 0
+                                    ? (importStatus.completed / importStatus.total) * 100
+                                    : 0
+                                }%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {step === 'done' && importStatus && (
+                    <div className="space-y-4">
+                      <div
+                        className={`flex items-center gap-3 rounded-lg px-4 py-3 ${
+                          importStatus.phase === 'cancelled' ? 'bg-yellow-50' : 'bg-green-50'
+                        }`}
+                      >
+                        <div
+                          className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                            importStatus.phase === 'cancelled' ? 'bg-yellow-100' : 'bg-green-100'
+                          }`}
+                        >
+                          {importStatus.phase === 'cancelled' ? (
+                            <Clock size={16} className="text-yellow-600" />
+                          ) : (
+                            <Check size={16} className="text-green-600" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-notion-text">
+                            {importStatus.phase === 'cancelled'
+                              ? 'Import cancelled'
+                              : 'Import complete'}
+                          </p>
+                          <p className="text-xs text-notion-text-secondary">
+                            {importStatus.message}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Local PDF Tab */}
+              {tab === 'local' && (
+                <div className="space-y-4">
+                  <p className="text-sm text-notion-text-secondary">
+                    Import a paper by arXiv ID or URL.
+                  </p>
+                  <div>
+                    <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                      arXiv ID or URL
+                    </label>
+                    <input
+                      value={localInput}
+                      onChange={(e) => setLocalInput(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleLocalImport()}
+                      placeholder="e.g. 2401.12345 or https://arxiv.org/abs/2401.12345"
+                      className="w-full rounded-lg border border-notion-border bg-notion-sidebar px-3 py-2.5 text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      disabled={step === 'importing'}
+                    />
+                  </div>
+                  {step === 'importing' && (
+                    <div className="flex items-center gap-2 text-sm text-notion-text-secondary">
+                      <Loader2 size={14} className="animate-spin" />
+                      Importing paper...
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex justify-end gap-2.5 border-t border-notion-border px-5 py-4">
+              {step === 'initial' && (
+                <>
+                  <button
+                    onClick={handleClose}
+                    className="rounded-lg border border-notion-border px-4 py-2 text-sm font-medium text-notion-text-secondary hover:bg-notion-sidebar"
+                  >
+                    Cancel
+                  </button>
+                  {tab === 'chrome' ? (
+                    <button
+                      onClick={handleScan}
+                      className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white hover:opacity-80"
+                    >
+                      <Clock size={14} />
+                      Scan
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleLocalImport}
+                      disabled={!localInput.trim()}
+                      className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white hover:opacity-80 disabled:opacity-50"
+                    >
+                      <Upload size={14} />
+                      Import
+                    </button>
+                  )}
+                </>
+              )}
+
+              {step === 'preview' && scanResult && (
+                <>
+                  <button
+                    onClick={handleReset}
+                    className="rounded-lg border border-notion-border px-4 py-2 text-sm font-medium text-notion-text-secondary hover:bg-notion-sidebar"
+                  >
+                    Back
+                  </button>
+                  {scanResult.newCount > 0 ? (
+                    <button
+                      onClick={handleImport}
+                      className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white hover:opacity-80"
+                    >
+                      <Download size={14} />
+                      Import {scanResult.newCount} new papers
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      className="rounded-lg bg-notion-text/50 px-4 py-2 text-sm font-medium text-white"
+                    >
+                      No new papers to import
+                    </button>
+                  )}
+                </>
+              )}
+
+              {step === 'importing' && (
+                <>
+                  <button
+                    onClick={handleCancel}
+                    className="rounded-lg border border-red-200 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
+                  >
+                    Cancel Import
+                  </button>
+                </>
+              )}
+
+              {step === 'done' && (
+                <>
+                  <button
+                    onClick={handleClose}
+                    className="rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white hover:opacity-80"
+                  >
+                    Done
+                  </button>
+                </>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "title": "Valid Paper Title",
+    "url": "https://arxiv.org/abs/2501.01234"
+  },
+  {
+    "title": "https://arxiv.org/abs/2502.12345",
+    "url": "https://arxiv.org/abs/2502.12345"
+  },
+  {
+    "title": "arxiv.org/pdf/2503.11111",
+    "url": "https://arxiv.org/pdf/2503.11111"
+  },
+  {
+    "title": "2504.22222",
+    "url": "https://arxiv.org/abs/2504.22222"
+  },
+  {
+    "title": "2505.33333v1",
+    "url": "https://arxiv.org/pdf/2505.33333v1"
+  },
+  {
+    "title": "",
+    "url": "https://arxiv.org/abs/2506.44444"
+  }
+]

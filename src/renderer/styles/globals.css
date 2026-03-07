@@ -1,0 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    @apply font-sans text-notion-text antialiased;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    margin: 0;
+  }
+
+  ::selection {
+    background: rgba(46, 170, 220, 0.2);
+  }
+}
+
+@layer components {
+  /* Notion-style scrollbar */
+  .notion-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .notion-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .notion-scrollbar::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-notion-border;
+  }
+  .notion-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-notion-text-tertiary;
+  }
+}

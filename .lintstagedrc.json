@@ -1,0 +1,7 @@
+{
+  "*.{ts,tsx,js,mjs,cjs,json,md}": ["prettier --write"],
+  "apps/api/src/**/*.{ts,tsx}": ["eslint"],
+  "apps/web/src/**/*.{ts,tsx}": ["eslint"],
+  "packages/**/*.{ts,tsx}": ["eslint"],
+  "tests/**/*.ts": ["eslint"]
+}

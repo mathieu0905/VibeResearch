@@ -1,0 +1,43 @@
+import { z } from 'zod';
+
+export const SourceTypeSchema = z.enum(['chrome', 'manual', 'arxiv']);
+
+export const PaperInputSchema = z.object({
+  title: z.string().min(1),
+  authors: z.array(z.string()).default([]),
+  source: SourceTypeSchema,
+  sourceUrl: z.string().url().optional(),
+  year: z.number().int().min(1900).max(2100).nullable().optional(),
+  abstract: z.string().optional(),
+  pdfUrl: z.string().url().optional(),
+  pdfPath: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+});
+
+export const ReadingNoteTypeSchema = z.enum(['paper', 'code']);
+
+export const ReadingNoteInputSchema = z.object({
+  paperId: z.string().optional(),
+  type: ReadingNoteTypeSchema,
+  title: z.string().min(1),
+  content: z.record(z.any()),
+  version: z.number().int().positive().default(1),
+  repoUrl: z.string().url().optional(),
+  commitHash: z.string().optional(),
+});
+
+export const IdeaInputSchema = z.object({
+  title: z.string().min(1),
+  direction: z.string().min(1),
+  hypothesis: z.string().min(1),
+  validationPath: z.string().min(1),
+  priority: z.enum(['low', 'medium', 'high']),
+  novelty: z.number().min(0).max(1),
+  risks: z.array(z.string()).default([]),
+  basedOnPaperIds: z.array(z.string()).default([]),
+});
+
+export type SourceType = z.infer<typeof SourceTypeSchema>;
+export type PaperInput = z.infer<typeof PaperInputSchema>;
+export type ReadingNoteInput = z.infer<typeof ReadingNoteInputSchema>;
+export type IdeaInput = z.infer<typeof IdeaInputSchema>;

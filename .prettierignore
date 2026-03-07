@@ -1,0 +1,6 @@
+node_modules
+dist
+.next
+*.sqlite
+*.sqlite-journal
+coverage

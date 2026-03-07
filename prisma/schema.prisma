@@ -1,0 +1,184 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Paper {
+  id          String          @id @default(cuid())
+  shortId     String          @unique
+  title       String
+  authorsJson String          @default("[]")
+  source      SourceType
+  sourceUrl   String?
+  year        Int?
+  abstract    String?
+  pdfUrl      String?
+  pdfPath     String?
+  textPath    String?         // Path to local text.txt file (papers/{shortId}/text.txt)
+  rating      Int?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  lastReadAt  DateTime?
+
+  events      SourceEvent[]
+  tags        PaperTag[]
+  readingNotes ReadingNote[]
+  links       PaperCodeLink[]
+
+  @@index([shortId])
+  @@index([title])
+  @@index([year])
+  @@index([source])
+}
+
+model SourceEvent {
+  id         String   @id @default(cuid())
+  paperId     String
+  source      SourceType
+  rawTitle    String?
+  rawUrl      String?
+  importedAt  DateTime @default(now())
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([source])
+  @@index([importedAt])
+}
+
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  papers    PaperTag[]
+
+  @@index([name])
+}
+
+model PaperTag {
+  paperId String
+  tagId   String
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([paperId, tagId])
+  @@index([tagId])
+}
+
+model ReadingNote {
+  id         String          @id @default(cuid())
+  paperId     String?
+  type       ReadingNoteType
+  title      String
+  contentJson String
+  version    Int             @default(1)
+  repoUrl    String?
+  commitHash String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  paper Paper? @relation(fields: [paperId], references: [id], onDelete: SetNull)
+
+  @@index([type])
+  @@index([paperId])
+}
+
+model Project {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  lastAccessedAt  DateTime?
+
+  todos  ProjectTodo[]
+  repos  ProjectRepo[]
+  ideas  ProjectIdea[]
+
+  @@index([name])
+  @@index([lastAccessedAt])
+}
+
+model ProjectTodo {
+  id          String   @id @default(cuid())
+  projectId   String
+  text        String
+  done        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model ProjectRepo {
+  id          String   @id @default(cuid())
+  projectId   String
+  repoUrl     String
+  localPath   String?
+  clonedAt    DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model ProjectIdea {
+  id             String   @id @default(cuid())
+  projectId      String
+  title          String
+  content        String
+  paperIdsJson   String   @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+}
+
+model PaperCodeLink {
+  id         String   @id @default(cuid())
+  paperId    String
+  repoUrl    String
+  commitHash String?
+  confidence Float    @default(0.5)
+  source     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  paper Paper @relation(fields: [paperId], references: [id], onDelete: Cascade)
+
+  @@index([paperId])
+  @@index([repoUrl])
+}
+
+model ProjectConfig {
+  id                 Int      @id
+  projectStoragePath String
+  projectNameZh      String
+  projectNameEn      String
+  settingsJson       String   @default("{}")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+enum SourceType {
+  chrome
+  manual
+  arxiv
+}
+
+enum ReadingNoteType {
+  paper
+  code
+}
