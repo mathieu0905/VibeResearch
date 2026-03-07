@@ -2,6 +2,16 @@
 
 ## 2026-03-07 (session 6)
 
+### Docs: Switch license to CC BY-NC 4.0
+
+- **Scope**: `LICENSE`, `README.md`, `README_CN.md`, `package.json`
+- **Changes**:
+  - Created `LICENSE` file with CC BY-NC 4.0 full text
+  - Updated license badge in both READMEs to CC BY-NC 4.0
+  - Updated license section text in both READMEs
+  - Added `"license": "CC-BY-NC-4.0"` to `package.json`
+- **Rationale**: Non-commercial license to allow open research use while restricting commercial exploitation
+
 ### Docs: Update README with UI screenshot and full feature list
 
 - **Scope**: `README.md`, `README_CN.md`

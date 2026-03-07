@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="https://github.com/Noietch/VibeResearch/stargazers"><img src="https://img.shields.io/github/stars/Noietch/VibeResearch?style=for-the-badge&logo=github" alt="Stars"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/Noietch/VibeResearch?style=for-the-badge" alt="License"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey?style=for-the-badge" alt="License"></a>
   <a href="https://github.com/Noietch/VibeResearch/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge" alt="PRs Welcome"></a>
 </p>
 
@@ -95,7 +95,7 @@ scripts/      # build-main.mjs, build-release.sh
 
 ## 许可证
 
-MIT 许可证 — 详见 [LICENSE](LICENSE)。
+[CC BY-NC 4.0](LICENSE) — 免费用于非商业用途，需注明来源，禁止商业使用。
 
 ---
 
