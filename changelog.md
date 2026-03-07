@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-03-07 (session 28)
+
+### ci: Add build-linux-release job to CI pipeline
+
+- **Scope**: `.github/workflows/ci.yml`
+- **Changes**: Added `build-linux-release` job that runs after `validate` passes. Installs extra system deps (`libfuse2`, `rpm`, `fakeroot`) needed for AppImage packaging, runs `npm run release:linux`, and uploads the resulting `.AppImage` as a GitHub Actions artifact (retained 7 days).
+
 ## 2026-03-07 (session 27)
 
 ### fix: Replace Windows build shell script with PowerShell to eliminate WSL dependency
