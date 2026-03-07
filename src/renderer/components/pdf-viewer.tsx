@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, FileWarning, ArrowLeft, ExternalLink } from 'lucide-react';
+import { RefreshCw, FileWarning, ArrowLeft } from 'lucide-react';
 import { LoadingSpinner } from './loading-spinner';
 
 interface PdfViewerProps {
@@ -97,12 +97,6 @@ export function PdfViewer({ path }: PdfViewerProps) {
     setRetryCount((c) => c + 1);
   };
 
-  const handleOpenExternal = () => {
-    const filePath = path.replace(/^local-file:\/\//, '');
-    // Open in external browser
-    window.open(`file://${filePath}`, '_blank');
-  };
-
   if (loading) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-[#525659]">
@@ -138,41 +132,6 @@ export function PdfViewer({ path }: PdfViewerProps) {
 
   return (
     <div className="relative h-full w-full bg-[#525659]">
-      {/* Toolbar - shown when navigated away or on hover */}
-      <div
-        className={`absolute left-0 right-0 top-0 z-10 flex items-center justify-between bg-[#323639]/95 px-3 py-2 backdrop-blur-sm transition-opacity ${
-          navigatedAway ? 'opacity-100' : 'opacity-0 hover:opacity-100'
-        }`}
-      >
-        <div className="flex items-center gap-2">
-          {navigatedAway && (
-            <button
-              onClick={handleGoBack}
-              className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-medium text-white/90 transition-colors hover:bg-white/20"
-            >
-              <ArrowLeft size={14} />
-              返回 PDF
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleOpenExternal}
-            className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-medium text-white/90 transition-colors hover:bg-white/20"
-            title="在浏览器中打开"
-          >
-            <ExternalLink size={14} />
-          </button>
-          <button
-            onClick={handleRetry}
-            className="inline-flex items-center gap-1.5 rounded-md bg-white/10 px-2.5 py-1.5 text-xs font-medium text-white/90 transition-colors hover:bg-white/20"
-            title="重新加载"
-          >
-            <RefreshCw size={14} />
-          </button>
-        </div>
-      </div>
-
       {/* Navigated away overlay */}
       {navigatedAway && (
         <div className="absolute inset-0 top-10 z-5 flex items-center justify-center bg-[#525659]/95">
