@@ -1,4 +1,20 @@
 # Changelog
+## 2026-03-07 (session 21)
+
+### chore: Upgrade Vercel AI SDK from v4 to v6
+
+- **Scope**: `package.json`, `src/main/services/ai-provider.service.ts`, `src/main/services/agentic-search.service.ts`, `src/main/services/reading.service.ts`
+- **Changes**:
+  1. **Dependencies** — Upgraded `ai` to `^6.0.116`, `@ai-sdk/anthropic` to `^3.0.58`, `@ai-sdk/openai` to `^3.0.41`, `@ai-sdk/google` to `^3.0.43`.
+  2. **`maxTokens` → `maxOutputTokens`** — Renamed in all `generateText`/`streamText` calls (7 occurrences).
+  3. **`LanguageModelV1` → `LanguageModel`** — Updated type imports and return type annotations (3 occurrences).
+  4. **`parameters` → `inputSchema`** — Updated all 4 tool definitions in `AgenticSearchService`.
+  5. **`maxSteps` → `stopWhen: stepCountIs(n)`** — Updated agentic search loop control; imported `stepCountIs` from `ai`.
+  6. **`usage.promptTokens`/`completionTokens` → `usage.inputTokens`/`outputTokens`** — Updated `recordUsage` helper and agentic search usage recording.
+- **Test Design**: All integration tests pass; main process TypeScript type check passes.
+- **Validation**: `npm run precommit:check` — 14 passed, 1 skipped.
+
+
 ## 2026-03-07 (session 20)
 
 ### feat: Add delete functionality for notes and chat history in paper detail page

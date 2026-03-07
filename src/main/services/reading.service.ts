@@ -267,7 +267,7 @@ export class ReadingService {
       model,
       system: systemPrompt,
       messages: formattedMessages,
-      maxTokens: 4096,
+      maxOutputTokens: 4096,
       abortSignal: signal,
     });
 

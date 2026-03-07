@@ -4,7 +4,7 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import {
   generateText,
   streamText,
-  type LanguageModelV1,
+  type LanguageModel,
   type TextPart,
   type ImagePart,
   type FilePart,
@@ -46,7 +46,7 @@ import path from 'path';
  * Record token usage from a generateText result
  */
 function recordUsage(
-  result: { usage?: { promptTokens?: number; completionTokens?: number; totalTokens?: number } },
+  result: { usage?: { inputTokens?: number; outputTokens?: number } },
   provider: string,
   model: string,
   kind: 'agent' | 'lightweight' | 'chat' | 'other' = 'other',
@@ -56,15 +56,15 @@ function recordUsage(
       timestamp: new Date().toISOString(),
       provider,
       model,
-      promptTokens: result.usage.promptTokens ?? 0,
-      completionTokens: result.usage.completionTokens ?? 0,
-      totalTokens: result.usage.totalTokens ?? 0,
+      promptTokens: result.usage.inputTokens ?? 0,
+      completionTokens: result.usage.outputTokens ?? 0,
+      totalTokens: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
       kind,
     });
   }
 }
 
-export function getLanguageModel(config: ProviderConfig & { apiKey?: string }): LanguageModelV1 {
+export function getLanguageModel(config: ProviderConfig & { apiKey?: string }): LanguageModel {
   const { id, apiKey, baseURL, model } = config;
   const proxyFetch = getProxyFetch();
 
@@ -180,7 +180,7 @@ export async function generateWithActiveProvider(
     model,
     system: systemPrompt,
     prompt: userPrompt,
-    maxTokens: 4096,
+    maxOutputTokens: 4096,
     abortSignal: AbortSignal.timeout(120_000),
   });
 
@@ -209,7 +209,7 @@ export async function generateWithFiles(
     model,
     system: systemPrompt,
     messages: [{ role: 'user', content: contentParts }],
-    maxTokens: 4096,
+    maxOutputTokens: 4096,
   });
 
   recordUsage(result, config.id, config.model, 'other');
@@ -239,7 +239,7 @@ export async function generateWithProvider(
       model,
       system: systemPrompt,
       messages: [{ role: 'user', content: contentParts }],
-      maxTokens: 4096,
+      maxOutputTokens: 4096,
     });
     recordUsage(result, config.id, config.model, 'other');
     return result.text;
@@ -249,7 +249,7 @@ export async function generateWithProvider(
     model,
     system: systemPrompt,
     prompt: userPrompt,
-    maxTokens: 4096,
+    maxOutputTokens: 4096,
   });
 
   recordUsage(result, config.id, config.model, 'other');
@@ -266,7 +266,7 @@ async function generateWithFallback(systemPrompt: string, userPrompt: string): P
       model,
       system: systemPrompt,
       prompt: userPrompt,
-      maxTokens: 4096,
+      maxOutputTokens: 4096,
     });
     recordUsage(result, 'anthropic', modelName, 'other');
     return result.text;
@@ -277,7 +277,7 @@ async function generateWithFallback(systemPrompt: string, userPrompt: string): P
 
 export function getLanguageModelFromConfig(
   config: ModelConfig & { apiKey?: string },
-): LanguageModelV1 {
+): LanguageModel {
   const { provider, model, baseURL, apiKey } = config;
   const proxyFetch = getProxyFetch();
 
@@ -401,7 +401,7 @@ export async function generateWithModelKind(
           model,
           system: systemPrompt,
           prompt: userPrompt,
-          maxTokens: kind === 'lightweight' ? 1024 : 4096,
+          maxOutputTokens: kind === 'lightweight' ? 1024 : 4096,
           abortSignal: AbortSignal.timeout(120_000),
         });
         recordUsage(
@@ -448,7 +448,7 @@ export async function testApiConnection(params: {
   }
 
   try {
-    let languageModel: LanguageModelV1;
+    let languageModel: LanguageModel;
 
     switch (provider) {
       case 'anthropic': {
@@ -498,7 +498,7 @@ export async function testApiConnection(params: {
     const result = await generateText({
       model: languageModel,
       prompt: 'Say "ok" and nothing else.',
-      maxTokens: 5,
+      maxOutputTokens: 5,
     });
 
     // Record test usage

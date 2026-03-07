@@ -1,5 +1,5 @@
 import { PapersRepository } from '@db';
-import { generateText, tool } from 'ai';
+import { generateText, tool, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { getLanguageModelFromConfig } from './ai-provider.service';
 import { getActiveModel } from '../store/model-config-store';
@@ -95,7 +95,7 @@ export class AgenticSearchService {
     const searchTools = {
       searchByTitle: tool({
         description: 'Search papers by title keywords. Use for precise title matching.',
-        parameters: z.object({
+        inputSchema: z.object({
           keywords: z.array(z.string()).describe('Keywords to search in paper titles'),
         }),
         execute: async ({ keywords }: { keywords: string[] }) => {
@@ -126,7 +126,7 @@ export class AgenticSearchService {
 
       searchByTag: tool({
         description: 'Search papers by tag/topic. Use when looking for papers on a specific topic.',
-        parameters: z.object({
+        inputSchema: z.object({
           tags: z.array(z.string()).describe('Tags to search for'),
         }),
         execute: async ({ tags }: { tags: string[] }) => {
@@ -158,7 +158,7 @@ export class AgenticSearchService {
       searchByText: tool({
         description:
           'Broad search across title, tags, and abstract. Use for comprehensive search when other methods yield few results.',
-        parameters: z.object({
+        inputSchema: z.object({
           query: z.string().describe('Search query to match against title, tags, or abstract'),
         }),
         execute: async ({ query }: { query: string }) => {
@@ -199,7 +199,7 @@ export class AgenticSearchService {
 
       listAllTags: tool({
         description: 'List all available tags in the database. Use to discover what topics exist.',
-        parameters: z.object({}),
+        inputSchema: z.object({}),
         execute: async () => {
           const tags = await this.papersRepository.listAllTags();
           return {
@@ -218,7 +218,7 @@ export class AgenticSearchService {
         system: SYSTEM_PROMPT,
         prompt: query,
         tools: searchTools,
-        maxSteps: 8,
+        stopWhen: stepCountIs(8),
         onStepFinish: ({ text }) => {
           if (text) {
             this.emitStep(steps, {
@@ -234,9 +234,9 @@ export class AgenticSearchService {
           timestamp: new Date().toISOString(),
           provider: configWithKey.provider ?? 'unknown',
           model: configWithKey.model ?? 'unknown',
-          promptTokens: result.usage.promptTokens ?? 0,
-          completionTokens: result.usage.completionTokens ?? 0,
-          totalTokens: result.usage.totalTokens ?? 0,
+          promptTokens: result.usage.inputTokens ?? 0,
+          completionTokens: result.usage.outputTokens ?? 0,
+          totalTokens: (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0),
           kind: 'lightweight',
         });
       }
