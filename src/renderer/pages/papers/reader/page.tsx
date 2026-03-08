@@ -365,6 +365,8 @@ export function ReaderPage() {
   const [chatInput, setChatInput] = useState('');
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const skipAutoScrollRef = useRef(false);
+  const chatContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledUpRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [paperDir, setPaperDir] = useState<string | null>(null);
   const [chatModel, setChatModel] = useState<ModelConfig | null>(null);
@@ -519,13 +521,39 @@ export function ReaderPage() {
         .catch(() => undefined);
     }
   }, [paper, chatJobList]);
+
+  // Auto-scroll to bottom only if user hasn't scrolled up
   useEffect(() => {
     if (skipAutoScrollRef.current) {
       skipAutoScrollRef.current = false;
       return;
     }
+    if (userScrolledUpRef.current) return; // User scrolled up, don't auto-scroll
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent, aiStatus]);
+
+  // Detect user scroll to pause auto-scroll
+  useEffect(() => {
+    const container = chatContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
+      userScrolledUpRef.current = !isAtBottom;
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Reset scroll lock when starting new message
+  useEffect(() => {
+    if (chatRunning) {
+      userScrolledUpRef.current = false;
+    }
+  }, [chatRunning]);
+
   const handleNewChat = useCallback(async () => {
     if (!paper) return;
     setMessages([]);
@@ -898,7 +926,10 @@ export function ReaderPage() {
             </div>
 
             {/* Messages */}
-            <div className="notion-scrollbar flex-1 overflow-y-auto px-4 py-4 space-y-3">
+            <div
+              ref={chatContainerRef}
+              className="notion-scrollbar flex-1 overflow-y-auto px-4 py-4 space-y-3"
+            >
               {messages.length === 0 &&
                 !streamingContent &&
                 aiStatus === 'idle' &&
