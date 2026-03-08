@@ -2,6 +2,17 @@
 
 ## 2026-03-08
 
+### feat: Add edit and delete functionality for individual chat messages
+
+- **Scope**: `src/renderer/pages/papers/reader/page.tsx`
+- **Problem**: Chat messages could not be edited or deleted after being sent. Users had no way to correct mistakes or remove unwanted messages.
+- **Changes**:
+  - Modified `ChatBubble` component to show edit/delete buttons on hover
+  - Added edit mode with textarea for editing message content
+  - Added confirmation dialog for delete action
+  - Edit/delete actions persist changes to database via `reading:saveChat`
+  - Deleting a message updates the local state and saves to DB
+
 ### feat: Add delete functionality for chat sessions
 
 - **Scope**: `src/main/ipc/reading.ipc.ts`, `src/renderer/pages/papers/reader/page.tsx`

@@ -654,10 +654,92 @@ function inferPdfUrl(paper: PaperItem): string | null {
 
 // ─── Chat bubble ─────────────────────────────────────────────────────────────
 
-function ChatBubble({ msg }: { msg: ChatMessage }) {
+interface ChatBubbleProps {
+  msg: ChatMessage;
+  index: number;
+  onEdit: (index: number, newContent: string) => void;
+  onDelete: (index: number) => void;
+}
+
+function ChatBubble({ msg, index, onEdit, onDelete }: ChatBubbleProps) {
   const isUser = msg.role === 'user';
+  const [isHovered, setIsHovered] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(msg.content);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus textarea when entering edit mode
+  useEffect(() => {
+    if (isEditing && textareaRef.current) {
+      textareaRef.current.focus();
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+    }
+  }, [isEditing]);
+
+  const handleSaveEdit = () => {
+    if (editContent.trim() && editContent !== msg.content) {
+      onEdit(index, editContent.trim());
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancelEdit = () => {
+    setEditContent(msg.content);
+    setIsEditing(false);
+  };
+
+  const handleConfirmDelete = () => {
+    onDelete(index);
+    setShowDeleteConfirm(false);
+  };
+
   return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+    <div
+      className={`group flex items-start gap-1 ${isUser ? 'justify-end' : 'justify-start'}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {/* Action buttons - show on hover (left side for user, right side for AI) */}
+      {!isUser && isHovered && !isEditing && !showDeleteConfirm && (
+        <div className="flex gap-0.5 self-start pt-1">
+          <button
+            onClick={() => setIsEditing(true)}
+            className="rounded p-0.5 text-notion-text-tertiary hover:bg-notion-sidebar hover:text-notion-text-secondary"
+            title="Edit message"
+          >
+            <FilePenLine size={12} />
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="rounded p-0.5 text-notion-text-tertiary hover:bg-red-50 hover:text-red-500"
+            title="Delete message"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {showDeleteConfirm && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-white p-2 shadow-lg self-start">
+          <span className="text-xs text-notion-text-secondary">Delete?</span>
+          <button
+            onClick={handleConfirmDelete}
+            className="rounded bg-red-500 px-2 py-0.5 text-xs text-white hover:bg-red-600"
+          >
+            Delete
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(false)}
+            className="rounded bg-notion-sidebar px-2 py-0.5 text-xs text-notion-text-secondary hover:bg-notion-border"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       <div
         className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed break-words ${
           isUser
@@ -665,7 +747,42 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
             : 'rounded-bl-sm bg-notion-sidebar text-notion-text'
         }`}
       >
-        {isUser ? (
+        {isEditing ? (
+          <div className="flex flex-col gap-2">
+            <textarea
+              ref={textareaRef}
+              value={editContent}
+              onChange={(e) => {
+                setEditContent(e.target.value);
+                e.target.style.height = 'auto';
+                e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  handleSaveEdit();
+                }
+                if (e.key === 'Escape') {
+                  handleCancelEdit();
+                }
+              }}
+              className="min-h-[60px] w-full resize-none rounded border border-notion-border bg-white px-2 py-1 text-notion-text focus:outline-none focus:ring-2 focus:ring-blue-300"
+            />
+            <div className="flex justify-end gap-1">
+              <button
+                onClick={handleCancelEdit}
+                className="rounded px-2 py-0.5 text-xs text-notion-text-tertiary hover:bg-white/20"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                className="rounded bg-white/20 px-2 py-0.5 text-xs hover:bg-white/30"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        ) : isUser ? (
           <div className="whitespace-pre-wrap">{msg.content}</div>
         ) : (
           <MarkdownContent
@@ -674,6 +791,26 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
           />
         )}
       </div>
+
+      {/* Action buttons - show on hover (right side for user) */}
+      {isUser && isHovered && !isEditing && !showDeleteConfirm && (
+        <div className="flex gap-0.5 self-start pt-1">
+          <button
+            onClick={() => setIsEditing(true)}
+            className="rounded p-0.5 text-notion-text-tertiary hover:bg-notion-sidebar hover:text-notion-text-secondary"
+            title="Edit message"
+          >
+            <FilePenLine size={12} />
+          </button>
+          <button
+            onClick={() => setShowDeleteConfirm(true)}
+            className="rounded p-0.5 text-notion-text-tertiary hover:bg-red-50 hover:text-red-500"
+            title="Delete message"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -709,6 +846,7 @@ export function ReaderPage() {
   const [aiStatus, setAiStatus] = useState<AiStatus>('idle');
   const chatSessionId = useRef(`reader-chat-${Date.now()}`);
   const chatBottomRef = useRef<HTMLDivElement>(null);
+  const skipAutoScrollRef = useRef(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [paperDir, setPaperDir] = useState<string | null>(null);
   const [chatModel, setChatModel] = useState<ModelConfig | null>(null);
@@ -899,11 +1037,13 @@ export function ReaderPage() {
       offDone();
     };
   }, [paper]);
-
   useEffect(() => {
+    if (skipAutoScrollRef.current) {
+      skipAutoScrollRef.current = false;
+      return;
+    }
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent, aiStatus]);
-
   const handleNewChat = useCallback(async () => {
     if (!paper) return;
     setMessages([]);
@@ -951,6 +1091,47 @@ export function ReaderPage() {
       }
     },
     [paper, chatNotes, currentChatId],
+  );
+
+  const handleEditMessage = useCallback(
+    async (index: number, newContent: string) => {
+      if (!paper) return;
+      skipAutoScrollRef.current = true;
+      const updatedMessages = [...messages];
+      updatedMessages[index] = { ...updatedMessages[index], content: newContent };
+      setMessages(updatedMessages);
+      // Save to database
+      if (currentChatId) {
+        await ipc.saveChat({ paperId: paper.id, noteId: currentChatId, messages: updatedMessages });
+      }
+    },
+    [paper, messages, currentChatId],
+  );
+
+  const handleDeleteMessage = useCallback(
+    async (index: number) => {
+      if (!paper) return;
+      skipAutoScrollRef.current = true;
+      const updatedMessages = messages.filter((_, i) => i !== index);
+      setMessages(updatedMessages);
+      // Save to database
+      if (currentChatId) {
+        if (updatedMessages.length === 0) {
+          // If no messages left, delete the chat session
+          await ipc.deleteReading(currentChatId);
+          setChatNotes((prev) => prev.filter((c) => c.id !== currentChatId));
+          setCurrentChatId(null);
+          currentChatIdRef.current = null;
+        } else {
+          await ipc.saveChat({
+            paperId: paper.id,
+            noteId: currentChatId,
+            messages: updatedMessages,
+          });
+        }
+      }
+    },
+    [paper, messages, currentChatId],
   );
 
   const handleGenerateNotes = useCallback(async () => {
@@ -1281,7 +1462,9 @@ export function ReaderPage() {
                     <div
                       key={chat.id}
                       className={`group flex items-center gap-1 px-1 py-1 text-sm hover:bg-notion-sidebar ${
-                        chat.id === currentChatId ? 'bg-notion-sidebar text-blue-600' : 'text-notion-text'
+                        chat.id === currentChatId
+                          ? 'bg-notion-sidebar text-blue-600'
+                          : 'text-notion-text'
                       }`}
                     >
                       <button
@@ -1406,7 +1589,13 @@ export function ReaderPage() {
                   </div>
                 ))}
               {messages.map((msg, i) => (
-                <ChatBubble key={i} msg={msg} />
+                <ChatBubble
+                  key={i}
+                  msg={msg}
+                  index={i}
+                  onEdit={handleEditMessage}
+                  onDelete={handleDeleteMessage}
+                />
               ))}
               {/* AI Status Indicator */}
               {aiStatus !== 'idle' && !streamingContent && (
