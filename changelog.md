@@ -2,6 +2,17 @@
 
 ## 2026-03-08
 
+### chore: Remove npm lockfile from repository
+
+**Scope**: `.gitignore`, `package-lock.json`
+
+**Changes**:
+
+- Removed tracked `package-lock.json` from the repository
+- Added `package-lock.json` to `.gitignore` so local npm activity no longer dirties the worktree
+
+**Motivation**: Keep the branch clean and avoid noisy lockfile churn for this repo's current workflow.
+
 ### fix: Restore Agent Settings shared exports and priority controls
 
 **Scope**: `src/shared/types/agent-todo.ts`, `src/renderer/components/agent-todo/PriorityBar.tsx`, `src/main/services/local-semantic.service.ts`
