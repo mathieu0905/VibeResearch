@@ -1,6 +1,17 @@
 # Changelog
 ## 2026-03-08
 
+### refactor: Improve sidebar collapse interaction
+
+- **Scope**: `src/renderer/components/app-shell.tsx`
+- **Changes**:
+  - Removed collapse button - now uses click-based interaction
+  - Click on collapsed sidebar → expands
+  - Click on main content area → collapses sidebar
+  - Simplified animations using CSS transitions (faster, smoother)
+  - Nav links in collapsed state navigate directly without expanding sidebar
+- **Result**: More intuitive interaction, smoother animations
+
 ### feat: Add sidebar collapse functionality
 
 - **Scope**: `src/renderer/components/app-shell.tsx`

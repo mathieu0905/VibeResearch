@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import {
   Search,
   FileText,
@@ -10,8 +10,6 @@ import {
   File,
   Folder,
   LayoutDashboard,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
 import { useTabs } from '../hooks/use-tabs';
 import { ipc, PaperItem, ProjectItem } from '../hooks/use-ipc';
@@ -50,12 +48,22 @@ export function AppShell({
     return stored === 'true';
   });
 
-  const toggleSidebar = () => {
-    setIsCollapsed((prev) => {
-      const newValue = !prev;
-      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(newValue));
-      return newValue;
-    });
+  const sidebarRef = useRef<HTMLElement>(null);
+
+  // Click on sidebar to expand
+  const handleSidebarClick = () => {
+    if (isCollapsed) {
+      setIsCollapsed(false);
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'false');
+    }
+  };
+
+  // Click on main content to collapse
+  const handleMainClick = () => {
+    if (!isCollapsed) {
+      setIsCollapsed(true);
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'true');
+    }
   };
 
   useEffect(() => {
@@ -99,8 +107,10 @@ export function AppShell({
     <div className="flex h-screen w-screen overflow-hidden">
       {/* Sidebar */}
       <aside
-        className={`notion-scrollbar flex flex-shrink-0 flex-col border-r border-notion-border bg-notion-sidebar overflow-y-auto transition-all duration-200 ${
-          isCollapsed ? 'w-14' : 'w-60'
+        ref={sidebarRef}
+        onClick={handleSidebarClick}
+        className={`notion-scrollbar flex flex-shrink-0 flex-col border-r border-notion-border bg-notion-sidebar overflow-y-auto transition-[width] duration-150 ease-out ${
+          isCollapsed ? 'w-14 cursor-pointer' : 'w-60'
         }`}
       >
         {/* macOS traffic light spacer */}
@@ -113,7 +123,7 @@ export function AppShell({
           className="flex items-center gap-2 px-2 py-2"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
-          <div className="flex h-7 w-7 items-center justify-center">
+          <div className="flex h-7 w-7 items-center justify-center flex-shrink-0">
             <svg
               width="24"
               height="24"
@@ -145,19 +155,13 @@ export function AppShell({
               />
             </svg>
           </div>
-          <AnimatePresence>
-            {!isCollapsed && (
-              <motion.span
-                initial={{ opacity: 0, width: 0 }}
-                animate={{ opacity: 1, width: 'auto' }}
-                exit={{ opacity: 0, width: 0 }}
-                transition={{ duration: 0.15 }}
-                className="text-sm font-semibold text-notion-text whitespace-nowrap overflow-hidden"
-              >
-                Vibe Research
-              </motion.span>
-            )}
-          </AnimatePresence>
+          <span
+            className={`text-sm font-semibold text-notion-text whitespace-nowrap transition-opacity duration-150 ${
+              isCollapsed ? 'opacity-0 w-0 overflow-hidden' : 'opacity-100'
+            }`}
+          >
+            Vibe Research
+          </span>
         </div>
 
         {/* Navigation */}
@@ -173,6 +177,12 @@ export function AppShell({
                   isCollapsed ? 'justify-center' : ''
                 }`}
                 title={isCollapsed ? item.label : undefined}
+                onClick={(e) => {
+                  // Don't expand sidebar when clicking nav links
+                  if (isCollapsed) {
+                    e.stopPropagation();
+                  }
+                }}
               >
                 {isActive && (
                   <motion.div
@@ -190,23 +200,19 @@ export function AppShell({
                       : 'text-notion-text-tertiary group-hover:text-notion-text-secondary'
                   }`}
                 />
-                <AnimatePresence>
-                  {!isCollapsed && (
-                    <motion.span
-                      initial={{ opacity: 0, width: 0 }}
-                      animate={{ opacity: 1, width: 'auto' }}
-                      exit={{ opacity: 0, width: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className={`relative z-10 whitespace-nowrap overflow-hidden ${
-                        isActive
-                          ? 'font-medium text-notion-text'
-                          : 'text-notion-text-secondary group-hover:text-notion-text'
-                      }`}
-                    >
-                      {item.label}
-                    </motion.span>
-                  )}
-                </AnimatePresence>
+                <span
+                  className={`relative z-10 whitespace-nowrap transition-opacity duration-150 ${
+                    isCollapsed
+                      ? 'opacity-0 w-0 overflow-hidden'
+                      : 'opacity-100'
+                  } ${
+                    isActive
+                      ? 'font-medium text-notion-text'
+                      : 'text-notion-text-secondary group-hover:text-notion-text'
+                  }`}
+                >
+                  {item.label}
+                </span>
               </Link>
             );
           })}
@@ -214,13 +220,7 @@ export function AppShell({
 
         {/* Recent Items - hidden when collapsed */}
         {!isCollapsed && recentItems.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="mt-4 px-2"
-          >
+          <div className="mt-4 px-2">
             <div className="mb-1.5 px-2 text-[11px] font-medium uppercase tracking-wide text-notion-text-tertiary">
               Recent
             </div>
@@ -266,7 +266,7 @@ export function AppShell({
                 );
               })}
             </div>
-          </motion.div>
+          </div>
         )}
 
         {/* Bottom section */}
@@ -277,6 +277,12 @@ export function AppShell({
               isCollapsed ? 'justify-center' : ''
             }`}
             title={isCollapsed ? 'Settings' : undefined}
+            onClick={(e) => {
+              // Don't expand sidebar when clicking settings
+              if (isCollapsed) {
+                e.stopPropagation();
+              }
+            }}
           >
             {pathname === '/settings' && (
               <motion.div
@@ -294,55 +300,25 @@ export function AppShell({
                   : 'text-notion-text-tertiary group-hover:text-notion-text-secondary'
               }`}
             />
-            <AnimatePresence>
-              {!isCollapsed && (
-                <motion.span
-                  initial={{ opacity: 0, width: 0 }}
-                  animate={{ opacity: 1, width: 'auto' }}
-                  exit={{ opacity: 0, width: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className={`relative z-10 whitespace-nowrap overflow-hidden ${
-                    pathname === '/settings'
-                      ? 'font-medium text-notion-text'
-                      : 'text-notion-text-secondary group-hover:text-notion-text'
-                  }`}
-                >
-                  Settings
-                </motion.span>
-              )}
-            </AnimatePresence>
+            <span
+              className={`relative z-10 whitespace-nowrap transition-opacity duration-150 ${
+                isCollapsed
+                  ? 'opacity-0 w-0 overflow-hidden'
+                  : 'opacity-100'
+              } ${
+                pathname === '/settings'
+                  ? 'font-medium text-notion-text'
+                  : 'text-notion-text-secondary group-hover:text-notion-text'
+              }`}
+            >
+              Settings
+            </span>
           </Link>
-
-          {/* Collapse toggle button */}
-          <button
-            onClick={toggleSidebar}
-            className={`group relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-notion-sidebar-hover/50 mt-1 ${
-              isCollapsed ? 'justify-center' : ''
-            }`}
-            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {isCollapsed ? (
-              <ChevronRight
-                size={16}
-                className="text-notion-text-tertiary group-hover:text-notion-text-secondary"
-              />
-            ) : (
-              <>
-                <ChevronLeft
-                  size={16}
-                  className="text-notion-text-tertiary group-hover:text-notion-text-secondary"
-                />
-                <span className="text-notion-text-secondary group-hover:text-notion-text">
-                  Collapse
-                </span>
-              </>
-            )}
-          </button>
         </div>
       </aside>
 
       {/* Main content */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 flex-col overflow-hidden" onClick={handleMainClick}>
         {/* Tab bar */}
         <header
           className="flex h-10 flex-shrink-0 items-stretch border-b border-notion-border bg-notion-sidebar overflow-x-auto"
@@ -394,7 +370,13 @@ export function AppShell({
         </header>
 
         {/* Page content */}
-        <main className="notion-scrollbar flex-1 overflow-y-auto h-full">
+        <main
+          className="notion-scrollbar flex-1 overflow-y-auto h-full"
+          onClick={(e) => {
+            // Prevent collapse when interacting with content
+            e.stopPropagation();
+          }}
+        >
           {fullWidth ? (
             <div className="h-full">{children}</div>
           ) : (
