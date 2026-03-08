@@ -489,12 +489,32 @@ async function runImport(
 
       previewTitles.push(title);
 
-      // Download PDF immediately after import
+      // Download PDF immediately after import (with retry)
       if (!paper.pdfPath && arxivId) {
-        try {
-          await downloadService.downloadPdfById(paper.id, `https://arxiv.org/pdf/${arxivId}.pdf`);
-        } catch {
-          /* non-fatal */
+        const maxRetries = 3;
+        let lastError: string | null = null;
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            const result = await downloadService.downloadPdfById(
+              paper.id,
+              `https://arxiv.org/pdf/${arxivId}.pdf`,
+            );
+            if (result.success) break;
+            lastError = result.error || 'Unknown download error';
+            if (attempt < maxRetries) {
+              console.warn(`[import] PDF download attempt ${attempt} failed for ${arxivId}: ${lastError}, retrying...`);
+              await new Promise((r) => setTimeout(r, 1000 * attempt)); // Exponential backoff
+            }
+          } catch (err) {
+            lastError = String(err);
+            if (attempt < maxRetries) {
+              console.warn(`[import] PDF download attempt ${attempt} threw for ${arxivId}: ${err}, retrying...`);
+              await new Promise((r) => setTimeout(r, 1000 * attempt));
+            }
+          }
+        }
+        if (lastError) {
+          console.error(`[import] PDF download failed after ${maxRetries} attempts for ${arxivId}: ${lastError}`);
         }
       }
 

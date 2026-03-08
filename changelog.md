@@ -2,6 +2,16 @@
 
 ## 2026-03-08
 
+### fix: Add retry logic for PDF download during import
+
+- **Scope**: `src/main/services/ingest.service.ts`
+- **Problem**: When importing papers from Chrome history, PDF download failures were silently ignored. The `downloadPdfById` method returns `{ success: false }` instead of throwing, so the `catch` block never ran, and download failures appeared as "skipped".
+- **Fix**:
+  - Added proper return value checking for `downloadPdfById`
+  - Implemented 3-attempt retry with exponential backoff (1s, 2s, 3s)
+  - Added warning/error logging for failed attempts
+  - Downloads now properly fail with visibility instead of silently skipping
+
 ### fix: Show download UI when PDF file is missing instead of error message
 
 - **Scope**: `src/renderer/components/pdf-viewer.tsx`, `src/renderer/pages/papers/reader/page.tsx`
