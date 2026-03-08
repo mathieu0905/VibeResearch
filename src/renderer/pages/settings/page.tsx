@@ -1461,18 +1461,19 @@ function AddModelModal({
                 )}
               </>
             )}
+            </div>
           </div>
 
           {/* Test result */}
           {testResult && (
-            <div>
+            <div className="shrink-0 px-6">
               <AnimatePresence>
                 <motion.div
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 4 }}
                   transition={{ duration: 0.15 }}
-                  className={`mt-3 flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${
+                  className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-sm ${
                     testResult.success
                       ? 'border-green-200 bg-green-50 text-green-700'
                       : 'border-red-200 bg-red-50 text-red-600'
@@ -1497,7 +1498,7 @@ function AddModelModal({
             </div>
           )}
 
-          <div className="mt-5 flex justify-end gap-2">
+          <div className="shrink-0 flex justify-end gap-2 border-t border-notion-border px-6 py-4">
             <button
               onClick={onClose}
               className="rounded-lg border border-notion-border px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
@@ -1713,16 +1714,19 @@ function EditModelModal({
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 10 }}
           transition={{ duration: 0.15 }}
-          className="w-full max-w-lg rounded-2xl border border-notion-border bg-white p-6 shadow-xl"
+          className="flex max-h-[85vh] w-full max-w-lg flex-col rounded-2xl border border-notion-border bg-white shadow-xl"
         >
-          <h2 className="mb-1 text-base font-semibold text-notion-text">Edit Model</h2>
-          <p className="mb-4 text-xs text-notion-text-tertiary">
-            {backend === 'cli'
-              ? 'CLI subprocess'
-              : 'API direct · changes apply anywhere this model is selected'}
-          </p>
+          <div className="shrink-0 px-6 pt-6">
+            <h2 className="mb-1 text-base font-semibold text-notion-text">Edit Model</h2>
+            <p className="mb-4 text-xs text-notion-text-tertiary">
+              {backend === 'cli'
+                ? 'CLI subprocess'
+                : 'API direct · changes apply anywhere this model is selected'}
+            </p>
+          </div>
 
-          <div className="space-y-4">
+          <div className="min-h-0 flex-1 overflow-y-auto px-6">
+            <div className="space-y-4 pb-4">
             {/* Name */}
             <div>
               <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">

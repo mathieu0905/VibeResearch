@@ -7,6 +7,15 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { Agent } from 'node:http';
 import { proxyFetch } from './proxy-fetch';
 
+/** Minimum size for a valid PDF (arXiv PDFs are typically > 50KB) */
+const MIN_PDF_SIZE = 1024; // 1KB
+
+/** Check if buffer is a valid PDF by checking magic bytes */
+function isValidPdf(buffer: Buffer): boolean {
+  // PDF files start with %PDF-
+  return buffer.length >= 5 && buffer.toString('ascii', 0, 5) === '%PDF-';
+}
+
 function getProxyAgent(): Agent | undefined {
   const proxy = getProxy();
   const scope = getProxyScope();
@@ -148,14 +157,22 @@ export class DownloadService {
     const folder = this.getPaperFolder(shortId);
     const filePath = path.join(folder, 'paper.pdf');
 
+    // Check if valid PDF already exists
     try {
       const stats = await fs.stat(filePath);
-      if (stats.size > 0) {
-        await this.papersRepository.updatePdfPath(paperId, filePath);
-        return { success: true, size: stats.size, skipped: true };
+      if (stats.size >= MIN_PDF_SIZE) {
+        // Verify it's actually a PDF by checking magic bytes
+        const fileBuffer = await fs.readFile(filePath);
+        if (isValidPdf(fileBuffer)) {
+          await this.papersRepository.updatePdfPath(paperId, filePath);
+          return { success: true, size: stats.size, skipped: true };
+        }
+        // Invalid file, delete it and re-download
+        console.warn(`[download] Invalid PDF file detected, re-downloading: ${filePath}`);
+        await fs.unlink(filePath).catch(() => {});
       }
     } catch {
-      // proceed
+      // file doesn't exist, proceed
     }
 
     try {
@@ -168,11 +185,21 @@ export class DownloadService {
       if (!response.ok) throw new Error(`Failed: ${response.status}`);
 
       const buffer = response.body;
+
+      // Validate PDF content
+      if (!isValidPdf(buffer)) {
+        throw new Error(
+          `Invalid PDF content (got ${buffer.length} bytes, starts with: ${buffer.toString('ascii', 0, Math.min(50, buffer.length))}...)`,
+        );
+      }
+
       await fs.writeFile(filePath, buffer);
       await this.papersRepository.updatePdfPath(paperId, filePath);
 
       return { success: true, size: buffer.length, skipped: false };
     } catch (error) {
+      // Clean up failed download
+      await fs.unlink(filePath).catch(() => {});
       return { success: false, size: 0, skipped: false, error: String(error) };
     }
   }

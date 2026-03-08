@@ -2,6 +2,13 @@
 
 ## 2026-03-08
 
+### fix: Resolve JSX syntax error in settings page preventing app from loading
+
+- **Scope**: `src/renderer/pages/settings/page.tsx`
+- **Problem**: Unclosed `<div className="min-h-0 flex-1 overflow-y-auto px-6">` in AddModelModal caused JSX parsing error, preventing the renderer from compiling.
+- **Fix**: Added missing closing `</div>` tag after the scrollable form container. Prettier auto-formatted the fix correctly.
+
+
 ### fix: Validate PDF content on download to prevent saving invalid files
 
 - **Scope**: `src/main/services/download.service.ts`, `src/main/services/papers.service.ts`

@@ -171,18 +171,28 @@ export class PapersService {
     const folder = this.getPaperFolder(paper.shortId);
     const filePath = path.join(folder, 'paper.pdf');
 
+    const MIN_PDF_SIZE = 1024;
+    const isValidPdf = (buf: Buffer) => buf.length >= 5 && buf.toString('ascii', 0, 5) === '%PDF-';
+
+    // Check if valid PDF already exists
     try {
       const stats = await fs.stat(filePath);
-      if (stats.size > 0) {
-        if (!paper.pdfPath) await this.papersRepository.updatePdfPath(paperId, filePath);
-        return { pdfPath: filePath, size: stats.size, skipped: true };
+      if (stats.size >= MIN_PDF_SIZE) {
+        const fileBuffer = await fs.readFile(filePath);
+        if (isValidPdf(fileBuffer)) {
+          if (!paper.pdfPath) await this.papersRepository.updatePdfPath(paperId, filePath);
+          return { pdfPath: filePath, size: stats.size, skipped: true };
+        }
+        // Invalid file, delete it and re-download
+        console.warn(`[papers] Invalid PDF file detected, re-downloading: ${filePath}`);
+        await fs.unlink(filePath).catch(() => {});
       }
     } catch {
       // file doesn't exist, proceed
     }
 
     const response = await fetch(pdfUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VibResearch/1.0)' },
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible: VibeResearch/1.0)' },
     });
 
     if (!response.ok || !response.body) {
@@ -197,6 +207,15 @@ export class PapersService {
       chunks.push(value);
     }
     const buffer = Buffer.concat(chunks);
+
+    // Validate PDF content
+    if (!isValidPdf(buffer)) {
+      await fs.unlink(filePath).catch(() => {});
+      throw new Error(
+        `Invalid PDF content (got ${buffer.length} bytes, starts with: ${buffer.toString('ascii', 0, Math.min(50, buffer.length))}...)`,
+      );
+    }
+
     await fs.writeFile(filePath, buffer);
     await this.papersRepository.updatePdfPath(paperId, filePath);
 
