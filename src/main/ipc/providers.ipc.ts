@@ -3,7 +3,8 @@ import { spawn } from 'child_process';
 import { providersService } from '../services/providers.service';
 import { getShellPath } from '../services/cli-runner.service';
 import { type IpcResult, ok, err } from '@shared';
-import type { ProxyScope } from '../store/app-settings-store';
+import type { ProxyScope, SemanticSearchSettings } from '../store/app-settings-store';
+import { resumeAutomaticPaperProcessing } from '../services/paper-processing.service';
 
 export function setupProvidersIpc() {
   ipcMain.handle('providers:list', async (): Promise<IpcResult<unknown>> => {
@@ -159,16 +160,19 @@ export function setupProvidersIpc() {
     },
   );
 
-  ipcMain.handle('settings:testProxy', async (_, proxyUrl?: string): Promise<IpcResult<unknown>> => {
-    try {
-      const result = await providersService.testProxy(proxyUrl);
-      return ok(result);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[settings:testProxy] Error:', msg);
-      return err(msg);
-    }
-  });
+  ipcMain.handle(
+    'settings:testProxy',
+    async (_, proxyUrl?: string): Promise<IpcResult<unknown>> => {
+      try {
+        const result = await providersService.testProxy(proxyUrl);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:testProxy] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
 
   ipcMain.handle('settings:getStorageRoot', async (): Promise<IpcResult<unknown>> => {
     try {
@@ -180,6 +184,34 @@ export function setupProvidersIpc() {
       return err(msg);
     }
   });
+
+  ipcMain.handle('settings:getSemanticSearch', async (): Promise<IpcResult<unknown>> => {
+    try {
+      const result = providersService.getSemanticSearchSettings();
+      return ok(result);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[settings:getSemanticSearch] Error:', msg);
+      return err(msg);
+    }
+  });
+
+  ipcMain.handle(
+    'settings:setSemanticSearch',
+    async (_, settings: Partial<SemanticSearchSettings>): Promise<IpcResult<unknown>> => {
+      try {
+        const result = providersService.setSemanticSearchSettings(settings);
+        await resumeAutomaticPaperProcessing().catch((error) => {
+          console.warn('[settings:setSemanticSearch] Failed to resume processing:', error);
+        });
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:setSemanticSearch] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
 
   ipcMain.handle(
     'shell:openInEditor',

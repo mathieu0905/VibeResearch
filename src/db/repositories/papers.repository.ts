@@ -15,6 +15,20 @@ export interface CreatePaperParams {
   categorizedTags?: CategorizedTag[];
 }
 
+function mapPaper<
+  T extends { authorsJson: string; tags: Array<{ tag: { name: string; category: string } }> },
+>(paper: T) {
+  return {
+    ...paper,
+    authors: JSON.parse(paper.authorsJson) as string[],
+    tagNames: paper.tags.map((item) => item.tag.name),
+    categorizedTags: paper.tags.map((item) => ({
+      name: item.tag.name,
+      category: item.tag.category as TagCategory,
+    })),
+  };
+}
+
 export class PapersRepository {
   private prisma = getPrismaClient();
 
@@ -57,15 +71,7 @@ export class PapersRepository {
       },
     });
 
-    return {
-      ...created,
-      authors: JSON.parse(created.authorsJson) as string[],
-      tagNames: created.tags.map((item) => item.tag.name),
-      categorizedTags: created.tags.map((item) => ({
-        name: item.tag.name,
-        category: item.tag.category as TagCategory,
-      })),
-    };
+    return mapPaper(created);
   }
 
   async list(query?: {
@@ -126,15 +132,7 @@ export class PapersRepository {
       orderBy: [{ lastReadAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }],
     });
 
-    const mapped = papers.map((paper) => ({
-      ...paper,
-      authors: JSON.parse(paper.authorsJson) as string[],
-      tagNames: paper.tags.map((item) => item.tag.name),
-      categorizedTags: paper.tags.map((item) => ({
-        name: item.tag.name,
-        category: item.tag.category as TagCategory,
-      })),
-    }));
+    const mapped = papers.map((paper) => mapPaper(paper));
 
     // Post-query filtering: match q against both title and tag names
     if (query?.q) {
@@ -163,15 +161,7 @@ export class PapersRepository {
       return null;
     }
 
-    return {
-      ...paper,
-      authors: JSON.parse(paper.authorsJson) as string[],
-      tagNames: paper.tags.map((item) => item.tag.name),
-      categorizedTags: paper.tags.map((item) => ({
-        name: item.tag.name,
-        category: item.tag.category as TagCategory,
-      })),
-    };
+    return mapPaper(paper);
   }
 
   async findByShortId(shortId: string) {
@@ -188,15 +178,7 @@ export class PapersRepository {
       return null;
     }
 
-    return {
-      ...paper,
-      authors: JSON.parse(paper.authorsJson) as string[],
-      tagNames: paper.tags.map((item) => item.tag.name),
-      categorizedTags: paper.tags.map((item) => ({
-        name: item.tag.name,
-        category: item.tag.category as TagCategory,
-      })),
-    };
+    return mapPaper(paper);
   }
 
   async updatePdfPath(id: string, pdfPath: string | null) {
@@ -274,19 +256,23 @@ export class PapersRepository {
         tags: { include: { tag: true } },
       },
     });
-    return {
-      ...updated,
-      authors: JSON.parse(updated.authorsJson) as string[],
-      tagNames: updated.tags.map((item) => item.tag.name),
-      categorizedTags: updated.tags.map((item) => ({
-        name: item.tag.name,
-        category: item.tag.category as TagCategory,
-      })),
-    };
+    return mapPaper(updated);
   }
 
-  async updateMetadata(id: string, data: { authors?: string[]; abstract?: string; submittedAt?: Date }) {
+  async updateMetadata(
+    id: string,
+    data: {
+      title?: string;
+      authors?: string[];
+      abstract?: string;
+      submittedAt?: Date | null;
+      metadataSource?: string | null;
+    },
+  ) {
     const updateData: Record<string, unknown> = {};
+    if (data.title !== undefined) {
+      updateData.title = data.title;
+    }
     if (data.authors !== undefined) {
       updateData.authorsJson = JSON.stringify(data.authors);
     }
@@ -296,6 +282,9 @@ export class PapersRepository {
     if (data.submittedAt !== undefined) {
       updateData.submittedAt = data.submittedAt;
     }
+    if (data.metadataSource !== undefined) {
+      updateData.metadataSource = data.metadataSource;
+    }
 
     const updated = await this.prisma.paper.update({
       where: { id },
@@ -304,15 +293,7 @@ export class PapersRepository {
         tags: { include: { tag: true } },
       },
     });
-    return {
-      ...updated,
-      authors: JSON.parse(updated.authorsJson) as string[],
-      tagNames: updated.tags.map((item) => item.tag.name),
-      categorizedTags: updated.tags.map((item) => ({
-        name: item.tag.name,
-        category: item.tag.category as TagCategory,
-      })),
-    };
+    return mapPaper(updated);
   }
 
   async listAll() {
@@ -348,6 +329,9 @@ export class PapersRepository {
       await tx.paperTag.deleteMany({
         where: { paperId: { in: ids } },
       });
+      await tx.paperChunk.deleteMany({
+        where: { paperId: { in: ids } },
+      });
       await tx.sourceEvent.deleteMany({
         where: { paperId: { in: ids } },
       });
@@ -377,6 +361,85 @@ export class PapersRepository {
       where: { id },
       data: { textPath },
     });
+  }
+
+  async updateProcessingState(
+    id: string,
+    data: {
+      processingStatus?: string;
+      processingError?: string | null;
+      processedAt?: Date | null;
+      indexedAt?: Date | null;
+      metadataSource?: string | null;
+    },
+  ) {
+    return this.prisma.paper.update({
+      where: { id },
+      data,
+    });
+  }
+
+  async replaceChunks(
+    paperId: string,
+    chunks: Array<{
+      chunkIndex: number;
+      content: string;
+      contentPreview: string;
+      embedding: number[];
+    }>,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.paperChunk.deleteMany({ where: { paperId } });
+      if (chunks.length > 0) {
+        await tx.paperChunk.createMany({
+          data: chunks.map((chunk) => ({
+            paperId,
+            chunkIndex: chunk.chunkIndex,
+            content: chunk.content,
+            contentPreview: chunk.contentPreview,
+            embeddingJson: JSON.stringify(chunk.embedding),
+          })),
+        });
+      }
+    });
+  }
+
+  async listChunksForSemanticSearch() {
+    return this.prisma.paperChunk.findMany({
+      include: {
+        paper: {
+          include: {
+            tags: { include: { tag: true } },
+          },
+        },
+      },
+      orderBy: [{ paperId: 'asc' }, { chunkIndex: 'asc' }],
+    });
+  }
+
+  async getChunkCountForPaper(paperId: string): Promise<number> {
+    return this.prisma.paperChunk.count({ where: { paperId } });
+  }
+
+  async listIndexedPaperIds(): Promise<string[]> {
+    const rows = await this.prisma.paper.findMany({
+      where: { indexedAt: { not: null } },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
+  }
+
+  async listPendingSemanticPaperIds(): Promise<string[]> {
+    const rows = await this.prisma.paper.findMany({
+      where: {
+        indexedAt: null,
+        OR: [{ pdfPath: { not: null } }, { pdfUrl: { not: null } }, { source: 'arxiv' }],
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+
+    return rows.map((row) => row.id);
   }
 
   async listToday() {

@@ -12,11 +12,20 @@ export interface ProxyScope {
   cliTools: boolean; // CLI tools (claude, codex, gemini)
 }
 
+export interface SemanticSearchSettings {
+  enabled: boolean;
+  autoProcess: boolean;
+  baseUrl: string;
+  metadataModel: string;
+  embeddingModel: string;
+}
+
 interface AppSettings {
   papersDir: string;
   editorCommand: string; // e.g. "code" or "cursor"
   proxy?: string; // HTTP/SOCKS proxy URL, e.g. "http://127.0.0.1:7890" or "socks5://127.0.0.1:1080"
   proxyScope?: ProxyScope; // Where to use the proxy
+  semanticSearch?: SemanticSearchSettings;
   tagMigrationV1Done?: boolean;
 }
 
@@ -26,6 +35,14 @@ const DEFAULT_PROXY_SCOPE: ProxyScope = {
   pdfDownload: true,
   aiApi: true,
   cliTools: true,
+};
+
+const DEFAULT_SEMANTIC_SEARCH_SETTINGS: SemanticSearchSettings = {
+  enabled: true,
+  autoProcess: true,
+  baseUrl: 'http://127.0.0.1:11434',
+  metadataModel: 'llama3.2',
+  embeddingModel: 'nomic-embed-text',
 };
 
 function getSettingsPath(): string {
@@ -41,12 +58,21 @@ function load(): AppSettings {
       if (!saved.papersDir || saved.papersDir.trim() === '') {
         saved.papersDir = DEFAULT_PAPERS_DIR;
       }
+      saved.semanticSearch = {
+        ...DEFAULT_SEMANTIC_SEARCH_SETTINGS,
+        ...saved.semanticSearch,
+      };
       return saved;
     }
   } catch {
     // ignore
   }
-  return { papersDir: DEFAULT_PAPERS_DIR, editorCommand: 'code', proxy: undefined };
+  return {
+    papersDir: DEFAULT_PAPERS_DIR,
+    editorCommand: 'code',
+    proxy: undefined,
+    semanticSearch: DEFAULT_SEMANTIC_SEARCH_SETTINGS,
+  };
 }
 
 function save(settings: AppSettings) {
@@ -105,6 +131,23 @@ export function setProxyScope(scope: ProxyScope) {
 
 export function getStorageRoot(): string {
   return getStorageDir();
+}
+
+export function getSemanticSearchSettings(): SemanticSearchSettings {
+  return {
+    ...DEFAULT_SEMANTIC_SEARCH_SETTINGS,
+    ...load().semanticSearch,
+  };
+}
+
+export function setSemanticSearchSettings(settings: Partial<SemanticSearchSettings>) {
+  const current = load();
+  current.semanticSearch = {
+    ...DEFAULT_SEMANTIC_SEARCH_SETTINGS,
+    ...current.semanticSearch,
+    ...settings,
+  };
+  save(current);
 }
 
 export function setTagMigrationDone() {

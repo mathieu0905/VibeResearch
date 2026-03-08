@@ -2,6 +2,22 @@
 
 ## 2026-03-08
 
+### feat: Add background paper processing and local semantic search
+
+**Scope**: `prisma/schema.prisma`, `src/db/repositories/papers.repository.ts`, `src/main/index.ts`, `src/main/ipc/papers.ipc.ts`, `src/main/ipc/providers.ipc.ts`, `src/main/services/download.service.ts`, `src/main/services/local-semantic.service.ts`, `src/main/services/paper-processing.service.ts`, `src/main/services/papers.service.ts`, `src/main/services/providers.service.ts`, `src/main/services/semantic-search.service.ts`, `src/main/services/semantic-utils.ts`, `src/main/store/app-settings-store.ts`, `src/renderer/components/import-modal.tsx`, `src/renderer/components/papers-by-tag.tsx`, `src/renderer/components/search-content.tsx`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`, `tests/integration/semantic-repository.test.ts`, `tests/integration/semantic-utils.test.ts`, `tests/support/test-db.ts`
+
+**Changes**:
+
+- Added semantic processing fields to `Paper` and introduced `PaperChunk` for chunk-level embeddings
+- Added Ollama-backed local metadata extraction and embedding services plus a background paper-processing queue
+- Auto-schedules processing after import, create, and PDF download; resumes pending jobs on app startup and after semantic settings changes
+- Added IPC methods for semantic search, processing status, retry processing, and semantic settings
+- Added a new `Semantic` search mode with graceful fallback to normal search when local indexing is unavailable
+- Updated import modal and paper list/search cards to show indexing status pills and retry actions for failed processing
+- Added focused integration tests for chunk storage, pending semantic indexing, chunk splitting, and cosine similarity
+
+**Motivation**: Papers should become searchable by meaning automatically after upload, using a local model workflow that degrades safely when Ollama is unavailable.
+
 ### feat: Add delete run history feature in Task detail page
 
 **Scope**: `src/db/repositories/agent-todo.repository.ts`, `src/main/services/agent-todo.service.ts`, `src/main/ipc/agent-todo.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/components/agent-todo/RunTimeline.tsx`, `src/renderer/pages/agent-todos/[id]/page.tsx`

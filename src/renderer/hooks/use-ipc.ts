@@ -103,9 +103,23 @@ export interface PaperItem {
   pdfUrl?: string;
   pdfPath?: string;
   sourceUrl?: string;
+  processingStatus?: string;
+  processingError?: string | null;
+  processedAt?: string | null;
+  indexedAt?: string | null;
+  metadataSource?: string | null;
   rating?: number | null;
   createdAt?: string;
   lastReadAt?: string | null;
+}
+
+export interface PaperProcessingInfo {
+  paperId: string;
+  processingStatus: string;
+  processingError?: string | null;
+  processedAt?: string | null;
+  indexedAt?: string | null;
+  metadataSource?: string | null;
 }
 
 export interface TaggingStatus {
@@ -166,11 +180,32 @@ export interface AgenticSearchPaper {
   tagNames?: string[];
   abstract?: string;
   relevanceReason?: string;
+  processingStatus?: string;
 }
 
 export interface AgenticSearchResult {
   steps: AgenticSearchStep[];
   papers: AgenticSearchPaper[];
+}
+
+export interface SemanticSearchPaper {
+  id: string;
+  shortId: string;
+  title: string;
+  authors?: string[];
+  submittedAt?: string | null;
+  tagNames?: string[];
+  abstract?: string | null;
+  relevanceReason?: string;
+  similarityScore: number;
+  matchedChunks: string[];
+  processingStatus?: string;
+}
+
+export interface SemanticSearchResult {
+  mode: 'semantic' | 'fallback';
+  papers: SemanticSearchPaper[];
+  fallbackReason?: string;
 }
 
 export interface ReadingNote {
@@ -277,6 +312,14 @@ export interface ProxyScope {
   cliTools: boolean;
 }
 
+export interface SemanticSearchSettings {
+  enabled: boolean;
+  autoProcess: boolean;
+  baseUrl: string;
+  metadataModel: string;
+  embeddingModel: string;
+}
+
 export interface ProxyTestResult {
   url: string;
   name: string;
@@ -381,6 +424,10 @@ export const ipc = {
     }>('papers:download', input, tags),
   getPaper: (id: string) => invoke<PaperItem>('papers:getById', id),
   getPaperByShortId: (shortId: string) => invoke<PaperItem>('papers:getByShortId', shortId),
+  getPaperProcessingStatus: (paperId: string) =>
+    invoke<PaperProcessingInfo | null>('papers:getProcessingStatus', paperId),
+  retryPaperProcessing: (paperId: string) =>
+    invoke<{ queued: boolean }>('papers:retryProcessing', paperId),
   downloadPdf: (paperId: string, pdfUrl: string) =>
     invoke<{ pdfPath: string; size: number; skipped: boolean }>(
       'papers:downloadPdf',
@@ -395,6 +442,8 @@ export const ipc = {
     invoke<PaperItem>('papers:updateRating', id, rating),
   listAllTags: () => invoke<TagInfo[]>('papers:listTags'),
   agenticSearch: (query: string) => invoke<AgenticSearchResult>('papers:agenticSearch', query),
+  semanticSearch: (query: string, limit?: number) =>
+    invoke<SemanticSearchResult>('papers:semanticSearch', query, limit),
   getSourceEvents: (paperId: string) => invoke<SourceEvent[]>('papers:getSourceEvents', paperId),
 
   // Tagging
@@ -527,6 +576,9 @@ export const ipc = {
   selectFolder: () => invoke<string | null>('settings:selectFolder'),
   selectPdfFile: () => invoke<string | null>('settings:selectPdfFile'),
   getStorageRoot: () => invoke<string>('settings:getStorageRoot'),
+  getSemanticSearchSettings: () => invoke<SemanticSearchSettings>('settings:getSemanticSearch'),
+  setSemanticSearchSettings: (settings: Partial<SemanticSearchSettings>) =>
+    invoke<{ success: boolean }>('settings:setSemanticSearch', settings),
 
   // Shell
   openInEditor: (dirPath: string) =>

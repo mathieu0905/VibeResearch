@@ -16,6 +16,7 @@ import { setupAgentTodoIpc, getAgentTodoService } from './ipc/agent-todo.ipc';
 import { stopAllRunners } from './services/agent-runner-registry';
 import { ensureStorageDir, getDbPath } from './store/storage-path';
 import { PapersRepository } from '@db';
+import { resumeAutomaticPaperProcessing } from './services/paper-processing.service';
 
 // CJS-compatible __dirname (esbuild bundles to CJS, so __dirname is available globally)
 // In CJS format, __dirname is automatically provided by Node.js
@@ -302,6 +303,9 @@ app.whenReady().then(async () => {
     .initialize()
     .catch((err) => console.error('[AgentTodo] Failed to initialize scheduler:', err));
   setupFileIpc();
+  resumeAutomaticPaperProcessing().catch((err) =>
+    console.error('[startup] Failed to resume paper processing:', err),
+  );
 
   const win = createWindow();
   setupWindowControls(win);

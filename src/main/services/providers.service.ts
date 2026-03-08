@@ -15,8 +15,11 @@ import {
   setProxy,
   getProxyScope,
   setProxyScope,
+  getSemanticSearchSettings,
+  setSemanticSearchSettings,
   getStorageRoot as getStorageRootPath,
   type ProxyScope,
+  type SemanticSearchSettings,
 } from '../store/app-settings-store';
 import { testProxy as runTestProxy, type ProxyTestResult } from './proxy-test.service';
 
@@ -94,6 +97,15 @@ export class ProvidersService {
 
   getStorageRoot(): string {
     return getStorageRootPath();
+  }
+
+  getSemanticSearchSettings(): SemanticSearchSettings {
+    return getSemanticSearchSettings();
+  }
+
+  setSemanticSearchSettings(settings: Partial<SemanticSearchSettings>): { success: boolean } {
+    setSemanticSearchSettings(settings);
+    return { success: true };
   }
 }
 

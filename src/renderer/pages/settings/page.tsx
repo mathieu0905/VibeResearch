@@ -15,6 +15,7 @@ import {
   type TokenUsageSummary,
   type ProxyScope,
   type ProxyTestResult,
+  type SemanticSearchSettings,
 } from '../../hooks/use-ipc';
 import {
   Settings,
@@ -38,6 +39,7 @@ import {
   Pencil,
   X,
   Bot,
+  Sparkles,
 } from 'lucide-react';
 import { ResponsiveLine } from '@nivo/line';
 import { ModelCombobox } from '../../components/model-combobox';
@@ -104,7 +106,7 @@ const EDITOR_OPTIONS = [
   { id: 'custom', name: 'Custom', command: '', Icon: Code2 },
 ] as const;
 
-type Tab = 'models' | 'storage' | 'editor' | 'proxy' | 'agents';
+type Tab = 'models' | 'storage' | 'editor' | 'proxy' | 'agents' | 'semantic';
 
 // ─── Provider selector ───────────────────────────────────────────────────────
 
@@ -2731,12 +2733,147 @@ function ProxySettings() {
   );
 }
 
+function SemanticSettingsPanel() {
+  const [settings, setSettings] = useState<SemanticSearchSettings>({
+    enabled: true,
+    autoProcess: true,
+    baseUrl: 'http://127.0.0.1:11434',
+    metadataModel: 'llama3.2',
+    embeddingModel: 'nomic-embed-text',
+  });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    ipc
+      .getSemanticSearchSettings()
+      .then((result) => setSettings(result))
+      .catch(() => undefined);
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await ipc.setSemanticSearchSettings(settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-xl border border-notion-border bg-white p-5">
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-base font-semibold text-notion-text">Local Semantic Search</h3>
+            <p className="mt-1 text-sm text-notion-text-secondary">
+              Use a local Ollama server for metadata extraction and semantic indexing.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSettings((prev) => ({ ...prev, enabled: !prev.enabled }))}
+            className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${settings.enabled ? 'bg-violet-500' : 'bg-notion-border'}`}
+          >
+            <span
+              className={`inline-block h-4.5 w-4.5 rounded-full bg-white shadow transition-transform ${settings.enabled ? 'translate-x-6' : 'translate-x-0.5'}`}
+            />
+          </button>
+        </div>
+
+        <div
+          className={`grid gap-4 transition-opacity ${settings.enabled ? 'opacity-100' : 'opacity-50'}`}
+        >
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+              Ollama Base URL
+            </label>
+            <input
+              value={settings.baseUrl}
+              onChange={(e) => setSettings((prev) => ({ ...prev, baseUrl: e.target.value }))}
+              className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text outline-none transition-colors focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+            />
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                Metadata Model
+              </label>
+              <input
+                value={settings.metadataModel}
+                onChange={(e) =>
+                  setSettings((prev) => ({ ...prev, metadataModel: e.target.value }))
+                }
+                className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text outline-none transition-colors focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                Embedding Model
+              </label>
+              <input
+                value={settings.embeddingModel}
+                onChange={(e) =>
+                  setSettings((prev) => ({ ...prev, embeddingModel: e.target.value }))
+                }
+                className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text outline-none transition-colors focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              />
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setSettings((prev) => ({ ...prev, autoProcess: !prev.autoProcess }))}
+            className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${settings.autoProcess ? 'border-violet-200 bg-violet-50' : 'border-notion-border bg-white'}`}
+          >
+            <div>
+              <p className="text-sm font-medium text-notion-text">Auto-process after import</p>
+              <p className="mt-1 text-xs text-notion-text-secondary">
+                Automatically extract text, enrich metadata, and build semantic chunks.
+              </p>
+            </div>
+            <div
+              className={`flex h-5 w-5 items-center justify-center rounded-full ${settings.autoProcess ? 'bg-violet-500 text-white' : 'bg-notion-sidebar text-notion-text-tertiary'}`}
+            >
+              {settings.autoProcess ? <Check size={12} strokeWidth={3} /> : <X size={12} />}
+            </div>
+          </button>
+        </div>
+
+        <div className="mt-4 flex items-center justify-between gap-3">
+          <p className="text-xs text-notion-text-tertiary">
+            Semantic search falls back to normal search when Ollama or the index is unavailable.
+          </p>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+          >
+            {saving ? (
+              <Loader2 size={14} className="animate-spin" />
+            ) : saved ? (
+              <Check size={14} />
+            ) : (
+              <Sparkles size={14} />
+            )}
+            {saved ? 'Saved' : saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<Tab>('agents');
 
   const tabs: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
     { id: 'agents', label: 'Agents', icon: Bot },
     { id: 'models', label: 'Models', icon: Cpu },
+    { id: 'semantic', label: 'Semantic', icon: Sparkles },
     { id: 'editor', label: 'Editor', icon: Code2 },
     { id: 'storage', label: 'Storage', icon: HardDrive },
     { id: 'proxy', label: 'Proxy', icon: Globe },
@@ -2793,6 +2930,7 @@ export function SettingsPage() {
       {/* Tab Content */}
       <div>
         {activeTab === 'models' && <ModelsSettings />}
+        {activeTab === 'semantic' && <SemanticSettingsPanel />}
         {activeTab === 'editor' && <EditorSettings />}
         {activeTab === 'storage' && <StorageSettings />}
         {activeTab === 'proxy' && <ProxySettings />}
