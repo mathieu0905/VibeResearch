@@ -13,10 +13,9 @@
 - Added `addWorkdirRepo` method to add workdir as a repo without cloning
 - Added IPC handlers `projects:workdir:check` and `projects:workdir:addRepo`
 - Updated `RepoCard` component to show workdir repos with distinct styling (FolderOpen icon, "local" badge, no Clone button)
-- Added UI in CodeTab to show "Add as Repo" button when workdir has `.git` detected
+- Workdir repos are auto-added when `.git` is detected (no confirmation needed); removed Agent card from CodeTab; workdir repos display repo name from URL
 
 **Motivation**: When a project's workdir is already a Git repository, users shouldn't need to clone it separately. This allows viewing commits directly from the existing workdir.
-
 
 ### fix: Auto-create workdir directory if not exists
 

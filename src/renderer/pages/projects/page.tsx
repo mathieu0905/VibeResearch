@@ -8,7 +8,6 @@ import {
   type ProjectRepo,
   type ProjectIdea,
   type CommitInfo,
-  type ModelConfig,
   type WorkdirRepoStatus,
 } from '../../hooks/use-ipc';
 import type { AgentTodoItem } from '@shared';
@@ -25,9 +24,6 @@ import {
   ChevronRight,
   Sparkles,
   ExternalLink,
-  Bot,
-  Play,
-  Square,
   MessageSquare,
   Check,
   X,
@@ -226,9 +222,15 @@ function RepoCard({ repo, onDelete }: { repo: ProjectRepo; onDelete: () => void 
     setExpanded((v) => !v);
   };
 
-  // For workdir repos, use a friendly display name
+  // For workdir repos, use the repo name from URL or folder name from local path
   const displayName = isWorkdir
-    ? 'Project Workdir'
+    ? repo.repoUrl.startsWith('local://')
+      ? repo.localPath?.split('/').pop() || 'local'
+      : repo.repoUrl
+          .replace(/\.git$/, '')
+          .split('/')
+          .slice(-2)
+          .join('/')
     : repo.repoUrl
         .replace(/\.git$/, '')
         .split('/')
@@ -387,154 +389,25 @@ function RepoCard({ repo, onDelete }: { repo: ProjectRepo; onDelete: () => void 
 function CodeTab({ project, onChange }: { project: ProjectItem; onChange: () => void }) {
   const [url, setUrl] = useState('');
   const [adding, setAdding] = useState(false);
-  const [selectedRepoId, setSelectedRepoId] = useState<string | null>(null);
-  const [agentPrompt, setAgentPrompt] = useState(
-    'Summarize the architecture, key entry points, and likely risks in this repository.',
-  );
-  const [agentOutput, setAgentOutput] = useState('');
-  const [agentError, setAgentError] = useState<string | null>(null);
-  const [agentRunning, setAgentRunning] = useState(false);
-  const [loadingAgentModel, setLoadingAgentModel] = useState(true);
-  const [activeAgentModel, setActiveAgentModel] = useState<ModelConfig | null>(null);
-  const [workdirStatus, setWorkdirStatus] = useState<WorkdirRepoStatus | null>(null);
-  const [addingWorkdir, setAddingWorkdir] = useState(false);
-  const agentSessionId = useRef(`project-agent-${project.id}`);
 
   const hasWorkdirRepo = project.repos.some((repo) => repo.isWorkdirRepo);
-  const clonedRepos = project.repos.filter((repo) => !!repo.localPath);
-  const selectedRepo =
-    clonedRepos.find((repo) => repo.id === selectedRepoId) ?? clonedRepos[0] ?? null;
 
-  useEffect(() => {
-    let alive = true;
-    setLoadingAgentModel(true);
-    ipc
-      .getActiveModel('agent')
-      .then((model) => {
-        if (!alive) return;
-        setActiveAgentModel(model);
-      })
-      .catch(() => {
-        if (!alive) return;
-        setActiveAgentModel(null);
-      })
-      .finally(() => {
-        if (alive) setLoadingAgentModel(false);
-      });
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!clonedRepos.length) {
-      setSelectedRepoId(null);
-      return;
-    }
-    if (!selectedRepoId || !clonedRepos.some((repo) => repo.id === selectedRepoId)) {
-      setSelectedRepoId(clonedRepos[0].id);
-    }
-  }, [clonedRepos, selectedRepoId]);
-
-  // Check if project workdir has .git
+  // Auto-add workdir as repo if .git detected
   useEffect(() => {
     let alive = true;
     if (project.workdir && !hasWorkdirRepo) {
       ipc.checkWorkdirGit(project.id).then((status) => {
-        if (alive && status) setWorkdirStatus(status);
+        if (alive && status?.hasGit) {
+          ipc.addWorkdirRepo(project.id).then(() => {
+            if (alive) onChange();
+          });
+        }
       });
     }
     return () => {
       alive = false;
     };
-  }, [project.id, project.workdir, hasWorkdirRepo]);
-
-  useEffect(() => {
-    const unsubOutput = onIpc('cli:output', (...args) => {
-      const payload = args[1] as { sessionId?: string; data?: string } | undefined;
-      if (payload?.sessionId !== agentSessionId.current || !payload.data) return;
-      setAgentOutput((prev) => prev + payload.data);
-    });
-    const unsubError = onIpc('cli:error', (...args) => {
-      const payload = args[1] as { sessionId?: string; data?: string } | undefined;
-      if (payload?.sessionId !== agentSessionId.current || !payload.data) return;
-      setAgentError((prev) => (prev ? prev + payload.data : (payload.data ?? null)));
-    });
-    const unsubDone = onIpc('cli:done', (...args) => {
-      const payload = args[1] as { sessionId?: string; code?: number | null } | undefined;
-      if (payload?.sessionId !== agentSessionId.current) return;
-      setAgentRunning(false);
-      if ((payload?.code ?? 0) !== 0) {
-        setAgentError((prev) => prev ?? `Agent exited with code ${payload?.code}`);
-      }
-    });
-
-    return () => {
-      unsubOutput();
-      unsubError();
-      unsubDone();
-    };
-  }, []);
-
-  const runAgent = async () => {
-    if (!selectedRepo?.localPath) {
-      setAgentError('Clone a repository before running the agent.');
-      return;
-    }
-    if (!activeAgentModel?.command) {
-      setAgentError('No active Agent model configured. Please set one in Settings.');
-      return;
-    }
-    if (!agentPrompt.trim()) {
-      setAgentError('Describe what you want the agent to do.');
-      return;
-    }
-
-    setAgentOutput('');
-    setAgentError(null);
-    setAgentRunning(true);
-
-    const repoName = selectedRepo.repoUrl
-      .replace(/\.git$/, '')
-      .split('/')
-      .slice(-2)
-      .join('/');
-    const fullPrompt = [
-      'You are a CLI-based coding agent analyzing the repository in the current working directory.',
-      `Repository: ${repoName}`,
-      'Task:',
-      agentPrompt.trim(),
-      '',
-      'Please inspect the codebase and respond with:',
-      '1. A concise summary of what you found',
-      '2. Relevant files or modules',
-      '3. Risks, bugs, or follow-up suggestions when applicable',
-      '',
-      'Do not modify files unless explicitly asked.',
-    ].join('\n');
-
-    try {
-      await ipc.runCli({
-        tool: activeAgentModel.command,
-        args: ['-p', fullPrompt],
-        sessionId: agentSessionId.current,
-        cwd: selectedRepo.localPath,
-        envVars: activeAgentModel.envVars,
-        useProxy: true,
-        displayLabel: activeAgentModel.name,
-        modelId: activeAgentModel.id,
-      });
-    } catch (err) {
-      setAgentRunning(false);
-      setAgentError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const stopAgent = async () => {
-    await ipc.killCli(agentSessionId.current);
-    setAgentRunning(false);
-  };
+  }, [project.id, project.workdir, hasWorkdirRepo, onChange]);
 
   const addRepo = async () => {
     const trimmed = url.trim();
@@ -551,139 +424,8 @@ function CodeTab({ project, onChange }: { project: ProjectItem; onChange: () => 
     onChange();
   };
 
-  const addWorkdirRepo = async () => {
-    setAddingWorkdir(true);
-    try {
-      await ipc.addWorkdirRepo(project.id);
-      setWorkdirStatus(null);
-      onChange();
-    } finally {
-      setAddingWorkdir(false);
-    }
-  };
-
   return (
     <div className="space-y-4">
-      <motion.div
-        className="rounded-xl border border-notion-border bg-white p-4"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <Bot size={16} className="text-notion-text-tertiary" />
-              <h3 className="text-sm font-semibold text-notion-text">Agent</h3>
-            </div>
-            <p className="mt-1 text-xs text-notion-text-tertiary">
-              Use the active Agent CLI model for code analysis and multi-step repo tasks.
-            </p>
-          </div>
-          <Link to="/settings" className="text-xs font-medium text-blue-600 hover:text-blue-700">
-            Open Settings
-          </Link>
-        </div>
-
-        <div className="mt-4 space-y-3">
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-notion-text-tertiary">Repository</p>
-            {clonedRepos.length === 0 ? (
-              <p className="rounded-lg border border-notion-border bg-notion-sidebar px-3 py-2 text-xs text-notion-text-tertiary">
-                Clone a repository first, then you can run the Agent inside it.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {clonedRepos.map((repo) => {
-                  const repoName = repo.repoUrl
-                    .replace(/\.git$/, '')
-                    .split('/')
-                    .slice(-2)
-                    .join('/');
-                  const selected = repo.id === selectedRepo?.id;
-                  return (
-                    <button
-                      key={repo.id}
-                      type="button"
-                      onClick={() => setSelectedRepoId(repo.id)}
-                      className={clsx(
-                        'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                        selected
-                          ? 'border-notion-text bg-notion-text text-white'
-                          : 'border-notion-border text-notion-text hover:bg-notion-sidebar-hover',
-                      )}
-                    >
-                      <GitBranch size={11} />
-                      {repoName}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-notion-text-tertiary">
-              Task
-            </label>
-            <textarea
-              value={agentPrompt}
-              onChange={(e) => setAgentPrompt(e.target.value)}
-              rows={4}
-              placeholder="Ask the agent to analyze architecture, explain a module, trace a bug, or propose next steps."
-              className="w-full rounded-lg border border-notion-border bg-transparent px-3 py-2 text-sm text-notion-text placeholder:text-notion-text-tertiary focus:outline-none focus:ring-1 focus:ring-notion-text/20"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={runAgent}
-              disabled={
-                agentRunning || !selectedRepo || !agentPrompt.trim() || !activeAgentModel?.command
-              }
-              className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-3 py-2 text-sm font-medium text-white hover:opacity-80 disabled:opacity-50"
-            >
-              {agentRunning ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-              {agentRunning ? 'Running…' : 'Run Agent'}
-            </button>
-            {agentRunning && (
-              <button
-                type="button"
-                onClick={stopAgent}
-                className="inline-flex items-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
-              >
-                <Square size={13} />
-                Stop
-              </button>
-            )}
-            <span className="text-xs text-notion-text-tertiary">
-              {loadingAgentModel
-                ? 'Loading active Agent model…'
-                : activeAgentModel?.name
-                  ? `Active: ${activeAgentModel.name}`
-                  : 'No active Agent model configured'}
-            </span>
-          </div>
-
-          {agentError && (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
-              {agentError}
-            </p>
-          )}
-
-          {(agentOutput || agentRunning) && (
-            <div className="overflow-hidden rounded-lg border border-notion-border bg-notion-sidebar">
-              <div className="border-b border-notion-border px-3 py-2 text-xs font-medium text-notion-text-tertiary">
-                Agent Output
-              </div>
-              <pre className="notion-scrollbar max-h-80 overflow-auto whitespace-pre-wrap px-3 py-3 text-xs leading-5 text-notion-text">
-                {agentOutput || 'Waiting for output…'}
-              </pre>
-            </div>
-          )}
-        </div>
-      </motion.div>
-
       <motion.div
         className="flex gap-2"
         initial={{ opacity: 0, y: 10 }}
@@ -707,39 +449,6 @@ function CodeTab({ project, onChange }: { project: ProjectItem; onChange: () => 
           Add
         </motion.button>
       </motion.div>
-
-      {/* Show option to add workdir as repo if .git detected */}
-      {workdirStatus?.hasGit && !hasWorkdirRepo && (
-        <motion.div
-          className="rounded-xl border border-notion-accent/30 bg-notion-accent-light p-4"
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <FolderOpen size={14} className="text-notion-accent" />
-                <p className="text-sm font-medium text-notion-text">Project workdir has Git</p>
-              </div>
-              <p className="mt-1 text-xs text-notion-text-secondary">
-                {workdirStatus.remoteUrl
-                  ? `Remote: ${workdirStatus.remoteUrl}`
-                  : 'No remote configured (local only)'}
-              </p>
-            </div>
-            <motion.button
-              onClick={addWorkdirRepo}
-              disabled={addingWorkdir}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-notion-accent px-3 py-2 text-sm font-medium text-white hover:opacity-80 disabled:opacity-50"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {addingWorkdir ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-              Add as Repo
-            </motion.button>
-          </div>
-        </motion.div>
-      )}
 
       {project.repos.length === 0 ? (
         <motion.p
