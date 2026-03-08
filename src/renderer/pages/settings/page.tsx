@@ -3189,12 +3189,15 @@ function SemanticSettingsPanel() {
                   ['/api/embed', debugResult.endpoints.embed],
                   ['/api/embeddings', debugResult.endpoints.embeddings],
                 ].map(([label, probe]) => (
-                  <div key={String(label)} className="rounded-xl border border-notion-border p-4">
+                  <div
+                    key={String(label)}
+                    className="min-w-0 rounded-xl border border-notion-border p-4"
+                  >
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-notion-text">{label}</p>
                       {renderProbeBadge(probe as { ok: boolean; status?: number })}
                     </div>
-                    <p className="mt-2 text-xs text-notion-text-secondary">
+                    <p className="mt-2 break-all text-xs text-notion-text-secondary">
                       {(probe as { error?: string; bodyPreview?: string }).error ??
                         (probe as { bodyPreview?: string }).bodyPreview ??
                         'No response body'}
@@ -3302,7 +3305,9 @@ function SemanticSettingsPanel() {
                         className="rounded-lg border border-red-100 bg-red-50/60 px-3 py-2"
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-medium text-notion-text">{paper.title}</p>
+                          <p className="break-words text-sm font-medium text-notion-text">
+                            {paper.title}
+                          </p>
                           <span className="text-xs font-medium text-red-700">{paper.shortId}</span>
                         </div>
                         <p className="mt-1 text-xs text-red-700/90">

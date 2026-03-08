@@ -406,15 +406,15 @@ export class PapersRepository {
   ) {
     await this.prisma.$transaction(async (tx) => {
       await tx.paperChunk.deleteMany({ where: { paperId } });
-      if (chunks.length > 0) {
-        await tx.paperChunk.createMany({
-          data: chunks.map((chunk) => ({
+      for (const chunk of chunks) {
+        await tx.paperChunk.create({
+          data: {
             paperId,
             chunkIndex: chunk.chunkIndex,
             content: chunk.content,
             contentPreview: chunk.contentPreview,
             embeddingJson: JSON.stringify(chunk.embedding),
-          })),
+          },
         });
       }
     });
@@ -431,6 +431,38 @@ export class PapersRepository {
       },
       orderBy: [{ paperId: 'asc' }, { chunkIndex: 'asc' }],
     });
+  }
+
+  async findChunksByIds(ids: string[]) {
+    if (ids.length === 0) return [];
+    return this.prisma.paperChunk.findMany({
+      where: { id: { in: ids } },
+      include: {
+        paper: {
+          include: {
+            tags: { include: { tag: true } },
+          },
+        },
+      },
+    });
+  }
+
+  async listChunkIdsForPaper(paperId: string): Promise<string[]> {
+    const rows = await this.prisma.paperChunk.findMany({
+      where: { paperId },
+      select: { id: true },
+      orderBy: { chunkIndex: 'asc' },
+    });
+    return rows.map((r) => r.id);
+  }
+
+  async listChunkIdsForPapers(paperIds: string[]): Promise<string[]> {
+    if (paperIds.length === 0) return [];
+    const rows = await this.prisma.paperChunk.findMany({
+      where: { paperId: { in: paperIds } },
+      select: { id: true },
+    });
+    return rows.map((r) => r.id);
   }
 
   async getChunkCountForPaper(paperId: string): Promise<number> {
