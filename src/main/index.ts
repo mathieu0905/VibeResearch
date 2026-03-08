@@ -13,6 +13,7 @@ import { startAgentLocalService, stopAgentLocalService } from './services/agent-
 import { setupTokenUsageIpc } from './ipc/token-usage.ipc';
 import { setupTaggingIpc } from './ipc/tagging.ipc';
 import { ensureStorageDir, getDbPath } from './store/storage-path';
+import { PapersRepository } from '@db';
 
 // CJS-compatible __dirname (esbuild bundles to CJS, so __dirname is available globally)
 // In CJS format, __dirname is automatically provided by Node.js
@@ -239,6 +240,9 @@ function setupFileIpc() {
     try {
       realPath = await fs.promises.realpath(resolvedPath);
     } catch {
+      // File is missing — clear any stale pdfPath in DB so UI shows download button
+      const papersRepo = new PapersRepository();
+      await papersRepo.clearPdfPathByFilePath(resolvedPath).catch(() => {});
       throw new Error('File not found');
     }
 
