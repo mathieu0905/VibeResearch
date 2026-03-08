@@ -2,6 +2,28 @@
 
 ## 2026-03-08
 
+### feat: Model selection per agent and per task
+
+**Scope**: `prisma/schema.prisma`, `src/db/repositories/agent-todo.repository.ts`, `src/shared/types/agent-todo.ts`, `src/main/services/agent-todo.service.ts`, `src/renderer/components/settings/AgentSettings.tsx`, `src/renderer/pages/agent-todos/[id]/page.tsx`
+
+**Changes**:
+
+- **Schema**: Added `defaultModel String?` to `AgentConfig` and `model String?` to `AgentTodo`; ran `prisma db push`.
+- **Service**: `addAgent`/`updateAgent` support `defaultModel`; `createTodo`/`updateTodo` support `model`; `runTodo` injects `ANTHROPIC_MODEL` env var from `todo.model ?? agent.defaultModel`.
+- **AgentSettings UI**: Added "Default Model" input field to both Add Agent form and Edit Agent modal.
+- **Task Detail UI**: Added "Model" row in `TaskInfoPanel` with inline click-to-edit; shows `todo.model` (blue) or `agent.defaultModel` or "agent default" (gray). Blur/Enter commits the change via `ipc.updateAgentTodo`.
+
+### feat: Codex ACP support via npx bridge + Karen agent
+
+**Scope**: `src/main/store/model-config-store.ts`, `src/main/agent/acp-types.ts`, `src/main/agent/agent-detector.ts`, `~/.vibe-research/model-configs.json`
+
+**Changes**:
+
+- **Codex ACP bridge**: Changed default codex command from `codex` to `npx @zed-industries/codex-acp` since native codex CLI doesn't support ACP directly.
+- **YOLO mode**: Added `full-access` as codex's YOLO mode ID (from Codex approval-presets: read-only/auto/full-access).
+- **Agent detection**: Removed codex from `AGENTS_TO_DETECT` since it uses npx bridge (no local binary to detect).
+- **Karen agent**: Added new "Karen" agent to user's local config, configured to use the codex-acp bridge with the user's existing `~/.codex/` config files.
+
 ### fix: Agent task stop/cancel race condition + historical message rendering
 
 **Scope**: `src/main/services/agent-task-runner.ts`, `src/main/services/agent-todo.service.ts`, `src/renderer/pages/agent-todos/[id]/page.tsx`
