@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Search,
   FileText,
@@ -156,14 +156,16 @@ export function AppShell({
     () => analysisJobs.filter((job) => job.active),
     [analysisJobs],
   );
+  const [dismissedJobIds, setDismissedJobIds] = useState<Set<string>>(new Set());
   const latestFinishedAnalysisJob = useMemo(
     () =>
       analysisJobs.find(
         (job) =>
           !job.active &&
+          !dismissedJobIds.has(job.jobId) &&
           (job.stage === 'done' || job.stage === 'error' || job.stage === 'cancelled'),
       ) ?? null,
-    [analysisJobs],
+    [analysisJobs, dismissedJobIds],
   );
 
   return (
@@ -432,54 +434,81 @@ export function AppShell({
           </div>
         </aside>
 
-        {(activeAnalysisJobs.length > 0 || latestFinishedAnalysisJob) && (
-          <div className="flex flex-shrink-0 items-center gap-3 border-b border-notion-border bg-notion-sidebar px-6 py-2.5 text-sm">
-            {activeAnalysisJobs.length > 0 ? (
-              <>
-                <Loader2 size={14} className="animate-spin text-violet-600" />
-                <span className="text-notion-text">
-                  {activeAnalysisJobs.length === 1
-                    ? `Analyzing in background: ${activeAnalysisJobs[0].paperTitle ?? 'paper'}`
-                    : `${activeAnalysisJobs.length} analyses running in background`}
-                </span>
-                {activeAnalysisJobs[0]?.paperShortId && (
-                  <Link
-                    to={`/papers/${activeAnalysisJobs[0].paperShortId}`}
-                    className="ml-auto inline-flex items-center gap-1 text-violet-700 hover:text-violet-900"
+        {/* Floating analysis toast — bottom-right corner */}
+        <AnimatePresence>
+          {(activeAnalysisJobs.length > 0 || latestFinishedAnalysisJob) && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              transition={{ duration: 0.15 }}
+              className="fixed bottom-4 right-4 z-50 flex max-w-xs items-center gap-2 rounded-lg border border-notion-border bg-white px-3 py-2 text-xs shadow-lg"
+            >
+              {activeAnalysisJobs.length > 0 ? (
+                <>
+                  <Loader2 size={13} className="flex-shrink-0 animate-spin text-violet-600" />
+                  <span className="truncate text-notion-text">
+                    {activeAnalysisJobs.length === 1
+                      ? `Analyzing: ${activeAnalysisJobs[0].paperTitle ?? 'paper'}`
+                      : `${activeAnalysisJobs.length} analyses running`}
+                  </span>
+                  {activeAnalysisJobs[0]?.paperShortId && (
+                    <Link
+                      to={`/papers/${activeAnalysisJobs[0].paperShortId}`}
+                      className="flex-shrink-0 text-violet-700 hover:text-violet-900"
+                    >
+                      <Sparkles size={12} />
+                    </Link>
+                  )}
+                </>
+              ) : latestFinishedAnalysisJob ? (
+                <>
+                  {latestFinishedAnalysisJob.stage === 'done' ? (
+                    <CheckCircle2 size={13} className="flex-shrink-0 text-emerald-600" />
+                  ) : (
+                    <AlertCircle size={13} className="flex-shrink-0 text-red-500" />
+                  )}
+                  {latestFinishedAnalysisJob.paperShortId ? (
+                    <Link
+                      to={`/papers/${latestFinishedAnalysisJob.paperShortId}`}
+                      className={`truncate hover:underline ${
+                        latestFinishedAnalysisJob.stage === 'done'
+                          ? 'text-notion-text'
+                          : 'text-red-700'
+                      }`}
+                    >
+                      {latestFinishedAnalysisJob.stage === 'done'
+                        ? `Analysis ready: ${latestFinishedAnalysisJob.paperTitle ?? 'paper'}`
+                        : latestFinishedAnalysisJob.message}
+                    </Link>
+                  ) : (
+                    <span
+                      className={`truncate ${
+                        latestFinishedAnalysisJob.stage === 'done'
+                          ? 'text-notion-text'
+                          : 'text-red-700'
+                      }`}
+                    >
+                      {latestFinishedAnalysisJob.stage === 'done'
+                        ? `Analysis ready: ${latestFinishedAnalysisJob.paperTitle ?? 'paper'}`
+                        : latestFinishedAnalysisJob.message}
+                    </span>
+                  )}
+                  <button
+                    onClick={() =>
+                      setDismissedJobIds((prev) =>
+                        new Set(prev).add(latestFinishedAnalysisJob.jobId),
+                      )
+                    }
+                    className="flex-shrink-0 rounded p-0.5 text-notion-text-tertiary hover:bg-notion-sidebar-hover hover:text-notion-text"
                   >
-                    <Sparkles size={13} />
-                    View
-                  </Link>
-                )}
-              </>
-            ) : latestFinishedAnalysisJob ? (
-              <>
-                {latestFinishedAnalysisJob.stage === 'done' ? (
-                  <CheckCircle2 size={14} className="text-emerald-600" />
-                ) : (
-                  <AlertCircle size={14} className="text-red-500" />
-                )}
-                <span
-                  className={
-                    latestFinishedAnalysisJob.stage === 'done' ? 'text-notion-text' : 'text-red-700'
-                  }
-                >
-                  {latestFinishedAnalysisJob.stage === 'done'
-                    ? `Analysis ready: ${latestFinishedAnalysisJob.paperTitle ?? 'paper'}`
-                    : latestFinishedAnalysisJob.message}
-                </span>
-                {latestFinishedAnalysisJob.paperShortId && (
-                  <Link
-                    to={`/papers/${latestFinishedAnalysisJob.paperShortId}`}
-                    className="ml-auto inline-flex items-center gap-1 text-notion-text-secondary hover:text-notion-text"
-                  >
-                    Open
-                  </Link>
-                )}
-              </>
-            ) : null}
-          </div>
-        )}
+                    <X size={12} />
+                  </button>
+                </>
+              ) : null}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Page content */}
         <main className="notion-scrollbar flex-1 overflow-y-auto h-full">

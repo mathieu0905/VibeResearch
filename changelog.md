@@ -2,6 +2,17 @@
 
 ## 2026-03-09
 
+### fix: Change analysis banner to floating toast notification
+
+**Scope**: `src/renderer/components/app-shell.tsx`
+
+**Changes**:
+
+- Replaced full-width analysis banner with a compact floating toast in bottom-right corner
+- Added dismiss (X) button so finished analysis notifications can be closed
+- Made paper title clickable to navigate directly to the paper
+- Added enter/exit animations with AnimatePresence
+
 ### fix: Prevent chat messages from disappearing after streaming completes
 
 **Scope**: `src/renderer/pages/papers/reader/page.tsx`
