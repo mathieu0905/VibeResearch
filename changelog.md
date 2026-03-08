@@ -2,6 +2,21 @@
 
 ## 2026-03-08
 
+### feat: Task detail conversation UI redesign (Codex-inspired)
+
+**Scope**: `src/renderer/pages/agent-todos/[id]/page.tsx`, `src/renderer/components/agent-todo/MessageStream.tsx`, `src/renderer/components/agent-todo/ToolCallCard.tsx`, `src/renderer/components/agent-todo/ThoughtBlock.tsx`
+
+**Changes**:
+
+- **MessageStream**: Removed assistant bubble wrapper — content flows inline on white background. User messages use a simple gray pill bubble (no "You" label). Tool calls are grouped together in a compact block.
+- **ToolCallCard**: Redesigned to match Codex-style clean rows — bold action label ("Edited", "Read", "Ran") + filename in monospace + status icon on right. Removed colored left border. Uses subtle gray background `#f5f5f4`.
+- **ThoughtBlock**: Simplified to compact inline "Thought ▶" toggle (no Brain icon). Expanded view shows italic text with left border.
+- **Header**: Title + folder icon + cwd path on same row (Codex-style). Removed status text label, kept status dot.
+- **Prompt banner**: Removed "Prompt" label header, shows text directly with more padding.
+- **Chat input**: Removed border-t separator, input floats with padding. Added "+" attach button on left. Improved placeholder text.
+
+**Test design**: Run an agent task and verify the conversation UI matches the Codex-inspired design with clean inline messages, compact tool call rows, and the improved input area.
+
 ### feat: Improved agent message typography and code highlighting
 
 **Scope**: `src/renderer/components/agent-todo/TextMessage.tsx`, `package.json`

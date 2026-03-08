@@ -12,7 +12,6 @@ import {
   X,
   Hash,
   Cpu,
-  User,
   Folder,
 } from 'lucide-react';
 import { ipc } from '../../../hooks/use-ipc';
@@ -390,37 +389,32 @@ export function AgentTodoDetailPage() {
             const from = (location.state as { from?: string })?.from;
             navigate(from ?? '/agent-todos');
           }}
-          className="text-notion-text-secondary hover:text-notion-text transition-colors"
+          className="text-notion-text-secondary hover:text-notion-text transition-colors flex-shrink-0"
         >
           <ArrowLeft size={18} />
         </button>
         <div className="flex-1 min-w-0">
-          <h1 className="font-semibold text-notion-text truncate">{todo.title}</h1>
-          <div className="flex items-center gap-3 text-xs text-notion-text-secondary mt-0.5">
-            <span className="inline-flex items-center gap-1">
-              <User size={10} className="text-notion-text-tertiary" />
-              <span>{todo.agent.name}</span>
-            </span>
-            <span className="inline-flex items-center gap-1 min-w-0">
-              <Folder size={10} className="text-notion-text-tertiary flex-shrink-0" />
-              <span className="font-mono truncate">{todo.cwd}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="font-semibold text-notion-text truncate">{todo.title}</h1>
+            <Folder size={13} className="text-notion-text-tertiary flex-shrink-0" />
+            <span className="text-sm text-notion-text-tertiary font-mono truncate min-w-0">
+              {todo.cwd}
             </span>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <StatusDot status={currentStatus} />
-          <span className="text-sm text-notion-text-secondary capitalize">{currentStatus}</span>
           {isRunning ? (
             <button
               onClick={handleStop}
-              className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 transition-colors"
             >
               <Square size={12} /> Stop
             </button>
           ) : (
             <button
               onClick={handleRun}
-              className="flex items-center gap-1 rounded-lg bg-notion-text px-3 py-1.5 text-xs text-white hover:bg-notion-text/90 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg bg-notion-text px-3 py-1.5 text-xs text-white hover:bg-notion-text/90 transition-colors"
             >
               <Play size={12} /> Run
             </button>
@@ -448,11 +442,8 @@ export function AgentTodoDetailPage() {
         {/* Right column: Prompt banner + Message Stream + Chat Input */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {/* Prompt banner at top of chat area */}
-          <div className="flex-shrink-0 px-4 py-2.5 border-b border-notion-border bg-notion-sidebar">
-            <span className="text-xs font-medium text-notion-text-tertiary uppercase tracking-wide block mb-1">
-              Prompt
-            </span>
-            <p className="text-xs text-notion-text-secondary leading-relaxed line-clamp-3 whitespace-pre-wrap">
+          <div className="flex-shrink-0 px-5 py-4 border-b border-notion-border">
+            <p className="text-sm text-notion-text leading-relaxed line-clamp-3 whitespace-pre-wrap">
               {todo.prompt}
             </p>
           </div>
@@ -494,12 +485,12 @@ export function AgentTodoDetailPage() {
 
           {/* Chat Input */}
           {selectedRunId && (
-            <div className="flex-shrink-0 border-t border-notion-border px-4 py-3 bg-white">
-              <div className="rounded-2xl border border-notion-border bg-white shadow-sm transition-all focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
-                <div className="px-4 pt-3 pb-2 relative">
+            <div className="flex-shrink-0 px-4 pb-4 pt-3">
+              <div className="rounded-2xl border border-notion-border bg-white shadow-sm transition-all focus-within:border-notion-text-tertiary focus-within:shadow-md">
+                <div className="px-4 pt-3.5 pb-2 relative">
                   {/* Slash command menu */}
                   {slashMenuOpen && filteredCommands.length > 0 && (
-                    <div className="absolute bottom-full left-0 right-0 mb-1 mx-0 rounded-lg border border-notion-border bg-white shadow-lg overflow-hidden z-20 max-h-52 overflow-y-auto">
+                    <div className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-notion-border bg-white shadow-lg overflow-hidden z-20 max-h-52 overflow-y-auto">
                       {filteredCommands.map((cmd, i) => (
                         <button
                           key={cmd.name}
@@ -588,20 +579,27 @@ export function AgentTodoDetailPage() {
                       isRunning
                         ? 'Agent is running...'
                         : effectiveCanChat
-                          ? 'Continue the conversation... (type / for commands)'
+                          ? 'Ask anything... (type / for commands)'
                           : 'Run the agent to start a conversation...'
                     }
                     disabled={isRunning || !effectiveCanChat}
                     rows={1}
                     className="w-full resize-none bg-transparent text-sm text-notion-text placeholder:text-notion-text-tertiary focus:outline-none disabled:opacity-40"
-                    style={{ minHeight: '22px', maxHeight: '120px' }}
+                    style={{ minHeight: '24px', maxHeight: '120px' }}
                   />
                 </div>
                 {/* Error message */}
                 {chatError && <p className="px-4 pb-1 text-xs text-red-500">{chatError}</p>}
-                {/* Bottom toolbar: model + yolo on left, send button on right */}
-                <div className="flex items-center justify-between px-2 pb-2">
-                  <div className="flex items-center gap-0.5">
+                {/* Bottom toolbar: + icon + model on left, send button on right */}
+                <div className="flex items-center justify-between px-3 pb-3">
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-tertiary hover:bg-notion-sidebar hover:text-notion-text-secondary transition-colors"
+                      title="Attach"
+                    >
+                      <span className="text-base leading-none">+</span>
+                    </button>
                     <ModelDropdown
                       value={todo.model ?? null}
                       agentTool={todo.agent?.agentTool}
@@ -633,7 +631,7 @@ export function AgentTodoDetailPage() {
                     {isRunning ? (
                       <button
                         onClick={handleStop}
-                        className="rounded-full bg-gray-400 p-2 text-white hover:bg-gray-500 transition-colors"
+                        className="rounded-full bg-notion-text p-2 text-white hover:bg-notion-text/80 transition-colors"
                         title="Stop"
                       >
                         <Square size={13} />

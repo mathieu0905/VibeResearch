@@ -1,6 +1,6 @@
 import { useEffect, useRef, useMemo } from 'react';
+import { Loader2 } from 'lucide-react';
 import { TextMessage } from './TextMessage';
-import { ThoughtBlock } from './ThoughtBlock';
 import { ToolCallCard } from './ToolCallCard';
 import { PlanCard } from './PlanCard';
 import { PermissionCard } from './PermissionCard';
@@ -38,7 +38,6 @@ function groupMessages(messages: Message[]): MessageGroup[] {
   const groups: MessageGroup[] = [];
 
   for (const msg of messages) {
-    // system/error messages are their own group
     if (msg.type === 'system' || msg.type === 'error') {
       groups.push({ role: 'system', messages: [msg] });
       continue;
@@ -60,9 +59,11 @@ function groupMessages(messages: Message[]): MessageGroup[] {
 function MessageGroupView({
   group,
   lastTextMsgId,
+  isStreaming,
 }: {
   group: MessageGroup;
   lastTextMsgId: string | null;
+  isStreaming: boolean;
 }) {
   if (group.role === 'system') {
     const msg = group.messages[0];
@@ -81,15 +82,14 @@ function MessageGroupView({
 
   if (group.role === 'user') {
     return (
-      <div className="flex flex-col items-end ml-8 my-2">
-        <span className="text-xs text-notion-text-tertiary mb-1 mr-1">You</span>
-        <div className="bg-notion-accent-light border border-notion-accent/20 rounded-xl rounded-tr-sm px-4 py-2.5 max-w-full">
+      <div className="flex justify-end my-4">
+        <div className="bg-[#f0f0ef] rounded-2xl px-4 py-2.5 max-w-[80%]">
           {group.messages.map((msg) => {
             const content = msg.content as { text: string };
             return (
-              <div key={msg.id} className="prose prose-sm max-w-none text-notion-text">
-                <p className="m-0 text-sm">{content.text}</p>
-              </div>
+              <p key={msg.id} className="text-sm text-notion-text leading-relaxed m-0">
+                {content.text}
+              </p>
             );
           })}
         </div>
@@ -97,16 +97,33 @@ function MessageGroupView({
     );
   }
 
-  // assistant group - merge consecutive thought messages
+  // assistant group
   const mergedElements: React.ReactNode[] = [];
-  let consecutiveThoughts: { id: string; text: string }[] = [];
+  let consecutiveToolCalls: {
+    id: string;
+    msgId: string;
+    content: Record<string, unknown>;
+    status?: string | null;
+  }[] = [];
 
-  function flushThoughts() {
-    if (consecutiveThoughts.length > 0) {
-      const mergedText = consecutiveThoughts.map((t) => t.text).join('\n\n');
-      const key = consecutiveThoughts[0].id;
-      consecutiveThoughts = [];
-      return <ThoughtBlock key={key} content={{ text: mergedText }} />;
+  // Track if this group has any thought messages (to show spinner while streaming)
+  let hasThoughts = false;
+
+  function flushToolCalls() {
+    if (consecutiveToolCalls.length > 0) {
+      const calls = consecutiveToolCalls;
+      consecutiveToolCalls = [];
+      return (
+        <div key={calls[0].id} className="my-1 space-y-0.5">
+          {calls.map((tc) => (
+            <ToolCallCard
+              key={tc.msgId}
+              content={tc.content as any}
+              status={tc.status ?? undefined}
+            />
+          ))}
+        </div>
+      );
     }
     return null;
   }
@@ -115,11 +132,15 @@ function MessageGroupView({
     const content = msg.content as Record<string, unknown>;
 
     if (msg.type === 'thought') {
-      consecutiveThoughts.push({ id: msg.id, text: (content as { text: string }).text });
+      // Flush pending tool calls, then skip thought content
+      const toolsEl = flushToolCalls();
+      if (toolsEl) mergedElements.push(toolsEl);
+      hasThoughts = true;
+    } else if (msg.type === 'tool_call') {
+      consecutiveToolCalls.push({ id: msg.id, msgId: msg.msgId, content, status: msg.status });
     } else {
-      // Flush accumulated thoughts before rendering other message types
-      const thoughtsEl = flushThoughts();
-      if (thoughtsEl) mergedElements.push(thoughtsEl);
+      const toolsEl = flushToolCalls();
+      if (toolsEl) mergedElements.push(toolsEl);
 
       switch (msg.type) {
         case 'text':
@@ -131,31 +152,23 @@ function MessageGroupView({
             />,
           );
           break;
-        case 'tool_call':
-          mergedElements.push(
-            <ToolCallCard
-              key={msg.msgId}
-              content={content as any}
-              status={msg.status ?? undefined}
-            />,
-          );
-          break;
         case 'plan':
           mergedElements.push(<PlanCard key={msg.id} content={content as any} />);
           break;
       }
     }
   }
-  // Flush any remaining thoughts at the end
-  const remainingThoughts = flushThoughts();
-  if (remainingThoughts) mergedElements.push(remainingThoughts);
+  const remainingTools = flushToolCalls();
+  if (remainingTools) mergedElements.push(remainingTools);
+
+  // Show spinner after tool calls / thoughts only while streaming and no text yet
+  const hasText = group.messages.some((m) => m.type === 'text');
+  const showSpinner = isStreaming && (hasThoughts || consecutiveToolCalls.length > 0) && !hasText;
 
   return (
-    <div className="flex flex-col items-start mr-8 my-2">
-      <span className="text-xs text-notion-text-tertiary mb-1 ml-1">Agent</span>
-      <div className="bg-notion-sidebar border border-notion-border rounded-xl rounded-tl-sm px-4 py-2.5 w-full">
-        {mergedElements}
-      </div>
+    <div className="my-4">
+      {mergedElements}
+      {showSpinner && <Loader2 size={14} className="animate-spin text-notion-text-tertiary mt-1" />}
     </div>
   );
 }
@@ -170,7 +183,6 @@ export function MessageStream({
   const bottomRef = useRef<HTMLDivElement>(null);
   const isStreaming = status === 'running' || status === 'initializing';
 
-  // The last text message from the assistant is the one currently streaming
   const lastTextMsgId = isStreaming
     ? ([...messages].reverse().find((m) => m.type === 'text' && m.role === 'assistant')?.msgId ??
       null)
@@ -180,7 +192,6 @@ export function MessageStream({
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length]);
 
-  // Show thinking dots when running but no text output yet
   const hasTextOutput = useMemo(
     () => messages.some((m) => m.type === 'text' && m.role === 'assistant'),
     [messages],
@@ -206,29 +217,19 @@ export function MessageStream({
   const groups = groupMessages(messages);
 
   return (
-    <div className="p-4 space-y-0.5">
+    <div className="px-5 py-4">
       {groups.map((group, i) => (
-        <MessageGroupView key={i} group={group} lastTextMsgId={lastTextMsgId} />
+        <MessageGroupView
+          key={i}
+          group={group}
+          lastTextMsgId={lastTextMsgId}
+          isStreaming={isStreaming}
+        />
       ))}
 
       {showThinking && (
-        <div className="flex items-start mr-8 my-2">
-          <div className="bg-notion-sidebar border border-notion-border rounded-xl rounded-tl-sm px-4 py-3">
-            <div className="flex items-center gap-1">
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-notion-text-tertiary animate-bounce"
-                style={{ animationDelay: '0ms' }}
-              />
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-notion-text-tertiary animate-bounce"
-                style={{ animationDelay: '150ms' }}
-              />
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-notion-text-tertiary animate-bounce"
-                style={{ animationDelay: '300ms' }}
-              />
-            </div>
-          </div>
+        <div className="my-3">
+          <Loader2 size={14} className="animate-spin text-notion-text-tertiary" />
         </div>
       )}
 

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronDown, ChevronRight, Brain } from 'lucide-react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 
 interface ThoughtBlockProps {
   content: { text: string };
@@ -10,14 +10,17 @@ export function ThoughtBlock({ content }: ThoughtBlockProps) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="my-1.5">
+    <div className="my-1">
       <button
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-1.5 text-left text-xs text-notion-text-tertiary hover:text-notion-text-secondary transition-colors"
+        className="flex items-center gap-1 text-left text-sm text-notion-text-secondary hover:text-notion-text transition-colors"
       >
-        <Brain size={12} className="flex-shrink-0" />
-        <span className="font-medium">Thinking...</span>
-        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span className="font-semibold text-notion-text-secondary">Thought</span>
+        {expanded ? (
+          <ChevronDown size={13} className="text-notion-text-tertiary" />
+        ) : (
+          <ChevronRight size={13} className="text-notion-text-tertiary" />
+        )}
       </button>
 
       <AnimatePresence>
@@ -30,7 +33,7 @@ export function ThoughtBlock({ content }: ThoughtBlockProps) {
             className="overflow-hidden"
           >
             <div className="mt-1.5 pl-3 border-l-2 border-notion-border">
-              <p className="text-xs italic text-notion-text-tertiary whitespace-pre-wrap leading-relaxed">
+              <p className="text-sm italic text-notion-text-tertiary whitespace-pre-wrap leading-relaxed">
                 {content.text}
               </p>
             </div>

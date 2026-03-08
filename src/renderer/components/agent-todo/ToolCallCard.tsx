@@ -1,16 +1,4 @@
-import { useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import {
-  FileText,
-  Edit,
-  Terminal,
-  Plug,
-  ChevronDown,
-  ChevronRight,
-  Check,
-  Loader2,
-  X,
-} from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 
 interface ToolCallContent {
   title?: string;
@@ -25,124 +13,51 @@ interface ToolCallCardProps {
   status?: string;
 }
 
-function ToolIcon({ kind }: { kind?: string }) {
+function getKindLabel(kind?: string): string {
   switch (kind) {
     case 'read':
-      return <FileText size={13} />;
+      return 'Read';
     case 'edit':
-      return <Edit size={13} />;
+      return 'Edited';
     case 'execute':
-      return <Terminal size={13} />;
+      return 'Ran';
     case 'mcp':
-      return <Plug size={13} />;
+      return 'Called';
     default:
-      return <Terminal size={13} />;
-  }
-}
-
-function getStatusStyles(status?: string, kind?: string) {
-  // For execute commands, use purple theme
-  const isExecute = kind === 'execute';
-
-  switch (status) {
-    case 'in_progress':
-      return isExecute
-        ? {
-            border: 'border-l-2 border-l-purple-400',
-            bg: 'bg-purple-50',
-            icon: <Loader2 size={12} className="animate-spin text-purple-500" />,
-          }
-        : {
-            border: 'border-l-2 border-l-blue-400',
-            bg: 'bg-blue-50',
-            icon: <Loader2 size={12} className="animate-spin text-blue-500" />,
-          };
-    case 'completed':
-      return isExecute
-        ? {
-            border: 'border-l-2 border-l-purple-400',
-            bg: 'bg-purple-50',
-            icon: <Check size={12} className="text-purple-500" />,
-          }
-        : {
-            border: 'border-l-2 border-l-green-400',
-            bg: 'bg-green-50',
-            icon: <Check size={12} className="text-green-500" />,
-          };
-    case 'failed':
-      return {
-        border: 'border-l-2 border-l-red-400',
-        bg: 'bg-red-50',
-        icon: <X size={12} className="text-red-500" />,
-      };
-    default:
-      // pending or unknown
-      return isExecute
-        ? {
-            border: 'border-l-2 border-l-purple-300',
-            bg: 'bg-purple-50/50',
-            icon: <Loader2 size={12} className="animate-spin text-purple-400" />,
-          }
-        : {
-            border: 'border-l-2 border-l-amber-400',
-            bg: 'bg-amber-50',
-            icon: <Loader2 size={12} className="animate-spin text-amber-500" />,
-          };
+      return 'Used';
   }
 }
 
 export function ToolCallCard({ content, status }: ToolCallCardProps) {
-  const [expanded, setExpanded] = useState(false);
   const path = content.locations?.[0]?.path ?? (content.rawInput?.path as string) ?? null;
   const command = (content.rawInput?.command as string) ?? null;
-  // Always show expand button for completed tool calls
-  const hasDetails = !!(path || command || content.rawInput);
 
   const effectiveStatus = status ?? content.status;
-  const { border, bg, icon } = getStatusStyles(effectiveStatus, content.kind);
+  const kindLabel = getKindLabel(content.kind);
+  const isCompleted = effectiveStatus === 'completed';
+  const isFailed = effectiveStatus === 'failed';
+  const isExecute = content.kind === 'execute';
+
+  // Display name: prefer path basename, then title, then command snippet
+  const displayName = path
+    ? (path.split('/').pop() ?? path)
+    : (content.title ?? (command ? command.slice(0, 40) : null));
 
   return (
-    <motion.div layout className={`${border} ${bg} overflow-hidden my-1.5 rounded-r-md`}>
-      <div
-        className={`flex items-center gap-2 px-3 py-2 ${hasDetails ? 'cursor-pointer' : ''}`}
-        onClick={hasDetails ? () => setExpanded(!expanded) : undefined}
-      >
-        <span className="text-notion-text-secondary">
-          <ToolIcon kind={content.kind} />
+    <div className="flex items-center gap-2 rounded-md bg-[#f5f5f4] px-3 py-1.5">
+      <span className="text-sm font-semibold text-notion-text flex-shrink-0">{kindLabel}</span>
+      {displayName && (
+        <span className="text-sm text-notion-text-secondary flex-1 truncate font-mono text-xs">
+          {displayName}
         </span>
-        <span className="font-medium text-sm text-notion-text flex-1 truncate">
-          {content.title ?? content.kind ?? 'Tool Call'}
-        </span>
-        {icon}
-        {hasDetails && (
-          <span className="text-notion-text-tertiary">
-            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-          </span>
-        )}
-      </div>
-
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="overflow-hidden"
-          >
-            {(path || command) && (
-              <div className="px-3 pb-1.5 text-xs font-mono text-notion-text-secondary">
-                {path ?? command}
-              </div>
-            )}
-            {content.rawInput && (
-              <pre className="px-3 py-2 text-xs font-mono bg-white/60 max-h-48 overflow-y-auto text-notion-text border-t border-white/40">
-                {JSON.stringify(content.rawInput, null, 2)}
-              </pre>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+      )}
+      {!isCompleted && !isFailed && (
+        <Loader2
+          size={13}
+          className={`animate-spin flex-shrink-0 ${isExecute ? 'text-purple-400' : 'text-notion-text-tertiary'}`}
+        />
+      )}
+      {isFailed && <X size={13} className="text-red-400 flex-shrink-0" />}
+    </div>
   );
 }
