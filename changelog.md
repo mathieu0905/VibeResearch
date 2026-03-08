@@ -30,9 +30,10 @@
 **Changes**:
 
 - Added `workdir` parameter support to `createProject` and `updateProject` methods in `ProjectsService`
-- Added workdir editing UI in `ProjectDetail` component with double-click to edit pattern
+- Added pencil icon next to project name that opens edit modal with all project fields (name, description, workdir)
+- Replaced previous double-click-to-edit pattern with unified edit modal
 - Extended `CwdPicker` component with optional `onBlur` prop for form integration
-- Workdir is displayed as a folder path with folder icon, double-click to edit, uses CwdPicker for directory selection
+- Workdir is displayed below description with folder icon when set
 
 ### fix: Unify AgentToolKind — add Gemini support across main process
 

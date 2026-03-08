@@ -165,6 +165,62 @@ export class ProjectsService {
     return this.repo.deleteRepo(id);
   }
 
+  /**
+   * Check if the project's workdir contains a .git folder
+   * and optionally get the remote URL
+   */
+  async checkWorkdirGit(projectId: string): Promise<WorkdirRepoStatus | null> {
+    const project = await this.repo.getProject(projectId);
+    if (!project?.workdir) return null;
+
+    const gitDir = path.join(project.workdir, '.git');
+    const hasGit = fs.existsSync(gitDir) && fs.statSync(gitDir).isDirectory();
+
+    if (!hasGit) {
+      return { hasGit: false, localPath: project.workdir };
+    }
+
+    // Try to get remote URL
+    let remoteUrl: string | undefined;
+    try {
+      remoteUrl = await spawnAsync('git', ['remote', 'get-url', 'origin'], {
+        cwd: project.workdir,
+      });
+    } catch {
+      // No remote configured
+    }
+
+    return {
+      hasGit: true,
+      remoteUrl: remoteUrl || undefined,
+      localPath: project.workdir,
+    };
+  }
+
+  /**
+   * Add the project's workdir as a repo (no cloning needed)
+   */
+  async addWorkdirRepo(projectId: string): Promise<{ id: string; repoUrl: string; localPath: string } | null> {
+    const status = await this.checkWorkdirGit(projectId);
+    if (!status?.hasGit) return null;
+
+    // Use remote URL if available, otherwise use local path as identifier
+    const repoUrl = status.remoteUrl || `local://${status.localPath}`;
+
+    const repo = await this.repo.createRepo({
+      projectId,
+      repoUrl,
+      localPath: status.localPath,
+      isWorkdirRepo: true,
+    });
+
+    return {
+      id: repo.id,
+      repoUrl: repo.repoUrl,
+      localPath: status.localPath,
+    };
+  }
+
   // ── Ideas ─────────────────────────────────────────────────────────────────
 
   async createIdea(input: {

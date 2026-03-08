@@ -9,6 +9,7 @@ import {
   type ProjectIdea,
   type CommitInfo,
   type ModelConfig,
+  type WorkdirRepoStatus,
 } from '../../hooks/use-ipc';
 import type { AgentTodoItem } from '@shared';
 import { useTabs } from '../../hooks/use-tabs';
@@ -31,6 +32,7 @@ import {
   Check,
   X,
   FolderOpen,
+  Pencil,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { CwdPicker } from '../../components/agent-todo/CwdPicker';
@@ -189,7 +191,10 @@ function RepoCard({ repo, onDelete }: { repo: ProjectRepo; onDelete: () => void 
   const [expanded, setExpanded] = useState(false);
   const [cloneError, setCloneError] = useState<string | null>(null);
 
+  const isWorkdir = repo.isWorkdirRepo;
+
   const handleClone = async () => {
+    if (isWorkdir) return; // Should not happen, but safety check
     setCloning(true);
     setCloneError(null);
     const result = await ipc.cloneRepo(repo.id, repo.repoUrl);
@@ -221,11 +226,19 @@ function RepoCard({ repo, onDelete }: { repo: ProjectRepo; onDelete: () => void 
     setExpanded((v) => !v);
   };
 
-  const repoName = repo.repoUrl
-    .replace(/\.git$/, '')
-    .split('/')
-    .slice(-2)
-    .join('/');
+  // For workdir repos, use a friendly display name
+  const displayName = isWorkdir
+    ? 'Project Workdir'
+    : repo.repoUrl
+        .replace(/\.git$/, '')
+        .split('/')
+        .slice(-2)
+        .join('/');
+
+  // For workdir repos without remote, show local path
+  const displayUrl = isWorkdir
+    ? (repo.repoUrl.startsWith('local://') ? repo.localPath : repo.repoUrl)
+    : repo.repoUrl;
 
   return (
     <motion.div
@@ -238,14 +251,26 @@ function RepoCard({ repo, onDelete }: { repo: ProjectRepo; onDelete: () => void 
     >
       <div className="flex items-center gap-3 px-4 py-3">
         <motion.div whileHover={{ rotate: 10 }}>
-          <GitBranch size={16} className="flex-shrink-0 text-notion-text-tertiary" />
+          {isWorkdir ? (
+            <FolderOpen size={16} className="flex-shrink-0 text-notion-accent" />
+          ) : (
+            <GitBranch size={16} className="flex-shrink-0 text-notion-text-tertiary" />
+          )}
         </motion.div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-notion-text">{repoName}</p>
-          <p className="truncate text-xs text-notion-text-tertiary">{repo.repoUrl}</p>
+          <div className="flex items-center gap-2">
+            <p className="truncate text-sm font-medium text-notion-text">{displayName}</p>
+            {isWorkdir && (
+              <span className="inline-flex items-center rounded bg-notion-accent-light px-1.5 py-0.5 text-[10px] font-medium text-notion-accent">
+                local
+              </span>
+            )}
+          </div>
+          <p className="truncate text-xs text-notion-text-tertiary">{displayUrl}</p>
         </div>
         <div className="flex items-center gap-2">
-          {!repo.localPath && (
+          {/* Only show Clone button for non-workdir repos without localPath */}
+          {!isWorkdir && !repo.localPath && (
             <motion.button
               onClick={handleClone}
               disabled={cloning}
@@ -257,6 +282,7 @@ function RepoCard({ repo, onDelete }: { repo: ProjectRepo; onDelete: () => void 
               Clone
             </motion.button>
           )}
+          {/* Show Commits button for all repos with localPath (including workdir) */}
           {repo.localPath && (
             <motion.button
               onClick={toggleExpand}
@@ -1134,44 +1160,34 @@ function IdeaCard({
 
 function ProjectDetail({ project, onRefresh }: { project: ProjectItem; onRefresh: () => void }) {
   const [tab, setTab] = useState<Tab>('tasks');
-  const [editingName, setEditingName] = useState(false);
-  const [editingDesc, setEditingDesc] = useState(false);
-  const [editingWorkdir, setEditingWorkdir] = useState(false);
-  const [nameDraft, setNameDraft] = useState(project.name);
-  const [descDraft, setDescDraft] = useState(project.description ?? '');
-  const [workdirDraft, setWorkdirDraft] = useState(project.workdir ?? '');
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editName, setEditName] = useState(project.name);
+  const [editDesc, setEditDesc] = useState(project.description ?? '');
+  const [editWorkdir, setEditWorkdir] = useState(project.workdir ?? '');
+  const [saving, setSaving] = useState(false);
 
-  const commitName = async () => {
-    const t = nameDraft.trim();
-    if (t && t !== project.name) {
-      await ipc.updateProject(project.id, { name: t });
-      onRefresh();
-    } else {
-      setNameDraft(project.name);
-    }
-    setEditingName(false);
+  const openEditModal = () => {
+    setEditName(project.name);
+    setEditDesc(project.description ?? '');
+    setEditWorkdir(project.workdir ?? '');
+    setShowEditModal(true);
   };
 
-  const commitDesc = async () => {
-    const d = descDraft.trim();
-    if (d !== (project.description ?? '')) {
-      await ipc.updateProject(project.id, { description: d || undefined });
+  const saveEdit = async () => {
+    const name = editName.trim();
+    if (!name) return;
+    setSaving(true);
+    try {
+      await ipc.updateProject(project.id, {
+        name,
+        description: editDesc.trim() || undefined,
+        workdir: editWorkdir.trim() || undefined,
+      });
       onRefresh();
-    } else {
-      setDescDraft(project.description ?? '');
+      setShowEditModal(false);
+    } finally {
+      setSaving(false);
     }
-    setEditingDesc(false);
-  };
-
-  const commitWorkdir = async () => {
-    const w = workdirDraft.trim();
-    if (w !== (project.workdir ?? '')) {
-      await ipc.updateProject(project.id, { workdir: w || undefined });
-      onRefresh();
-    } else {
-      setWorkdirDraft(project.workdir ?? '');
-    }
-    setEditingWorkdir(false);
   };
 
   const tabs: { id: Tab; label: string; count: number }[] = [
@@ -1196,100 +1212,109 @@ function ProjectDetail({ project, onRefresh }: { project: ProjectItem; onRefresh
           All projects
         </Link>
 
-        {editingName ? (
-          <input
-            autoFocus
-            value={nameDraft}
-            onChange={(e) => setNameDraft(e.target.value)}
-            onBlur={commitName}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitName();
-              if (e.key === 'Escape') {
-                setNameDraft(project.name);
-                setEditingName(false);
-              }
-            }}
-            className="w-full rounded-lg border border-notion-border bg-transparent px-2 py-1 text-2xl font-bold text-notion-text focus:outline-none focus:ring-1 focus:ring-notion-text/20"
-          />
-        ) : (
-          <h2
-            className="cursor-default text-2xl font-bold text-notion-text"
-            onDoubleClick={() => setEditingName(true)}
-            title="Double-click to rename"
+        <div className="flex items-start gap-2">
+          <h2 className="text-2xl font-bold text-notion-text">{project.name}</h2>
+          <button
+            onClick={openEditModal}
+            className="mt-1 rounded p-1 text-notion-text-tertiary hover:bg-notion-sidebar-hover hover:text-notion-text"
+            title="Edit project"
           >
-            {project.name}
-          </h2>
-        )}
+            <Pencil size={14} />
+          </button>
+        </div>
 
-        {editingDesc ? (
-          <input
-            autoFocus
-            value={descDraft}
-            onChange={(e) => setDescDraft(e.target.value)}
-            onBlur={commitDesc}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.nativeEvent.isComposing) commitDesc();
-              if (e.key === 'Escape') {
-                setDescDraft(project.description ?? '');
-                setEditingDesc(false);
-              }
-            }}
-            placeholder="Add a description…"
-            className="mt-1 w-full rounded border border-notion-border bg-transparent px-2 py-0.5 text-sm text-notion-text-secondary focus:outline-none focus:ring-1 focus:ring-notion-text/20"
-          />
-        ) : (
-          <p
-            className={clsx(
-              'mt-1 cursor-default text-sm',
-              project.description ? 'text-notion-text-secondary' : 'text-notion-text-tertiary',
-            )}
-            onDoubleClick={() => setEditingDesc(true)}
-            title="Double-click to edit description"
-          >
-            {project.description ?? 'Add a description…'}
-          </p>
-        )}
+        <p
+          className={clsx(
+            'mt-1 text-sm',
+            project.description ? 'text-notion-text-secondary' : 'text-notion-text-tertiary',
+          )}
+        >
+          {project.description ?? 'No description'}
+        </p>
 
-        {/* Work directory */}
-        {editingWorkdir ? (
-          <div className="mt-2">
-            <CwdPicker
-              value={workdirDraft}
-              onChange={setWorkdirDraft}
-              onBlur={commitWorkdir}
-            />
-            <div className="mt-1 flex gap-1">
-              <button
-                onClick={commitWorkdir}
-                className="rounded px-2 py-0.5 text-xs text-notion-accent hover:bg-notion-accent-light"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => {
-                  setWorkdirDraft(project.workdir ?? '');
-                  setEditingWorkdir(false);
-                }}
-                className="rounded px-2 py-0.5 text-xs text-notion-text-secondary hover:bg-notion-sidebar-hover"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div
-            className={clsx(
-              'mt-2 flex cursor-default items-center gap-1.5 text-xs',
-              project.workdir ? 'text-notion-text-secondary' : 'text-notion-text-tertiary',
-            )}
-            onDoubleClick={() => setEditingWorkdir(true)}
-            title="Double-click to edit working directory"
-          >
+        {project.workdir && (
+          <div className="mt-2 flex items-center gap-1.5 text-xs text-notion-text-secondary">
             <FolderOpen size={12} />
-            <span className="font-mono">{project.workdir ?? 'Set working directory…'}</span>
+            <span className="font-mono">{project.workdir}</span>
           </div>
         )}
       </div>
+
+      {/* Edit Modal */}
+      <AnimatePresence>
+        {showEditModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={(e) => e.target === e.currentTarget && setShowEditModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+            >
+              <h3 className="mb-4 text-lg font-semibold text-notion-text">Edit Project</h3>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-notion-text">
+                    Name <span className="text-notion-red">*</span>
+                  </label>
+                  <input
+                    autoFocus
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    placeholder="Project name"
+                    className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-notion-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-notion-text">
+                    Description
+                  </label>
+                  <textarea
+                    value={editDesc}
+                    onChange={(e) => setEditDesc(e.target.value)}
+                    placeholder="Optional description"
+                    rows={2}
+                    className="w-full resize-none rounded-lg border border-notion-border bg-white px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-notion-accent"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-notion-text">
+                    Working Directory
+                  </label>
+                  <CwdPicker value={editWorkdir} onChange={setEditWorkdir} />
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="rounded-lg px-4 py-2 text-sm text-notion-text-secondary hover:bg-notion-sidebar-hover"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveEdit}
+                  disabled={!editName.trim() || saving}
+                  className="flex items-center gap-1.5 rounded-lg bg-notion-accent px-4 py-2 text-sm font-medium text-white hover:bg-notion-accent/90 disabled:opacity-50"
+                >
+                  {saving && <Loader2 size={14} className="animate-spin" />}
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Tabs */}
       <div className="mb-5 flex gap-1 border-b border-notion-border">
@@ -1490,7 +1515,7 @@ export function ProjectsPage() {
             <div className="flex-1">
               <h1 className="text-3xl font-bold tracking-tight text-notion-text">Projects</h1>
               <p className="mt-1 text-sm text-notion-text-secondary">
-                Manage your research projects, todos, code repos, and paper-linked ideas
+                Manage your research projects, tasks, code repos, and paper-linked ideas
               </p>
             </div>
             <motion.button
