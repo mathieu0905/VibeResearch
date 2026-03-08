@@ -183,7 +183,10 @@ export function setupProvidersIpc() {
 
   ipcMain.handle(
     'shell:openInEditor',
-    async (_, dirPath: string): Promise<IpcResult<{ success: boolean; error?: string }>> => {
+    async (
+      _,
+      dirPath: string,
+    ): Promise<IpcResult<{ success: boolean; error?: string; usedFallback?: boolean }>> => {
       try {
         const cmd = providersService.getEditor();
         const env = { ...process.env, PATH: getShellPath() };
@@ -227,18 +230,29 @@ export function setupProvidersIpc() {
         const result = await runSpawn(binary, args);
 
         // If editor command fails, fall back to macOS 'open' or Electron shell
+        // But report that the configured editor failed
         if (!result.success) {
+          const originalError = result.error;
           // On macOS, use 'open' command which works for both apps and folders
           if (process.platform === 'darwin') {
             const openResult = await runSpawn('open', [dirPath]);
-            return ok(openResult);
+            // Return failure with the original editor error, but note fallback was used
+            return ok({
+              success: false,
+              error: `Editor "${binary}" not found or failed: ${originalError}`,
+              usedFallback: openResult.success,
+            });
           }
           // On other platforms, use Electron's shell.openPath
           try {
             await shell.openPath(dirPath);
-            return ok({ success: true });
+            return ok({
+              success: false,
+              error: `Editor "${binary}" not found or failed: ${originalError}`,
+              usedFallback: true,
+            });
           } catch (shellErr) {
-            return ok({ success: false, error: String(shellErr) });
+            return ok({ success: false, error: String(shellErr), usedFallback: false });
           }
         }
 

@@ -543,6 +543,12 @@ function EditorSettings() {
       const result = await ipc.openInEditor(root);
       if (result.success) {
         setTestResult({ ok: true, msg: 'Editor opened successfully.' });
+      } else if (result.usedFallback) {
+        // Editor command failed, but folder was opened via system fallback (Finder)
+        setTestResult({
+          ok: false,
+          msg: result.error ?? 'Editor command not found. Opened in Finder instead.',
+        });
       } else {
         setTestResult({ ok: false, msg: result.error ?? 'Failed to open editor.' });
       }
@@ -550,7 +556,7 @@ function EditorSettings() {
       setTestResult({ ok: false, msg: String(e) });
     } finally {
       setTesting(false);
-      setTimeout(() => setTestResult(null), 4000);
+      setTimeout(() => setTestResult(null), 5000);
     }
   };
 

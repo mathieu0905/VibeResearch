@@ -2,6 +2,73 @@
 
 ## 2026-03-08
 
+### fix: Editor test now correctly reports failure when command not found
+
+**Scope**: `src/main/ipc/providers.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`
+
+**Changes**:
+
+- Previously, when testing an editor (e.g., VS Code `code` command) that wasn't available, the system silently fell back to macOS `open` command (Finder) and reported success.
+- Now the IPC handler returns `{ success: false, usedFallback: true, error: "Editor 'code' not found..." }` when the editor command fails, even though it still opens the folder via fallback.
+- Frontend displays the error message correctly, showing test failure instead of false success.
+
+### feat: Hide chat input in YOLO mode + ACP integration tests
+
+**Scope**: `src/renderer/pages/agent-todos/[id]/page.tsx`, `tests/integration/acp.test.ts`
+
+**Changes**:
+
+- **Task detail page**: Chat input bar is now hidden when `todo.yoloMode` is true (全自动 mode needs no manual input).
+- **ACP tests**: Added comprehensive ACP integration test suite (46 tests) covering `acp-types`, `acp-adapter`, `acp-connection` JSON-RPC parsing/notification/permission/fs handling, and `agent-detector`. All 46 tests pass.
+
+### feat: Multi-turn conversation in Task detail page
+
+**Scope**: `src/main/services/agent-runner-registry.ts`, `src/main/services/agent-task-runner.ts`, `src/main/services/agent-todo.service.ts`, `src/main/ipc/agent-todo.ipc.ts`, `src/main/agent/acp-connection.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/hooks/use-agent-stream.ts`, `src/renderer/pages/agent-todos/[id]/page.tsx`
+
+**Changes**:
+
+- **agent-runner-registry**: Completed runners are now kept alive in the registry (only `failed`/`cancelled` triggers auto-removal), enabling multi-turn conversation after a run finishes.
+- **AgentTaskRunner**: Added `sendMessage(text)` for sending follow-up prompts on the same ACP session, `isAlive()` to check if the runner can accept new messages, and `pushUserMessage()` to broadcast user messages to the renderer via IPC.
+- **AgentTodoService**: Added `sendMessage(todoId, runId, text)` which persists the user message to DB, pushes it to the renderer immediately, then forwards to the agent.
+- **agent-todo.ipc**: Added `agent-todo:send-message` IPC handler.
+- **acp-connection**: stderr data is now emitted as a `stderr` event instead of being silently ignored.
+- **AgentTaskRunner**: Listens to `stderr` events from connection and forwards them to the renderer as `agent-todo:stderr` IPC events.
+- **use-agent-stream**: Added `canChat` state (true when status is `completed`) and `stderrLines` array for real-time stderr output.
+- **use-ipc**: Added `sendAgentMessage(todoId, runId, text)` IPC client method.
+- **Task detail page**: Added a persistent ChatInput bar at the bottom of the message stream (shown when a run is selected). Supports Enter-to-send (with IME guard), auto-resize textarea, Send/Stop buttons. Also added a floating stderr output panel (terminal-style, dark bg) shown while the agent is running.
+
+
+
+### feat: Redesign Ideas tab — inline chat, dropdown selectors for Papers/Repos, Generate Task modal
+
+**Scope**: `src/renderer/pages/projects/page.tsx`
+
+**Changes**:
+
+- Removed the separate `IdeaChatModal` drawer; chat is now fully inline within the Ideas tab.
+- Replaced the flat button row with two dropdown selectors: **Papers** (searchable, checkbox list) and **Repos** (checkbox list, disabled when no cloned repos exist).
+- Added chip display below the toolbar showing selected papers (blue) and repos (green), each with an × to deselect.
+- **Generate Task** button in the toolbar triggers AI extraction from chat history, then opens an inline modal with Title / Prompt / Agent / Working Directory fields.
+- Removed old `generateIdea`, `showPaperPicker`, and `IdeaCard` components; IdeaCard list display removed from this tab.
+- `IdeaChatModal` import replaced with inline `AgentSelector` + `CwdPicker` for the task form.
+
+**Motivation**: Consolidate all idea-to-task workflow into a single inline surface — no more modal drawer needed.
+
+### feat: Task Detail Page redesign — message bubbles, ToolCallCard colors, TaskInfoPanel
+
+**Scope**: `src/renderer/pages/agent-todos/[id]/page.tsx`, `src/renderer/components/agent-todo/MessageStream.tsx`, `src/renderer/components/agent-todo/ToolCallCard.tsx`, `src/renderer/components/agent-todo/ThoughtBlock.tsx`, `src/renderer/components/agent-todo/RunTimeline.tsx`
+
+**Changes**:
+
+- **MessageStream**: Redesigned with user/assistant bubble groups. User messages right-aligned with accent-light background; assistant messages left-aligned with sidebar background. Consecutive same-role messages merged into one bubble group with role label ("You" / "Agent"). System/error messages remain centered.
+- **ToolCallCard**: Replaced full border with colored left-border status style: pending=amber, in_progress=blue, completed=green, failed=red. Added AnimatePresence animation for rawInput expansion.
+- **ThoughtBlock**: Simplified to inline expand/collapse with framer-motion AnimatePresence. Expanded content uses italic muted text with left border accent.
+- **TaskInfoPanel**: New component in left column below RunTimeline showing prompt (collapsible), priority bar, YOLO mode indicator, cron schedule, and creation date.
+- **RunTimeline**: Removed `w-52`/`border-r` from component (now owned by parent layout column).
+- **Page layout**: Left column wraps RunTimeline + TaskInfoPanel in a shared `w-52` flex column.
+
+**Motivation**: Improve visual clarity of agent task execution — distinguish user prompts from agent responses, make tool call status immediately visible via color, and surface task metadata without leaving the page.
+
 ### feat: Add icons to project detail page tabs
 
 **Scope**: `src/renderer/pages/projects/page.tsx`

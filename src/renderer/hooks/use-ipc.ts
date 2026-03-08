@@ -530,7 +530,10 @@ export const ipc = {
 
   // Shell
   openInEditor: (dirPath: string) =>
-    invoke<{ success: boolean; error?: string }>('shell:openInEditor', dirPath),
+    invoke<{ success: boolean; error?: string; usedFallback?: boolean }>(
+      'shell:openInEditor',
+      dirPath,
+    ),
 
   // CLI tools
   detectCliTools: () => invoke<CliTool[]>('cli:detect'),
@@ -654,9 +657,13 @@ export const ipc = {
   getAgentTodoRunMessages: (runId: string) =>
     invoke<AgentTodoMessageItem[]>('agent-todo:get-run-messages', runId),
   deleteAgentTodoRun: (runId: string) => invoke<void>('agent-todo:delete-run', runId),
+  sendAgentMessage: (todoId: string, runId: string, text: string) =>
+    invoke<void>('agent-todo:send-message', todoId, runId, text),
   enableAgentTodoCron: (todoId: string, cronExpr: string) =>
     invoke<void>('agent-todo:enable-cron', todoId, cronExpr),
   disableAgentTodoCron: (todoId: string) => invoke<void>('agent-todo:disable-cron', todoId),
+  testAgentAcp: (agentId: string) =>
+    invoke<{ sessionId: string }>('agent-todo:test-acp', agentId),
 
   // Window controls (for Windows title bar)
   windowClose: () => {
