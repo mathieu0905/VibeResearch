@@ -2,6 +2,18 @@
 
 ## 2026-03-08
 
+### refactor: Remove Analyze feature and simplify chat UI
+
+- **Scope**: `src/renderer/pages/papers/reader/page.tsx`
+- **Changes**:
+  - Removed Analyze button and all analysis-related functionality
+  - Removed "New Chat" button from dropdown menu (kept only in Chat Header)
+  - Removed `ReaderAnalysisCard` component and related helper functions
+  - Removed analysis state variables, IPC listeners, and handlers
+  - Removed unused imports (`PaperAnalysis`, `Sparkles`, `ReactNode`)
+  - Kept "Generate Notes" functionality intact
+- **Result**: Cleaner chat UI with single "New Chat" button location
+
 ### fix: Modal Test Connection button not showing results
 
 - **Scope**: `src/renderer/hooks/use-ipc.ts`
