@@ -2,6 +2,26 @@
 
 ## 2026-03-08
 
+### fix: Auto-create workdir directory if not exists
+
+**Scope**: `src/main/services/projects.service.ts`
+
+**Changes**:
+
+- `createProject` and `updateProject` now auto-create the workdir directory using `fs.mkdirSync(path, { recursive: true })` if it doesn't exist
+
+### feat: Improve Agent Settings UX — name suggestions and hidden backend ID
+
+**Scope**: `src/renderer/components/settings/AgentSettings.tsx`
+
+**Changes**:
+
+- Added `AGENT_NAME_SUGGESTIONS` constant with 8 human-style names (Aria, Max, Nova, Echo, Sage, Orion, Luna, Finn)
+- Add Form: replaced `Name` + `Backend ID` grid with single `Name` field + suggestion chips row; clicking a chip fills the name input
+- Edit Form: same treatment — removed Backend ID input, added name suggestion chips under Name field
+- Agent list: name now displays as `{name} ({meta.label})` (e.g. "Aria (Claude Code)"); second line simplified to show only CLI path
+- `backend` field still auto-set internally by `handleAgentToolChange`; removed `!newAgent.backend` from form validation guard
+
 ### fix: macOS traffic light buttons visibility when window inactive
 
 **Scope**: `src/main/index.ts`

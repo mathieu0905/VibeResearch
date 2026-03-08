@@ -86,10 +86,18 @@ export class ProjectsService {
   }
 
   async createProject(input: { name: string; description?: string; workdir?: string }) {
+    // Ensure workdir exists if provided
+    if (input.workdir) {
+      fs.mkdirSync(input.workdir, { recursive: true });
+    }
     return this.repo.createProject(input);
   }
 
   async updateProject(id: string, data: { name?: string; description?: string; workdir?: string }) {
+    // Ensure workdir exists if provided
+    if (data.workdir) {
+      fs.mkdirSync(data.workdir, { recursive: true });
+    }
     return this.repo.updateProject(id, data);
   }
 
