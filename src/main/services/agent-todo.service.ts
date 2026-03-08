@@ -197,6 +197,21 @@ export class AgentTodoService {
 
     registerRunner(todoId, runner);
 
+    // Persist stream messages to DB as they arrive
+    runner.on('stream', (data: { runId: string; message: { msgId: string; type: string; role: string; content: unknown; status?: string | null; toolCallId?: string | null; toolName?: string | null } }) => {
+      const m = data.message;
+      this.repository.createMessage({
+        runId: data.runId,
+        msgId: m.msgId,
+        type: m.type as 'text' | 'tool_call' | 'thought' | 'plan' | 'permission' | 'system' | 'error',
+        role: m.role as 'user' | 'assistant' | 'system',
+        content: JSON.stringify(m.content),
+        status: m.status ?? null,
+        toolCallId: m.toolCallId ?? null,
+        toolName: m.toolName ?? null,
+      }).catch(() => {/* ignore duplicate msgId errors */});
+    });
+
     // Run async
     runner
       .start(todo.prompt)
@@ -210,6 +225,8 @@ export class AgentTodoService {
         await this.repository.updateTodo(todoId, { status: 'completed' });
       })
       .catch(async (error: Error) => {
+        // If already cancelled, don't overwrite with failed
+        if (runner.getStatus() === 'cancelled') return;
         await this.repository.updateRun(run.id, {
           status: 'failed',
           finishedAt: new Date(),
@@ -223,13 +240,42 @@ export class AgentTodoService {
 
   async stopTodo(todoId: string) {
     stopRunner(todoId);
-    await this.repository.updateTodo(todoId, { status: 'idle' });
+    const todo = await this.repository.findTodoById(todoId);
+    if (todo?.lastRunId) {
+      await this.repository.updateRun(todo.lastRunId, {
+        status: 'cancelled',
+        finishedAt: new Date(),
+      });
+    }
+    await this.repository.updateTodo(todoId, { status: 'cancelled' });
   }
 
   async confirmPermission(todoId: string, requestId: number, optionId: string) {
     const runner = getRunner(todoId);
     if (!runner) throw new Error('No active runner for todo: ' + todoId);
     runner.confirm(requestId, optionId);
+  }
+
+  async sendMessage(todoId: string, runId: string, text: string): Promise<void> {
+    const runner = getRunner(todoId);
+    if (!runner || !runner.isAlive()) {
+      throw new Error('No active session for todo: ' + todoId);
+    }
+
+    const msgId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    await this.repository.createMessage({
+      runId,
+      msgId,
+      type: 'text',
+      role: 'user',
+      content: JSON.stringify({ text }),
+      status: null,
+      toolCallId: null,
+      toolName: null,
+    });
+
+    runner.pushUserMessage(runId, msgId, text);
+    await runner.sendMessage(text);
   }
 
   // ── Run History ─────────────────────────────────────────────────────────────

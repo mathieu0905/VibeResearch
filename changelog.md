@@ -2,6 +2,34 @@
 
 ## 2026-03-08
 
+### fix: Agent task stop/cancel race condition + historical message rendering
+
+**Scope**: `src/main/services/agent-task-runner.ts`, `src/main/services/agent-todo.service.ts`, `src/renderer/pages/agent-todos/[id]/page.tsx`
+
+**Changes**:
+
+- **Stop race condition**: `runner.stop()` 先设置 status 为 `cancelled` 再 kill 进程，确保 exit 事件触发时不会再标记为 `failed`；`runTodo` 的 catch 块增加判断，若 runner 已是 `cancelled` 则跳过 DB 更新；`stopTodo` 把 todo 和 lastRun 都更新为 `cancelled`（而非 `idle`）。
+- **历史消息合并**: 读取历史消息时，把相同 `msgId` 的 `text` 类型 chunk 拼接成一条，避免每个字符单独渲染成一行；`tool_call` 类型做字段合并（非空覆盖），确保 title/kind/status 都正确显示。
+
+### fix: Agent ACP now uses aia.linglong521.cn proxy with real API key
+
+**Scope**: DB AgentConfig (juchenghu agent extraEnv)
+
+**Changes**:
+
+- 根本原因：`mcli.sankuai.com` 代理不支持 `tools: { type: "preset", preset: "claude_code" }` 参数，`claude-agent-acp` 内部会传这个参数，所以 400。
+- 改用 `aia.linglong521.cn` 代理 + 真实 API key，完整 ACP 流程（initialize → session/new → session/prompt）测试通过，收到 `hello world` 响应。
+- DB 已更新：`cliPath = 'npx @zed-industries/claude-agent-acp@0.18.0'`，`extraEnv` 包含 `ANTHROPIC_BASE_URL` 和 `ANTHROPIC_AUTH_TOKEN`。
+
+### fix: Agent auth + env vars UI + delete run clears messages
+
+**Scope**: `src/renderer/components/settings/AgentSettings.tsx`, `src/renderer/pages/agent-todos/[id]/page.tsx`
+
+**Changes**:
+
+- **`AgentSettings.tsx`**: Added "Environment Variables" field (KEY=VALUE per line) to both the Add Agent form and Edit Agent modal. Parses to/from `extraEnv` record. Lets users persist `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL`, etc. without relying on shell env inheritance.
+- **`page.tsx`**: When deleting a run that is currently selected, immediately clear `historicMessages` so stale messages no longer linger in the UI.
+
 ### fix: Navigation preserves search origin when viewing paper details
 
 **Scope**: `src/renderer/hooks/use-tabs.tsx`, `src/renderer/pages/papers/overview/page.tsx`, `src/renderer/pages/papers/reader/page.tsx`, `src/renderer/pages/papers/notes/page.tsx`
