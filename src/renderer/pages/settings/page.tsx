@@ -16,6 +16,7 @@ import {
   type ProxyScope,
   type ProxyTestResult,
   type SemanticSearchSettings,
+  type SemanticEmbeddingTestResult,
 } from '../../hooks/use-ipc';
 import {
   Settings,
@@ -2744,6 +2745,9 @@ function SemanticSettingsPanel() {
   });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [testingEmbedding, setTestingEmbedding] = useState(false);
+  const [embeddingResult, setEmbeddingResult] = useState<SemanticEmbeddingTestResult | null>(null);
+  const [embeddingError, setEmbeddingError] = useState<string | null>(null);
 
   useEffect(() => {
     ipc
@@ -2760,6 +2764,20 @@ function SemanticSettingsPanel() {
       setTimeout(() => setSaved(false), 2000);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTestEmbedding = async () => {
+    setTestingEmbedding(true);
+    setEmbeddingError(null);
+    try {
+      const result = await ipc.testSemanticEmbedding(settings);
+      setEmbeddingResult(result);
+    } catch (error) {
+      setEmbeddingResult(null);
+      setEmbeddingError(error instanceof Error ? error.message : 'Embedding test failed');
+    } finally {
+      setTestingEmbedding(false);
     }
   };
 
@@ -2865,24 +2883,59 @@ function SemanticSettingsPanel() {
           </button>
         </div>
 
-        <div className="mt-4 flex items-center justify-between gap-3">
-          <p className="text-xs text-notion-text-tertiary">
-            Semantic search falls back to normal search when Ollama or the index is unavailable.
-          </p>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
-          >
-            {saving ? (
-              <Loader2 size={14} className="animate-spin" />
-            ) : saved ? (
-              <Check size={14} />
-            ) : (
-              <Sparkles size={14} />
-            )}
-            {saved ? 'Saved' : saving ? 'Saving…' : 'Save'}
-          </button>
+        <div className="mt-4 space-y-3">
+          {(embeddingResult || embeddingError) && (
+            <div
+              className={`rounded-xl border px-4 py-3 text-sm ${embeddingError ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}
+            >
+              {embeddingError ? (
+                <p>{embeddingError}</p>
+              ) : embeddingResult ? (
+                <div className="space-y-1">
+                  <p className="font-medium">Embedding model is working.</p>
+                  <p className="text-xs text-green-700/80">
+                    `{embeddingResult.model}` returned a {embeddingResult.dimensions}-dimensional
+                    vector in {embeddingResult.elapsedMs}ms
+                    {embeddingResult.startedOllama ? ', after auto-starting Ollama.' : '.'}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-notion-text-tertiary">
+              Semantic search falls back to normal search when Ollama or the index is unavailable.
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleTestEmbedding}
+                disabled={testingEmbedding}
+                className="inline-flex items-center gap-2 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-medium text-violet-700 transition-colors hover:bg-violet-100 disabled:opacity-50"
+              >
+                {testingEmbedding ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Zap size={14} />
+                )}
+                {testingEmbedding ? 'Testing…' : 'Test Embedding'}
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+              >
+                {saving ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : saved ? (
+                  <Check size={14} />
+                ) : (
+                  <Sparkles size={14} />
+                )}
+                {saved ? 'Saved' : saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

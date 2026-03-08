@@ -2,6 +2,18 @@
 
 ## 2026-03-08
 
+### feat: Add embedding model test button in Semantic Settings
+
+**Scope**: `src/main/services/providers.service.ts`, `src/main/services/local-semantic.service.ts`, `src/main/services/ollama.service.ts`, `src/main/ipc/providers.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`
+
+**Changes**:
+
+- Added a settings IPC endpoint to run a live embedding sanity check against the configured Ollama base URL and embedding model
+- Allowed semantic embedding requests and Ollama auto-start to use unsaved settings overrides from the UI test action
+- Added a `Test Embedding` button in Semantic Settings with success/error feedback, vector dimension, and latency
+
+**Motivation**: Users need a quick front-end check to confirm their embedding model actually works before relying on semantic indexing.
+
 ### feat: Auto-start local Ollama service for semantic search
 
 **Scope**: `src/main/services/ollama.service.ts`, `src/main/services/local-semantic.service.ts`, `src/main/index.ts`, `src/main/ipc/providers.ipc.ts`, `src/main/store/app-settings-store.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`

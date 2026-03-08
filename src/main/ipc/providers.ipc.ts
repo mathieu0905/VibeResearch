@@ -218,6 +218,20 @@ export function setupProvidersIpc() {
   );
 
   ipcMain.handle(
+    'settings:testSemanticEmbedding',
+    async (_, settings?: Partial<SemanticSearchSettings>): Promise<IpcResult<unknown>> => {
+      try {
+        const result = await providersService.testSemanticEmbedding(settings);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:testSemanticEmbedding] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  ipcMain.handle(
     'shell:openInEditor',
     async (_, dirPath: string): Promise<IpcResult<{ success: boolean; error?: string }>> => {
       try {

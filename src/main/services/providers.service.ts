@@ -22,6 +22,18 @@ import {
   type SemanticSearchSettings,
 } from '../store/app-settings-store';
 import { testProxy as runTestProxy, type ProxyTestResult } from './proxy-test.service';
+import { localSemanticService } from './local-semantic.service';
+import { warmupOllamaService } from './ollama.service';
+
+export interface SemanticEmbeddingTestResult {
+  success: boolean;
+  model: string;
+  baseUrl: string;
+  dimensions: number;
+  elapsedMs: number;
+  startedOllama: boolean;
+  preview: number[];
+}
 
 export class ProvidersService {
   listProviders(): (ProviderConfig & { hasApiKey: boolean })[] {
@@ -106,6 +118,35 @@ export class ProvidersService {
   setSemanticSearchSettings(settings: Partial<SemanticSearchSettings>): { success: boolean } {
     setSemanticSearchSettings(settings);
     return { success: true };
+  }
+
+  async testSemanticEmbedding(
+    settingsOverrides: Partial<SemanticSearchSettings> = {},
+  ): Promise<SemanticEmbeddingTestResult> {
+    const settings = {
+      ...getSemanticSearchSettings(),
+      ...settingsOverrides,
+    };
+    const startedAt = Date.now();
+    const startedOllama = await warmupOllamaService('settings-test-embedding', settings);
+    const [embedding] = await localSemanticService.embedTexts(
+      ['Vibe Research semantic embedding test.'],
+      settings,
+    );
+
+    if (!embedding?.length) {
+      throw new Error('Embedding model returned an empty vector.');
+    }
+
+    return {
+      success: true,
+      model: settings.embeddingModel,
+      baseUrl: settings.baseUrl,
+      dimensions: embedding.length,
+      elapsedMs: Date.now() - startedAt,
+      startedOllama,
+      preview: embedding.slice(0, 5),
+    };
   }
 }
 

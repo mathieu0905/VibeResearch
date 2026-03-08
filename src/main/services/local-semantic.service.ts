@@ -1,4 +1,7 @@
-import { getSemanticSearchSettings } from '../store/app-settings-store';
+import {
+  getSemanticSearchSettings,
+  type SemanticSearchSettings,
+} from '../store/app-settings-store';
 import { proxyFetch } from './proxy-fetch';
 import { ensureOllamaRunning } from './ollama.service';
 
@@ -28,19 +31,25 @@ function safeJsonParse<T>(value: string): T | null {
 }
 
 export class LocalSemanticService {
-  private getSettings() {
-    return getSemanticSearchSettings();
+  private getSettings(overrides: Partial<SemanticSearchSettings> = {}): SemanticSearchSettings {
+    return {
+      ...getSemanticSearchSettings(),
+      ...overrides,
+    };
   }
 
   isEnabled(): boolean {
     return this.getSettings().enabled;
   }
 
-  async embedTexts(texts: string[]): Promise<number[][]> {
+  async embedTexts(
+    texts: string[],
+    overrides: Partial<SemanticSearchSettings> = {},
+  ): Promise<number[][]> {
     if (texts.length === 0) return [];
-    const settings = this.getSettings();
+    const settings = this.getSettings(overrides);
     const baseUrl = trimTrailingSlash(settings.baseUrl);
-    await ensureOllamaRunning({ trigger: 'semantic:embed' });
+    await ensureOllamaRunning({ trigger: 'semantic:embed', settings });
     const body = JSON.stringify({
       model: settings.embeddingModel,
       input: texts,
@@ -82,10 +91,13 @@ export class LocalSemanticService {
     return fallbackVectors;
   }
 
-  async extractMetadata(text: string): Promise<ExtractedMetadata> {
-    const settings = this.getSettings();
+  async extractMetadata(
+    text: string,
+    overrides: Partial<SemanticSearchSettings> = {},
+  ): Promise<ExtractedMetadata> {
+    const settings = this.getSettings(overrides);
     const baseUrl = trimTrailingSlash(settings.baseUrl);
-    await ensureOllamaRunning({ trigger: 'semantic:metadata' });
+    await ensureOllamaRunning({ trigger: 'semantic:metadata', settings });
     const prompt = [
       'Extract metadata from the following academic paper text.',
       'Return strict JSON with keys: title, authors, abstract, submittedAt.',

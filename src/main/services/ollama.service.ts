@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from 'child_process';
 import fs from 'fs';
-import { getSemanticSearchSettings } from '../store/app-settings-store';
+import {
+  getSemanticSearchSettings,
+  type SemanticSearchSettings,
+} from '../store/app-settings-store';
 import { appendLog, getLogFilePath } from './app-log.service';
 import { getShellPath } from './cli-runner.service';
 import { proxyFetch } from './proxy-fetch';
@@ -17,8 +20,17 @@ function isLoopbackHost(hostname: string): boolean {
   return ['127.0.0.1', 'localhost', '0.0.0.0', '::1', '[::1]'].includes(hostname);
 }
 
-function getConfiguredBaseUrl(): string {
-  return trimTrailingSlash(getSemanticSearchSettings().baseUrl);
+function resolveSemanticSettings(
+  overrides: Partial<SemanticSearchSettings> = {},
+): SemanticSearchSettings {
+  return {
+    ...getSemanticSearchSettings(),
+    ...overrides,
+  };
+}
+
+function getConfiguredBaseUrl(settings = getSemanticSearchSettings()): string {
+  return trimTrailingSlash(settings.baseUrl);
 }
 
 export function canAutoStartOllama(baseUrl = getConfiguredBaseUrl()): boolean {
@@ -84,7 +96,7 @@ export async function ensureOllamaRunning(
   const baseUrl = getConfiguredBaseUrl();
   const timeoutMs = options.timeoutMs ?? 12000;
 
-  if (!settings.enabled) {
+  if (!options.ignoreEnabled && !settings.enabled) {
     return false;
   }
 
@@ -197,9 +209,12 @@ export async function ensureOllamaRunning(
   return true;
 }
 
-export async function warmupOllamaService(trigger = 'startup'): Promise<boolean> {
+export async function warmupOllamaService(
+  trigger = 'startup',
+  settings?: Partial<SemanticSearchSettings>,
+): Promise<boolean> {
   try {
-    return await ensureOllamaRunning({ trigger });
+    return await ensureOllamaRunning({ trigger, settings });
   } catch (error) {
     appendLog(
       'ollama',

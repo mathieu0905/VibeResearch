@@ -321,6 +321,16 @@ export interface SemanticSearchSettings {
   embeddingModel: string;
 }
 
+export interface SemanticEmbeddingTestResult {
+  success: boolean;
+  model: string;
+  baseUrl: string;
+  dimensions: number;
+  elapsedMs: number;
+  startedOllama: boolean;
+  preview: number[];
+}
+
 export interface ProxyTestResult {
   url: string;
   name: string;
@@ -580,6 +590,8 @@ export const ipc = {
   getSemanticSearchSettings: () => invoke<SemanticSearchSettings>('settings:getSemanticSearch'),
   setSemanticSearchSettings: (settings: Partial<SemanticSearchSettings>) =>
     invoke<{ success: boolean }>('settings:setSemanticSearch', settings),
+  testSemanticEmbedding: (settings?: Partial<SemanticSearchSettings>) =>
+    invoke<SemanticEmbeddingTestResult>('settings:testSemanticEmbedding', settings),
 
   // Shell
   openInEditor: (dirPath: string) =>
