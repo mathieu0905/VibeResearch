@@ -7,6 +7,9 @@ export interface CreateAgentConfigInput {
   backend: string;
   cliPath?: string;
   acpArgs?: string;
+  agentTool?: string;
+  configContent?: string;
+  authContent?: string;
   isDetected?: boolean;
   isCustom?: boolean;
   enabled?: boolean;
@@ -152,6 +155,14 @@ export class AgentTodoRepository {
       orderBy: { createdAt: 'desc' },
       include: { messages: { orderBy: { createdAt: 'asc' } } },
     });
+  }
+
+  async deleteRun(runId: string) {
+    return this.prisma.agentTodoRun.delete({ where: { id: runId } });
+  }
+
+  async findRunById(runId: string) {
+    return this.prisma.agentTodoRun.findUnique({ where: { id: runId } });
   }
 
   // ── AgentTodoMessage ───────────────────────────────────────────────────────

@@ -129,6 +129,13 @@ export function setupAgentTodoIpc() {
       return err((e as Error).message);
     }
   });
+  ipcMain.handle('agent-todo:delete-run', async (_, runId) => {
+    try {
+      return ok(await getService().deleteRun(runId));
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  });
 
   // 定时任务
   ipcMain.handle('agent-todo:enable-cron', async (_, todoId, cronExpr) => {

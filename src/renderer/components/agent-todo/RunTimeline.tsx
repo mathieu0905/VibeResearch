@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { StatusDot } from './StatusDot';
 
 interface RunItem {
@@ -13,6 +15,7 @@ interface RunTimelineProps {
   runs: RunItem[];
   selectedRunId: string | null;
   onSelect: (id: string) => void;
+  onDelete?: (runId: string) => Promise<void>;
 }
 
 function formatTime(dateStr: string | null): string {
@@ -26,7 +29,21 @@ function formatTime(dateStr: string | null): string {
   });
 }
 
-export function RunTimeline({ runs, selectedRunId, onSelect }: RunTimelineProps) {
+export function RunTimeline({ runs, selectedRunId, onSelect, onDelete }: RunTimelineProps) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  async function handleDelete(e: React.MouseEvent, runId: string) {
+    e.stopPropagation();
+    if (!onDelete || deletingId === runId) return;
+
+    setDeletingId(runId);
+    try {
+      await onDelete(runId);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="w-52 flex-shrink-0 border-r border-notion-border overflow-y-auto">
       <div className="px-3 py-2 border-b border-notion-border">
@@ -41,15 +58,27 @@ export function RunTimeline({ runs, selectedRunId, onSelect }: RunTimelineProps)
           <div
             key={run.id}
             onClick={() => onSelect(run.id)}
-            className={`px-3 py-2.5 cursor-pointer border-b border-notion-border transition-colors ${
+            className={`group px-3 py-2.5 cursor-pointer border-b border-notion-border transition-colors ${
               selectedRunId === run.id
-                ? 'bg-notion-accent-light border-l-2 border-l-notion-accent'
-                : 'hover:bg-notion-accent-light'
+                ? 'bg-notion-sidebar border-l-2 border-l-notion-text-secondary'
+                : 'hover:bg-notion-sidebar'
             }`}
           >
             <div className="flex items-center gap-2">
               <StatusDot status={run.status} size="sm" />
-              <span className="text-sm font-medium text-notion-text">Run #{runs.length - i}</span>
+              <span className="text-sm font-medium text-notion-text flex-1">
+                Run #{runs.length - i}
+              </span>
+              {onDelete && (
+                <button
+                  onClick={(e) => handleDelete(e, run.id)}
+                  disabled={deletingId === run.id}
+                  className="opacity-0 group-hover:opacity-100 p-1 hover:bg-notion-red/10 rounded transition-opacity disabled:opacity-50"
+                  title="Delete run"
+                >
+                  <Trash2 size={14} className="text-notion-red" />
+                </button>
+              )}
             </div>
             <div className="text-xs text-notion-text-secondary mt-0.5">
               {formatTime(run.startedAt ?? run.createdAt)}

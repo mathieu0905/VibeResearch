@@ -74,15 +74,27 @@ export function AgentTodoDetailPage() {
   const displayMessages =
     selectedRunId === runs[0]?.id && streamMessages.length > 0 ? streamMessages : historicMessages;
 
+  const latestRunStatus = runs[0]?.status ?? 'idle';
   const currentStatus =
     selectedRunId === runs[0]?.id
-      ? streamStatus
+      ? streamStatus === 'idle'
+        ? latestRunStatus
+        : streamStatus
       : (runs.find((r) => r.id === selectedRunId)?.status ?? 'idle');
 
   async function handleRun() {
     try {
       await ipc.runAgentTodo(id!);
-      await loadData();
+      const [todoData, runsData] = await Promise.all([
+        ipc.getAgentTodo(id!),
+        ipc.listAgentTodoRuns(id!),
+      ]);
+      setTodo(todoData);
+      setRuns(runsData);
+      // Always switch to the newly created run
+      if (runsData.length > 0) {
+        setSelectedRunId(runsData[0].id);
+      }
     } catch (err) {
       console.error(err);
     }
@@ -92,6 +104,25 @@ export function AgentTodoDetailPage() {
     try {
       await ipc.stopAgentTodo(id!);
       await loadData();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleDeleteRun(runId: string) {
+    try {
+      await ipc.deleteAgentTodoRun(runId);
+      // Reload runs and update selection
+      const runsData = await ipc.listAgentTodoRuns(id!);
+      setRuns(runsData);
+      // If deleted run was selected, select the next available run
+      if (selectedRunId === runId) {
+        if (runsData.length > 0) {
+          setSelectedRunId(runsData[0].id);
+        } else {
+          setSelectedRunId(null);
+        }
+      }
     } catch (err) {
       console.error(err);
     }
@@ -150,7 +181,12 @@ export function AgentTodoDetailPage() {
       {/* Body */}
       <div className="flex flex-1 overflow-hidden">
         {/* Run Timeline */}
-        <RunTimeline runs={runs} selectedRunId={selectedRunId} onSelect={setSelectedRunId} />
+        <RunTimeline
+          runs={runs}
+          selectedRunId={selectedRunId}
+          onSelect={setSelectedRunId}
+          onDelete={handleDeleteRun}
+        />
 
         {/* Message Stream */}
         <div className="flex-1 overflow-y-auto">

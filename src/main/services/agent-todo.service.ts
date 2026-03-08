@@ -45,6 +45,9 @@ export class AgentTodoService {
     backend: string;
     cliPath: string;
     acpArgs?: string[];
+    agentTool?: string;
+    configContent?: string;
+    authContent?: string;
     extraEnv?: Record<string, string>;
   }) {
     return this.repository.createAgentConfig({
@@ -52,6 +55,9 @@ export class AgentTodoService {
       backend: input.backend,
       cliPath: input.cliPath,
       acpArgs: JSON.stringify(input.acpArgs ?? []),
+      agentTool: input.agentTool,
+      configContent: input.configContent,
+      authContent: input.authContent,
       isCustom: true,
       extraEnv: JSON.stringify(input.extraEnv ?? {}),
     });
@@ -64,6 +70,9 @@ export class AgentTodoService {
       backend: string;
       cliPath: string;
       acpArgs: string[];
+      agentTool: string;
+      configContent: string;
+      authContent: string;
       enabled: boolean;
       extraEnv: Record<string, string>;
     }>,
@@ -73,6 +82,9 @@ export class AgentTodoService {
     if (input.backend !== undefined) data.backend = input.backend;
     if (input.cliPath !== undefined) data.cliPath = input.cliPath;
     if (input.acpArgs !== undefined) data.acpArgs = JSON.stringify(input.acpArgs);
+    if (input.agentTool !== undefined) data.agentTool = input.agentTool;
+    if (input.configContent !== undefined) data.configContent = input.configContent;
+    if (input.authContent !== undefined) data.authContent = input.authContent;
     if (input.enabled !== undefined) data.enabled = input.enabled;
     if (input.extraEnv !== undefined) data.extraEnv = JSON.stringify(input.extraEnv);
     return this.repository.updateAgentConfig(
@@ -228,6 +240,23 @@ export class AgentTodoService {
 
   async getRunMessages(runId: string) {
     return this.repository.findMessagesByRunId(runId);
+  }
+
+  async deleteRun(runId: string) {
+    const run = await this.repository.findRunById(runId);
+    if (!run) throw new Error(`Run not found: ${runId}`);
+
+    // If this run is the lastRun of the todo, clear the reference
+    const todos = await this.repository.findAllTodos();
+    const todoWithLastRun = todos.find((t) => t.lastRunId === runId);
+    if (todoWithLastRun) {
+      await this.repository.updateTodo(todoWithLastRun.id, {
+        lastRunId: null,
+        lastRunAt: null,
+      });
+    }
+
+    return this.repository.deleteRun(runId);
   }
 
   // ── Cron ────────────────────────────────────────────────────────────────────

@@ -2,6 +2,21 @@
 
 ## 2026-03-08
 
+### feat: Add delete run history feature in Task detail page
+
+**Scope**: `src/db/repositories/agent-todo.repository.ts`, `src/main/services/agent-todo.service.ts`, `src/main/ipc/agent-todo.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/components/agent-todo/RunTimeline.tsx`, `src/renderer/pages/agent-todos/[id]/page.tsx`
+
+**Changes**:
+
+- Added `deleteRun` and `findRunById` methods to `AgentTodoRepository`
+- Added `deleteRun` method to `AgentTodoService` with logic to clear `lastRunId` reference if needed
+- Added IPC handler `agent-todo:delete-run`
+- Added `deleteAgentTodoRun` to IPC client
+- Updated `RunTimeline` component with delete button (trash icon, appears on hover)
+- Connected delete handler in Task detail page to refresh run list after deletion
+
+**Motivation**: Users need the ability to clean up old run history entries.
+
 ### feat: Auto-detect workdir Git repo in Projects Code tab
 
 **Scope**: `prisma/schema.prisma`, `src/db/repositories/projects.repository.ts`, `src/main/services/projects.service.ts`, `src/main/ipc/projects.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/projects/page.tsx`

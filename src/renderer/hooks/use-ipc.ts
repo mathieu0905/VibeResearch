@@ -653,6 +653,7 @@ export const ipc = {
   listAgentTodoRuns: (todoId: string) => invoke<AgentTodoRunItem[]>('agent-todo:list-runs', todoId),
   getAgentTodoRunMessages: (runId: string) =>
     invoke<AgentTodoMessageItem[]>('agent-todo:get-run-messages', runId),
+  deleteAgentTodoRun: (runId: string) => invoke<void>('agent-todo:delete-run', runId),
   enableAgentTodoCron: (todoId: string, cronExpr: string) =>
     invoke<void>('agent-todo:enable-cron', todoId, cronExpr),
   disableAgentTodoCron: (todoId: string) => invoke<void>('agent-todo:disable-cron', todoId),
