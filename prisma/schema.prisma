@@ -110,6 +110,7 @@ model Project {
 
   repos  ProjectRepo[]
   ideas  ProjectIdea[]
+  todos  AgentTodo[]
 
   @@index([name])
   @@index([lastAccessedAt])
@@ -202,6 +203,7 @@ model AgentTodo {
   agentId       String
   agent         AgentConfig @relation(fields: [agentId], references: [id], onDelete: Cascade)
   projectId     String?
+  project       Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   status        String   @default("idle")
   priority      Int      @default(0)
   cronExpr      String?

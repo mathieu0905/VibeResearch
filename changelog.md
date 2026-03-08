@@ -2,6 +2,17 @@
 
 ## 2026-03-08
 
+### fix: Cascade delete AgentTodo when Project is deleted
+
+**Scope**: `prisma/schema.prisma`
+
+**Changes**:
+
+- Added foreign key relation between `AgentTodo.projectId` and `Project.id` with `onDelete: Cascade`.
+- When a project is deleted, all associated agent todos are now automatically deleted.
+
+**Test design**: Create a project with an agent todo, then delete the project. Verify the todo is removed from database.
+
 ### feat: Token usage statistics for agent runs
 
 **Scope**: `src/main/agent/session-stats-reader.ts` (new), `src/main/services/agent-todo.service.ts`, `src/shared/types/agent-todo.ts`, `src/renderer/components/agent-todo/RunTimeline.tsx`
