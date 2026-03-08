@@ -9,6 +9,46 @@
 **Changes**:
 
 - Previously, when testing an editor (e.g., VS Code `code` command) that wasn't available, the system silently fell back to macOS `open` command (Finder) and reported success.
+- Now: removed fallback logic — if editor command fails, no folder is opened and test fails.
+- UI shows simple "测试成功" or "测试失败，请检查命令是否可用" instead of error messages.
+
+### feat: Slash command menu in agent chat input + npx ACP bridge support
+
+**Scope**: `src/main/agent/acp-types.ts`, `src/main/agent/acp-connection.ts`, `src/main/services/agent-task-runner.ts`, `src/renderer/hooks/use-agent-stream.ts`, `src/renderer/pages/agent-todos/[id]/page.tsx`
+
+**Changes**:
+
+- **`acp-types.ts`**: Added `available_commands_update` to `AcpSessionUpdateType`; added `AcpSlashCommand` interface and `availableCommands` field to `AcpSessionUpdate`.
+- **`acp-connection.ts`**: Clear `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` env vars when spawning child process; auto-prepend `--yes --prefer-offline` for `npx`-style `cliPath`.
+- **`agent-task-runner.ts`**: Handle `available_commands_update` — push `agent-todo:commands` IPC event with the command list instead of passing to message transformer.
+- **`use-agent-stream.ts`**: Added `availableCommands` state; listen for `agent-todo:commands` IPC event to update it. Exported `SlashCommand` type.
+- **`page.tsx`**: Slash command popup menu above the chat textarea — triggered by typing `/`, filtered by subsequent characters. Arrow keys navigate, Tab/Enter selects, Escape closes. Placeholder updated to hint at `/` commands.
+
+
+
+### feat: Configurable storage root with full data migration
+
+**Scope**: `src/main/store/storage-path.ts`, `src/main/store/app-settings-store.ts`, `src/main/services/providers.service.ts`, `src/main/ipc/providers.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`, `src/renderer/pages/papers/overview/page.tsx`, `src/renderer/pages/papers/notes/page.tsx`
+
+**Changes**:
+
+- **Bootstrap config** (`~/.vibe-research-config.json`): A new fixed-location config file stores the user-chosen storage root. Read at startup before anything else, so `DATABASE_URL` and all paths are resolved from the configured directory.
+- **`storage-path.ts`**: Added `getBootstrapConfigPath()`, `getConfiguredStorageDir()`, `setStorageDir()`, and `migrateStorageDir()`. `getBaseDir()` now reads the bootstrap config (falls back to platform defaults for existing users — no breaking change).
+- **Migration**: `migrateStorageDir(oldDir, newDir)` copies `vibe-research.db`, `papers/`, `app-settings.json`, `provider-config.json`, `cli-tools.json`, `model-config.json`, `token-usage.json` to the new directory. Old files are not deleted.
+- **`app-settings-store.ts`**: `papersDir` is now an optional legacy field (ignored at runtime; papers are always at `{storageRoot}/papers`). Removed `setPapersDir`.
+- **`providers.service.ts`**: Added `setStorageDir(newDir)` — runs migration then writes bootstrap config.
+- **`providers.ipc.ts`**: Replaced `settings:setPapersDir` handler with `settings:setStorageDir`. After successful migration, calls `app.relaunch() + app.exit(0)`.
+- **`use-ipc.ts`**: Replaced `setPapersDir` with `setStorageDir`. Updated `getSettings()` return type (no longer includes `papersDir`).
+- **Settings UI (`StorageSettings`)**: Now shows the storage root (from `getStorageRoot()`), shows a confirmation dialog before migrating ("Migrate & Restart"), and calls `setStorageDir` on confirm. Removed scan-papers button from this section.
+- **Paper pages**: Fixed `overview/page.tsx` and `notes/page.tsx` to use `getStorageRoot()` + `/papers/{shortId}` instead of the now-removed `settings.papersDir`.
+
+### fix: Editor test now correctly reports failure when command not found
+
+**Scope**: `src/main/ipc/providers.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`
+
+**Changes**:
+
+- Previously, when testing an editor (e.g., VS Code `code` command) that wasn't available, the system silently fell back to macOS `open` command (Finder) and reported success.
 - Now the IPC handler returns `{ success: false, usedFallback: true, error: "Editor 'code' not found..." }` when the editor command fails, even though it still opens the folder via fallback.
 - Frontend displays the error message correctly, showing test failure instead of false success.
 

@@ -514,10 +514,8 @@ export const ipc = {
 
   // App settings
   getSettings: () =>
-    invoke<{ papersDir: string; editorCommand: string; proxy?: string; proxyScope?: ProxyScope }>(
-      'settings:get',
-    ),
-  setPapersDir: (dir: string) => invoke<{ success: boolean }>('settings:setPapersDir', dir),
+    invoke<{ editorCommand: string; proxy?: string; proxyScope?: ProxyScope }>('settings:get'),
+  setStorageDir: (dir: string) => invoke<{ success: boolean }>('settings:setStorageDir', dir),
   setEditor: (cmd: string) => invoke<{ success: boolean }>('settings:setEditor', cmd),
   setProxy: (proxy: string | undefined) => invoke<{ success: boolean }>('settings:setProxy', proxy),
   setProxyScope: (scope: ProxyScope) =>
@@ -530,10 +528,7 @@ export const ipc = {
 
   // Shell
   openInEditor: (dirPath: string) =>
-    invoke<{ success: boolean; error?: string; usedFallback?: boolean }>(
-      'shell:openInEditor',
-      dirPath,
-    ),
+    invoke<{ success: boolean; error?: string }>('shell:openInEditor', dirPath),
 
   // CLI tools
   detectCliTools: () => invoke<CliTool[]>('cli:detect'),
