@@ -51,6 +51,7 @@
     "@ai-sdk/google": "^3.0.43",
     "@ai-sdk/openai": "^3.0.41",
     "@electron/asar": "^4.1.0",
+    "@nivo/bar": "^0.99.0",
     "@tiptap/extension-placeholder": "^3.20.0",
     "@tiptap/react": "^3.20.0",
     "@tiptap/starter-kit": "^3.20.0",

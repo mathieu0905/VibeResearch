@@ -32,9 +32,7 @@ export async function readSessionStats(
 
   // Search in the cwd-specific project dir first, then fall back to scanning
   // all project dirs (in case cwd differs from what Claude recorded).
-  const candidateDirs = [
-    path.join(claudeDir, 'projects', encoded),
-  ];
+  const candidateDirs = [path.join(claudeDir, 'projects', encoded)];
 
   // Also scan all project dirs for the session file
   try {
@@ -94,7 +92,12 @@ export async function readSessionStats(
       }
     }
 
-    if (inputTokens === 0 && outputTokens === 0 && cacheReadTokens === 0 && cacheCreationTokens === 0) {
+    if (
+      inputTokens === 0 &&
+      outputTokens === 0 &&
+      cacheReadTokens === 0 &&
+      cacheCreationTokens === 0
+    ) {
       return null;
     }
 

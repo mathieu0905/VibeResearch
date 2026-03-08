@@ -460,6 +460,8 @@ export const ipc = {
   // Workdir repo (no clone needed)
   checkWorkdirGit: (projectId: string) =>
     invoke<WorkdirRepoStatus | null>('projects:workdir:check', projectId),
+  initWorkdirGit: (projectId: string) =>
+    invoke<{ success: boolean; error?: string }>('projects:workdir:init', projectId),
   addWorkdirRepo: (projectId: string) =>
     invoke<{ id: string; repoUrl: string; localPath: string } | null>(
       'projects:workdir:addRepo',
@@ -657,8 +659,9 @@ export const ipc = {
   enableAgentTodoCron: (todoId: string, cronExpr: string) =>
     invoke<void>('agent-todo:enable-cron', todoId, cronExpr),
   disableAgentTodoCron: (todoId: string) => invoke<void>('agent-todo:disable-cron', todoId),
-  testAgentAcp: (agentId: string) =>
-    invoke<{ sessionId: string }>('agent-todo:test-acp', agentId),
+  testAgentAcp: (agentId: string) => invoke<{ sessionId: string }>('agent-todo:test-acp', agentId),
+  getAgentRunStats: () =>
+    invoke<Array<{ id: string; name: string; callCount: number }>>('agent-todo:get-stats'),
 
   // Window controls (for Windows title bar)
   windowClose: () => {

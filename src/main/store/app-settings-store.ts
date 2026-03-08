@@ -13,14 +13,12 @@ export interface ProxyScope {
 }
 
 interface AppSettings {
-  papersDir: string;
+  papersDir?: string; // legacy field — ignored, papers are always at {storageRoot}/papers
   editorCommand: string; // e.g. "code" or "cursor"
   proxy?: string; // HTTP/SOCKS proxy URL, e.g. "http://127.0.0.1:7890" or "socks5://127.0.0.1:1080"
   proxyScope?: ProxyScope; // Where to use the proxy
   tagMigrationV1Done?: boolean;
 }
-
-const DEFAULT_PAPERS_DIR = getPapersBaseDir();
 
 const DEFAULT_PROXY_SCOPE: ProxyScope = {
   pdfDownload: true,
@@ -36,17 +34,12 @@ function load(): AppSettings {
   try {
     const settingsPath = getSettingsPath();
     if (fs.existsSync(settingsPath)) {
-      const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as AppSettings;
-      // Only reset papersDir if it's empty
-      if (!saved.papersDir || saved.papersDir.trim() === '') {
-        saved.papersDir = DEFAULT_PAPERS_DIR;
-      }
-      return saved;
+      return JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as AppSettings;
     }
   } catch {
     // ignore
   }
-  return { papersDir: DEFAULT_PAPERS_DIR, editorCommand: 'code', proxy: undefined };
+  return { editorCommand: 'code', proxy: undefined };
 }
 
 function save(settings: AppSettings) {
@@ -57,13 +50,6 @@ function save(settings: AppSettings) {
 
 export function getAppSettings(): AppSettings {
   return load();
-}
-
-export function setPapersDir(dir: string) {
-  const settings = load();
-  settings.papersDir = dir;
-  save(settings);
-  process.env.VIBE_PAPERS_DIR = dir;
 }
 
 export function setEditorCommand(cmd: string) {
@@ -77,9 +63,7 @@ export function getEditorCommand(): string {
 }
 
 export function getPapersDir(): string {
-  const env = process.env.VIBE_PAPERS_DIR;
-  if (env) return env;
-  return load().papersDir;
+  return getPapersBaseDir();
 }
 
 export function getProxy(): string | undefined {

@@ -285,7 +285,10 @@ export class PapersRepository {
     };
   }
 
-  async updateMetadata(id: string, data: { authors?: string[]; abstract?: string; submittedAt?: Date }) {
+  async updateMetadata(
+    id: string,
+    data: { authors?: string[]; abstract?: string; submittedAt?: Date },
+  ) {
     const updateData: Record<string, unknown> = {};
     if (data.authors !== undefined) {
       updateData.authorsJson = JSON.stringify(data.authors);

@@ -653,7 +653,13 @@ export function ReaderPage() {
           {/* Submitted date */}
           {paper.submittedAt && (
             <div className="flex items-center gap-1.5 text-xs text-notion-text-tertiary">
-              <span>{new Date(paper.submittedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</span>
+              <span>
+                {new Date(paper.submittedAt).toLocaleDateString('en-US', {
+                  year: 'numeric',
+                  month: 'short',
+                  day: 'numeric',
+                })}
+              </span>
             </div>
           )}
 
@@ -709,7 +715,6 @@ export function ReaderPage() {
                   )}
                 </button>
               )}
-
             </div>
 
             {/* Messages */}
@@ -782,7 +787,9 @@ export function ReaderPage() {
                       }
                     }}
                     placeholder={
-                      chatModel ? 'Ask anything about this paper…' : 'Configure a chat model in Settings…'
+                      chatModel
+                        ? 'Ask anything about this paper…'
+                        : 'Configure a chat model in Settings…'
                     }
                     disabled={!chatModel}
                     rows={1}
@@ -814,7 +821,7 @@ export function ReaderPage() {
                 </div>
               </div>
             </div>
-        </div>
+          </div>
         )}
 
         {/* Divider */}
@@ -846,7 +853,9 @@ export function ReaderPage() {
                   <Download size={24} strokeWidth={1.5} className="text-notion-text-tertiary" />
                 </div>
                 <div className="text-center">
-                  <p className="text-sm font-medium text-notion-text-secondary">No PDF downloaded</p>
+                  <p className="text-sm font-medium text-notion-text-secondary">
+                    No PDF downloaded
+                  </p>
                   <p className="mt-1 text-xs text-notion-text-tertiary">Download to read locally</p>
                 </div>
                 {inferPdfUrl(paper) && (

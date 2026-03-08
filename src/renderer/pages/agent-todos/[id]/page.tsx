@@ -1,7 +1,21 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { ArrowLeft, Play, Square, Calendar, Clock, Zap, ChevronDown, ChevronRight, ArrowUp, X, Hash } from 'lucide-react';
-import { ipc } from '../../../hooks/use-ipc';
+import {
+  ArrowLeft,
+  Play,
+  Square,
+  Calendar,
+  Clock,
+  Zap,
+  ChevronDown,
+  ArrowUp,
+  X,
+  Hash,
+  Cpu,
+  User,
+  Folder,
+} from 'lucide-react';
+import { ipc, type ModelConfig } from '../../../hooks/use-ipc';
 import { useAgentStream } from '../../../hooks/use-agent-stream';
 import { MessageStream } from '../../../components/agent-todo/MessageStream';
 import { RunTimeline } from '../../../components/agent-todo/RunTimeline';
@@ -10,84 +24,33 @@ import { PriorityBarIcon } from '../../../components/agent-todo/PriorityBar';
 
 const LEVEL_LABELS = ['Low', 'Normal', 'Medium', 'High', 'Urgent'];
 
-function TaskInfoPanel({ todo, onYoloToggle }: { todo: any; onYoloToggle: (val: boolean) => void }) {
-  const [promptExpanded, setPromptExpanded] = useState(false);
-
+function TaskInfoPanel({ todo }: { todo: any }) {
   return (
-    <div className="px-3 py-3 space-y-3 border-t border-notion-border">
+    <div className="px-3 py-3 space-y-2.5 border-t border-notion-border">
       <span className="text-xs font-medium text-notion-text-secondary uppercase tracking-wide block">
-        Task Info
+        Info
       </span>
-
-      {/* Prompt */}
-      <div>
-        <button
-          onClick={() => setPromptExpanded(!promptExpanded)}
-          className="flex items-center gap-1 text-xs text-notion-text-secondary hover:text-notion-text transition-colors w-full text-left"
-        >
-          {promptExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span className="font-medium">Prompt</span>
-        </button>
-        {promptExpanded && (
-          <p className="mt-1.5 text-xs text-notion-text-secondary leading-relaxed whitespace-pre-wrap pl-4">
-            {todo.prompt}
-          </p>
-        )}
-        {!promptExpanded && (
-          <p className="mt-1 text-xs text-notion-text-tertiary truncate pl-4">
-            {todo.prompt}
-          </p>
-        )}
-      </div>
 
       {/* Priority */}
       <div className="flex items-center gap-2">
-        <span className="text-xs text-notion-text-secondary w-14 flex-shrink-0">Priority</span>
-        <div className="flex items-center gap-1.5">
-          <PriorityBarIcon value={todo.priority ?? 0} />
-          <span className="text-xs text-notion-text-secondary">
-            {LEVEL_LABELS[todo.priority ?? 0]}
-          </span>
-        </div>
-      </div>
-
-      {/* YOLO mode toggle pill */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1.5">
-          <Zap size={12} className={todo.yoloMode ? 'text-amber-500' : 'text-notion-text-tertiary'} />
-          <span className={`text-xs font-medium ${todo.yoloMode ? 'text-amber-600' : 'text-notion-text-secondary'}`}>
-            YOLO
-          </span>
-        </div>
-        <button
-          onClick={() => onYoloToggle(!todo.yoloMode)}
-          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
-            todo.yoloMode ? 'bg-amber-400' : 'bg-notion-border'
-          }`}
-          title={todo.yoloMode ? 'Auto mode on — click to disable' : 'Auto mode off — click to enable'}
-        >
-          <span
-            className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow transition duration-200 ${
-              todo.yoloMode ? 'translate-x-4' : 'translate-x-0'
-            }`}
-          />
-        </button>
+        <span className="text-xs text-notion-text-tertiary w-14 flex-shrink-0">Priority</span>
+        <PriorityBarIcon value={todo.priority ?? 0} />
+        <span className="text-xs text-notion-text-secondary">
+          {LEVEL_LABELS[todo.priority ?? 0]}
+        </span>
       </div>
 
       {/* Cron */}
       {todo.cronEnabled && todo.cronExpr && (
         <div className="flex items-start gap-2">
-          <Calendar size={12} className="text-notion-text-secondary flex-shrink-0 mt-0.5" />
-          <div>
-            <span className="text-xs text-notion-text-secondary font-medium">Scheduled</span>
-            <p className="text-xs font-mono text-notion-text-tertiary mt-0.5">{todo.cronExpr}</p>
-          </div>
+          <Calendar size={11} className="text-notion-text-tertiary flex-shrink-0 mt-0.5" />
+          <p className="text-xs font-mono text-notion-text-tertiary">{todo.cronExpr}</p>
         </div>
       )}
 
       {/* Created at */}
       <div className="flex items-center gap-2">
-        <Clock size={12} className="text-notion-text-tertiary flex-shrink-0" />
+        <Clock size={11} className="text-notion-text-tertiary flex-shrink-0" />
         <span className="text-xs text-notion-text-tertiary">
           {new Date(todo.createdAt).toLocaleDateString(undefined, {
             month: 'short',
@@ -100,6 +63,102 @@ function TaskInfoPanel({ todo, onYoloToggle }: { todo: any; onYoloToggle: (val: 
   );
 }
 
+function ModelDropdown({
+  value,
+  models,
+  agentDefaultModel,
+  onChange,
+}: {
+  value: string | null;
+  models: ModelConfig[];
+  agentDefaultModel?: string;
+  onChange: (val: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handle);
+    return () => document.removeEventListener('mousedown', handle);
+  }, []);
+
+  const displayLabel = value ?? agentDefaultModel ?? 'Default';
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-notion-text-secondary hover:bg-notion-sidebar hover:text-notion-text transition-colors"
+        title="Select model"
+      >
+        <Cpu size={11} className="text-notion-text-tertiary flex-shrink-0" />
+        <span
+          className={`font-mono max-w-[140px] truncate ${value ? 'text-notion-accent' : 'text-notion-text-tertiary'}`}
+        >
+          {displayLabel}
+        </span>
+        <ChevronDown
+          size={10}
+          className={`text-notion-text-tertiary transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      {open && (
+        <div className="absolute bottom-full left-0 mb-1 min-w-[200px] rounded-lg border border-notion-border bg-white shadow-lg py-1 z-30">
+          {/* Default option */}
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              onChange(null);
+              setOpen(false);
+            }}
+            className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors ${
+              !value
+                ? 'bg-notion-accent-light text-notion-accent'
+                : 'text-notion-text-secondary hover:bg-notion-sidebar'
+            }`}
+          >
+            <Cpu size={11} className="flex-shrink-0 text-notion-text-tertiary" />
+            <span className="font-mono">
+              Default{agentDefaultModel ? ` (${agentDefaultModel})` : ''}
+            </span>
+          </button>
+          {models.length > 0 && <div className="my-1 border-t border-notion-border" />}
+          {models.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                onChange(m.model ?? m.name);
+                setOpen(false);
+              }}
+              className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors ${
+                value === (m.model ?? m.name)
+                  ? 'bg-notion-accent-light text-notion-accent'
+                  : 'text-notion-text hover:bg-notion-sidebar'
+              }`}
+            >
+              <Cpu size={11} className="flex-shrink-0 text-notion-text-tertiary" />
+              <div className="min-w-0">
+                <span className="font-mono truncate block">{m.model ?? m.name}</span>
+                {m.name !== (m.model ?? m.name) && (
+                  <span className="text-notion-text-tertiary">{m.name}</span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AgentTodoDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -108,8 +167,10 @@ export function AgentTodoDetailPage() {
   const [runs, setRuns] = useState<any[]>([]);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [historicMessages, setHistoricMessages] = useState<any[]>([]);
+  const [models, setModels] = useState<ModelConfig[]>([]);
 
   const [chatInput, setChatInput] = useState('');
+  const [chatError, setChatError] = useState<string | null>(null);
   const chatInputRef = useRef<HTMLTextAreaElement>(null);
   const [showStderr, setShowStderr] = useState(true);
   const [slashMenuOpen, setSlashMenuOpen] = useState(false);
@@ -136,6 +197,7 @@ export function AgentTodoDetailPage() {
   useEffect(() => {
     if (!id) return;
     loadData();
+    ipc.listModels().then(setModels).catch(console.error);
   }, [id]);
 
   async function loadData() {
@@ -146,7 +208,6 @@ export function AgentTodoDetailPage() {
       ]);
       setTodo(todoData);
       setRuns(runsData);
-      // Auto-select latest run
       if (runsData.length > 0 && !selectedRunId) {
         setSelectedRunId(runsData[0].id);
       }
@@ -157,7 +218,6 @@ export function AgentTodoDetailPage() {
 
   useEffect(() => {
     if (!selectedRunId) return;
-    // If it's the current running run, use stream messages
     const currentRun = runs[0];
     if (
       currentRun &&
@@ -167,7 +227,6 @@ export function AgentTodoDetailPage() {
       setHistoricMessages([]);
       return;
     }
-    // Otherwise load from DB
     ipc
       .getAgentTodoRunMessages(selectedRunId)
       .then((msgs) => {
@@ -175,9 +234,8 @@ export function AgentTodoDetailPage() {
           ...m,
           content: typeof m.content === 'string' ? JSON.parse(m.content) : m.content,
         }));
-        // Merge chunks with the same msgId: concatenate text, keep last for tool_call
         const merged: typeof parsed = [];
-        const seen = new Map<string, number>(); // msgId -> index in merged
+        const seen = new Map<string, number>();
         for (const m of parsed) {
           const existing = seen.get(m.msgId);
           if (existing !== undefined && m.type === 'text') {
@@ -186,7 +244,6 @@ export function AgentTodoDetailPage() {
             const newText = (m.content as { text: string }).text;
             merged[existing] = { ...prev, content: { text: prevText + newText } };
           } else if (existing !== undefined && m.type === 'tool_call') {
-            // Merge tool_call updates: keep non-empty fields, update status
             const prev = merged[existing];
             const prevContent = prev.content as Record<string, unknown>;
             const newContent = m.content as Record<string, unknown>;
@@ -200,7 +257,6 @@ export function AgentTodoDetailPage() {
               content: mergedContent,
             };
           } else if (existing !== undefined && m.type === 'plan') {
-            // Plan updates: replace with latest (has most up-to-date entry statuses)
             merged[existing] = m;
           } else {
             seen.set(m.msgId, merged.length);
@@ -223,11 +279,9 @@ export function AgentTodoDetailPage() {
         : streamStatus
       : (runs.find((r) => r.id === selectedRunId)?.status ?? 'idle');
 
-  // canChat: 选中的 run 是 completed 状态，且是最新 run（有活跃 session）
+  // canChat: 当前会话有活跃 session，或最新 run 是 completed 且选中的是最新 run
   const effectiveCanChat =
-    currentStatus === 'completed' && selectedRunId === runs[0]?.id
-      ? true
-      : canChat;
+    canChat || (currentStatus === 'completed' && selectedRunId === runs[0]?.id);
 
   async function handleRun() {
     setShowStderr(true);
@@ -239,7 +293,6 @@ export function AgentTodoDetailPage() {
       ]);
       setTodo(todoData);
       setRuns(runsData);
-      // Always switch to the newly created run
       if (runsData.length > 0) {
         setSelectedRunId(runsData[0].id);
       }
@@ -261,11 +314,17 @@ export function AgentTodoDetailPage() {
     const text = chatInput.trim();
     if (!text || isRunning || !selectedRunId || !effectiveCanChat) return;
     setChatInput('');
+    setChatError(null);
     if (chatInputRef.current) chatInputRef.current.style.height = 'auto';
     try {
       await ipc.sendAgentMessage(id!, selectedRunId!, text);
     } catch (err) {
-      console.error(err);
+      const msg = (err as Error).message ?? String(err);
+      if (msg.includes('No active session')) {
+        setChatError('No active session — click Run to start a new session first.');
+      } else {
+        setChatError(msg);
+      }
     }
   }
 
@@ -278,13 +337,20 @@ export function AgentTodoDetailPage() {
     }
   }
 
+  async function handleModelChange(val: string | null) {
+    try {
+      await ipc.updateAgentTodo(id!, { model: val });
+      setTodo((prev: any) => ({ ...prev, model: val }));
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
   async function handleDeleteRun(runId: string) {
     try {
       await ipc.deleteAgentTodoRun(runId);
-      // Reload runs and update selection
       const runsData = await ipc.listAgentTodoRuns(id!);
       setRuns(runsData);
-      // If deleted run was selected, clear messages and select next available run
       if (selectedRunId === runId) {
         setHistoricMessages([]);
         if (runsData.length > 0) {
@@ -323,9 +389,16 @@ export function AgentTodoDetailPage() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="font-semibold text-notion-text truncate">{todo.title}</h1>
-          <p className="text-xs text-notion-text-secondary">
-            {todo.agent.name} · <span className="font-mono">{todo.cwd}</span>
-          </p>
+          <div className="flex items-center gap-3 text-xs text-notion-text-secondary mt-0.5">
+            <span className="inline-flex items-center gap-1">
+              <User size={10} className="text-notion-text-tertiary" />
+              <span>{todo.agent.name}</span>
+            </span>
+            <span className="inline-flex items-center gap-1 min-w-0">
+              <Folder size={10} className="text-notion-text-tertiary flex-shrink-0" />
+              <span className="font-mono truncate">{todo.cwd}</span>
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           <StatusDot status={currentStatus} />
@@ -360,13 +433,23 @@ export function AgentTodoDetailPage() {
               onDelete={handleDeleteRun}
             />
           </div>
-          <div className="overflow-y-auto flex-shrink-0 max-h-64">
-            <TaskInfoPanel todo={todo} onYoloToggle={handleYoloToggle} />
+          <div className="overflow-y-auto flex-shrink-0">
+            <TaskInfoPanel todo={todo} />
           </div>
         </div>
 
-        {/* Right column: Message Stream + Chat Input */}
+        {/* Right column: Prompt banner + Message Stream + Chat Input */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
+          {/* Prompt banner at top of chat area */}
+          <div className="flex-shrink-0 px-4 py-2.5 border-b border-notion-border bg-notion-sidebar">
+            <span className="text-xs font-medium text-notion-text-tertiary uppercase tracking-wide block mb-1">
+              Prompt
+            </span>
+            <p className="text-xs text-notion-text-secondary leading-relaxed line-clamp-3 whitespace-pre-wrap">
+              {todo.prompt}
+            </p>
+          </div>
+
           {/* stderr output panel — shown while running */}
           {isRunning && stderrLines.length > 0 && showStderr && (
             <div className="absolute bottom-16 right-4 w-80 rounded-lg bg-gray-900 border border-gray-700 shadow-lg overflow-hidden z-10">
@@ -381,7 +464,9 @@ export function AgentTodoDetailPage() {
               </div>
               <div className="px-3 py-2 max-h-32 overflow-y-auto">
                 {stderrLines.slice(-20).map((line, i) => (
-                  <p key={i} className="text-xs font-mono text-green-400 leading-relaxed">{line}</p>
+                  <p key={i} className="text-xs font-mono text-green-400 leading-relaxed">
+                    {line}
+                  </p>
                 ))}
               </div>
             </div>
@@ -400,7 +485,7 @@ export function AgentTodoDetailPage() {
             />
           </div>
 
-          {/* Chat Input — shown when a run is selected */}
+          {/* Chat Input */}
           {selectedRunId && (
             <div className="flex-shrink-0 border-t border-notion-border px-4 py-3 bg-white">
               <div className="rounded-2xl border border-notion-border bg-white shadow-sm transition-all focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
@@ -429,9 +514,13 @@ export function AgentTodoDetailPage() {
                           <div className="min-w-0">
                             <span className="text-sm font-medium text-notion-text">{cmd.name}</span>
                             {cmd.input?.hint && (
-                              <span className="ml-1.5 text-xs text-notion-text-tertiary font-mono">{cmd.input.hint}</span>
+                              <span className="ml-1.5 text-xs text-notion-text-tertiary font-mono">
+                                {cmd.input.hint}
+                              </span>
                             )}
-                            <p className="text-xs text-notion-text-secondary truncate">{cmd.description}</p>
+                            <p className="text-xs text-notion-text-secondary truncate">
+                              {cmd.description}
+                            </p>
                           </div>
                         </button>
                       ))}
@@ -443,9 +532,9 @@ export function AgentTodoDetailPage() {
                     onChange={(e) => {
                       const val = e.target.value;
                       setChatInput(val);
+                      if (chatError) setChatError(null);
                       e.target.style.height = 'auto';
                       e.target.style.height = `${Math.min(e.target.scrollHeight, 120)}px`;
-                      // Open slash menu when input starts with /
                       const slashMatch = val.match(/^\/(\S*)$/);
                       if (slashMatch && availableCommands.length > 0) {
                         setSlashFilter(slashMatch[1]);
@@ -501,25 +590,58 @@ export function AgentTodoDetailPage() {
                     style={{ minHeight: '22px', maxHeight: '120px' }}
                   />
                 </div>
-                <div className="flex items-center justify-end px-3 pb-2.5">
-                  {isRunning ? (
+                {/* Error message */}
+                {chatError && <p className="px-4 pb-1 text-xs text-red-500">{chatError}</p>}
+                {/* Bottom toolbar: model + yolo on left, send button on right */}
+                <div className="flex items-center justify-between px-2 pb-2">
+                  <div className="flex items-center gap-0.5">
+                    <ModelDropdown
+                      value={todo.model ?? null}
+                      models={models}
+                      agentDefaultModel={todo.agent?.defaultModel}
+                      onChange={handleModelChange}
+                    />
                     <button
-                      onClick={handleStop}
-                      className="flex-shrink-0 rounded-full bg-gray-400 p-2 text-white hover:bg-gray-500 transition-colors"
-                      title="Stop"
+                      type="button"
+                      onClick={() => handleYoloToggle(!todo.yoloMode)}
+                      className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
+                        todo.yoloMode
+                          ? 'text-amber-600 bg-amber-50 hover:bg-amber-100'
+                          : 'text-notion-text-tertiary hover:bg-notion-sidebar hover:text-notion-text-secondary'
+                      }`}
+                      title={
+                        todo.yoloMode
+                          ? 'YOLO mode on — click to disable'
+                          : 'YOLO mode off — click to enable'
+                      }
                     >
-                      <Square size={13} />
+                      <Zap
+                        size={11}
+                        className={todo.yoloMode ? 'text-amber-500' : 'text-notion-text-tertiary'}
+                      />
+                      <span>YOLO</span>
                     </button>
-                  ) : (
-                    <button
-                      onClick={handleSendMessage}
-                      disabled={!chatInput.trim() || !effectiveCanChat}
-                      className="flex-shrink-0 rounded-full bg-notion-text p-2 text-white transition-opacity hover:opacity-80 disabled:opacity-30"
-                      title="Send"
-                    >
-                      <ArrowUp size={13} />
-                    </button>
-                  )}
+                  </div>
+                  <div>
+                    {isRunning ? (
+                      <button
+                        onClick={handleStop}
+                        className="rounded-full bg-gray-400 p-2 text-white hover:bg-gray-500 transition-colors"
+                        title="Stop"
+                      >
+                        <Square size={13} />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleSendMessage}
+                        disabled={!chatInput.trim() || !effectiveCanChat}
+                        className="rounded-full bg-notion-text p-2 text-white transition-opacity hover:opacity-80 disabled:opacity-30"
+                        title="Send"
+                      >
+                        <ArrowUp size={13} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

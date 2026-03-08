@@ -48,7 +48,6 @@ const CATEGORY_FILTER_OPTIONS: { value: CategoryFilter; label: string }[] = [
   { value: 'topic', label: 'Topic' },
 ];
 
-
 // Generic pill dropdown
 function PillDropdown<T extends string>({
   options,
@@ -341,7 +340,11 @@ export function PapersByTag({
         if (created < importTimeCutoff) return false;
       }
 
-      if (yearFilter !== null && (paper.submittedAt ? new Date(paper.submittedAt).getFullYear() : null) !== yearFilter) return false;
+      if (
+        yearFilter !== null &&
+        (paper.submittedAt ? new Date(paper.submittedAt).getFullYear() : null) !== yearFilter
+      )
+        return false;
 
       return true;
     });
@@ -444,7 +447,11 @@ export function PapersByTag({
         const created = new Date(paper.createdAt);
         if (created < importTimeCutoff) return false;
       }
-      if (yearFilter !== null && (paper.submittedAt ? new Date(paper.submittedAt).getFullYear() : null) !== yearFilter) return false;
+      if (
+        yearFilter !== null &&
+        (paper.submittedAt ? new Date(paper.submittedAt).getFullYear() : null) !== yearFilter
+      )
+        return false;
       return true;
     });
     setSelectedIds(new Set(filtered.map((p) => p.id)));
@@ -993,14 +1000,20 @@ function PaperCard({
 
         {/* Clickable content area */}
         <button
-          onClick={() => (isSelectMode ? onToggleSelect(paper.id) : onOpen(paper.shortId, { from: '/papers' }))}
+          onClick={() =>
+            isSelectMode ? onToggleSelect(paper.id) : onOpen(paper.shortId, { from: '/papers' })
+          }
           className="min-w-0 flex-1 text-left"
         >
           <span className="block truncate text-sm font-semibold text-notion-text">
             {cleanArxivTitle(paper.title)}
           </span>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {paper.submittedAt && <span className="text-xs text-notion-text-tertiary">{new Date(paper.submittedAt).getFullYear()}</span>}
+            {paper.submittedAt && (
+              <span className="text-xs text-notion-text-tertiary">
+                {new Date(paper.submittedAt).getFullYear()}
+              </span>
+            )}
             {authorsSnippet && (
               <span className="text-xs text-notion-text-tertiary">
                 {authorsSnippet}

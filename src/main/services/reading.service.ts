@@ -193,7 +193,8 @@ export class ReadingService {
       if (paper.authors && (paper.authors as string[]).length > 0) {
         paperContext.push(`Authors: ${(paper.authors as string[]).join(', ')}`);
       }
-      if (paper.submittedAt) paperContext.push(`Year: ${new Date(paper.submittedAt).getFullYear()}`);
+      if (paper.submittedAt)
+        paperContext.push(`Year: ${new Date(paper.submittedAt).getFullYear()}`);
       if (paper.abstract) paperContext.push(`Abstract:\n${paper.abstract}`);
     }
 

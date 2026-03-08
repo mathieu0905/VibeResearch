@@ -163,25 +163,23 @@ export function AgentSettings() {
       setEditingAgent((prev) => {
         if (!prev) return null;
         // Only update cliPath if it's empty or matches a default command
-        const shouldUpdateCliPath =
-          !prev.cliPath || defaultCommands.includes(prev.cliPath);
+        const shouldUpdateCliPath = !prev.cliPath || defaultCommands.includes(prev.cliPath);
         return {
           ...prev,
           agentTool: tool,
           backend: tool.replace(/-/g, ''),
-          cliPath: shouldUpdateCliPath ? (meta.cliCommand || prev.cliPath) : prev.cliPath,
+          cliPath: shouldUpdateCliPath ? meta.cliCommand || prev.cliPath : prev.cliPath,
         };
       });
     } else {
       setNewAgent((prev) => {
         // Only update cliPath if it's empty or matches a default command
-        const shouldUpdateCliPath =
-          !prev.cliPath || defaultCommands.includes(prev.cliPath);
+        const shouldUpdateCliPath = !prev.cliPath || defaultCommands.includes(prev.cliPath);
         return {
           ...prev,
           agentTool: tool,
           backend: tool.replace(/-/g, ''),
-          cliPath: shouldUpdateCliPath ? (meta.cliCommand || prev.cliPath) : prev.cliPath,
+          cliPath: shouldUpdateCliPath ? meta.cliCommand || prev.cliPath : prev.cliPath,
         };
       });
     }
@@ -262,7 +260,11 @@ export function AgentSettings() {
     try {
       const result = await ipc.testAgentAcp(agent.id);
       if (result && 'sessionId' in result) {
-        setTestResult({ agentId: agent.id, success: true, output: `ACP session created: ${result.sessionId}` });
+        setTestResult({
+          agentId: agent.id,
+          success: true,
+          output: `ACP session created: ${result.sessionId}`,
+        });
       } else {
         setTestResult({ agentId: agent.id, success: false, error: 'No session ID returned' });
       }
@@ -396,7 +398,9 @@ export function AgentSettings() {
                         {getAgentLogo(meta.value, 24)}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium text-notion-text">{meta.label}</span>
+                            <span className="text-sm font-medium text-notion-text">
+                              {meta.label}
+                            </span>
                             {meta.supportsYolo && <Zap size={10} className="text-purple-500" />}
                           </div>
                           <span className="text-xs text-notion-text-tertiary line-clamp-1">
@@ -459,7 +463,8 @@ export function AgentSettings() {
                     <option value="">Use agent default</option>
                     {getAgentToolMeta(newAgent.agentTool).models.map((m) => (
                       <option key={m.value} value={m.value}>
-                        {m.label}{m.description ? ` — ${m.description}` : ''}
+                        {m.label}
+                        {m.description ? ` — ${m.description}` : ''}
                       </option>
                     ))}
                     <option value="__custom__">Custom model...</option>
@@ -514,7 +519,11 @@ export function AgentSettings() {
                           type="text"
                           value={newAgent.baseUrl}
                           onChange={(e) => setNewAgent((p) => ({ ...p, baseUrl: e.target.value }))}
-                          placeholder={newAgent.agentTool === 'codex' ? 'https://api.openai.com/v1' : 'https://api.anthropic.com'}
+                          placeholder={
+                            newAgent.agentTool === 'codex'
+                              ? 'https://api.openai.com/v1'
+                              : 'https://api.anthropic.com'
+                          }
                           className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-notion-accent/20 focus:border-notion-accent"
                         />
                         <p className="mt-1 text-xs text-notion-text-tertiary">
@@ -653,11 +662,18 @@ export function AgentSettings() {
                     {/* Header row */}
                     <div
                       className={`flex items-center justify-between px-4 py-3 transition-colors ${agent.configContent || agent.authContent ? 'hover:bg-notion-sidebar/50 cursor-pointer' : ''}`}
-                      onClick={() => (agent.configContent || agent.authContent) && setExpandedAgent(isExpanded ? null : agent.id)}
+                      onClick={() =>
+                        (agent.configContent || agent.authContent) &&
+                        setExpandedAgent(isExpanded ? null : agent.id)
+                      }
                     >
                       <div className="flex items-center gap-3">
-                        {(agent.configContent || agent.authContent) ? (
-                          isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
+                        {agent.configContent || agent.authContent ? (
+                          isExpanded ? (
+                            <ChevronDown size={14} />
+                          ) : (
+                            <ChevronRight size={14} />
+                          )
                         ) : (
                           <span className="w-[14px]" />
                         )}
@@ -1024,7 +1040,8 @@ function EditAgentModal({
                   <option value="">Use agent default</option>
                   {getAgentToolMeta(agent.agentTool || 'claude-code').models.map((m) => (
                     <option key={m.value} value={m.value}>
-                      {m.label}{m.description ? ` — ${m.description}` : ''}
+                      {m.label}
+                      {m.description ? ` — ${m.description}` : ''}
                     </option>
                   ))}
                   <option value="__custom__">Custom model...</option>
@@ -1079,7 +1096,11 @@ function EditAgentModal({
                         type="text"
                         value={agent.baseUrl || ''}
                         onChange={(e) => onUpdate({ baseUrl: e.target.value })}
-                        placeholder={agent.agentTool === 'codex' ? 'https://api.openai.com/v1' : 'https://api.anthropic.com'}
+                        placeholder={
+                          agent.agentTool === 'codex'
+                            ? 'https://api.openai.com/v1'
+                            : 'https://api.anthropic.com'
+                        }
                         className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-notion-accent/20 focus:border-notion-accent"
                       />
                       <p className="mt-1 text-xs text-notion-text-tertiary">
@@ -1222,7 +1243,9 @@ function parseEnvText(text: string): Record<string, string> {
 
 function envToText(env?: Record<string, string>): string {
   if (!env || Object.keys(env).length === 0) return '';
-  return Object.entries(env).map(([k, v]) => `${k}=${v}`).join('\n');
+  return Object.entries(env)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n');
 }
 
 function formatUsageLabel(provider: string, model: string) {

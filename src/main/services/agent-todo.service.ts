@@ -236,19 +236,44 @@ export class AgentTodoService {
     registerRunner(todoId, runner);
 
     // Persist stream messages to DB as they arrive
-    runner.on('stream', (data: { runId: string; message: { msgId: string; type: string; role: string; content: unknown; status?: string | null; toolCallId?: string | null; toolName?: string | null } }) => {
-      const m = data.message;
-      this.repository.createMessage({
-        runId: data.runId,
-        msgId: m.msgId,
-        type: m.type as 'text' | 'tool_call' | 'thought' | 'plan' | 'permission' | 'system' | 'error',
-        role: m.role as 'user' | 'assistant' | 'system',
-        content: JSON.stringify(m.content),
-        status: m.status ?? null,
-        toolCallId: m.toolCallId ?? null,
-        toolName: m.toolName ?? null,
-      }).catch(() => {/* ignore duplicate msgId errors */});
-    });
+    runner.on(
+      'stream',
+      (data: {
+        runId: string;
+        message: {
+          msgId: string;
+          type: string;
+          role: string;
+          content: unknown;
+          status?: string | null;
+          toolCallId?: string | null;
+          toolName?: string | null;
+        };
+      }) => {
+        const m = data.message;
+        this.repository
+          .createMessage({
+            runId: data.runId,
+            msgId: m.msgId,
+            type: m.type as
+              | 'text'
+              | 'tool_call'
+              | 'thought'
+              | 'plan'
+              | 'permission'
+              | 'system'
+              | 'error',
+            role: m.role as 'user' | 'assistant' | 'system',
+            content: JSON.stringify(m.content),
+            status: m.status ?? null,
+            toolCallId: m.toolCallId ?? null,
+            toolName: m.toolName ?? null,
+          })
+          .catch(() => {
+            /* ignore duplicate msgId errors */
+          });
+      },
+    );
 
     // Run async
     runner

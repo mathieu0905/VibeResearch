@@ -25,7 +25,14 @@ import {
 
 describe('acp-types: DEFAULT_AGENT_CONFIGS', () => {
   it('covers all expected backends', () => {
-    const backends: AgentBackendType[] = ['claude-code', 'codex', 'gemini', 'qwen', 'goose', 'custom'];
+    const backends: AgentBackendType[] = [
+      'claude-code',
+      'codex',
+      'gemini',
+      'qwen',
+      'goose',
+      'custom',
+    ];
     for (const b of backends) {
       expect(DEFAULT_AGENT_CONFIGS).toHaveProperty(b);
     }
@@ -290,7 +297,9 @@ describe('acp-connection: JSON-RPC message parsing', () => {
     let resolved: unknown = null;
     // @ts-expect-error
     conn['pendingRequests'].set(1, {
-      resolve: (v: unknown) => { resolved = v; },
+      resolve: (v: unknown) => {
+        resolved = v;
+      },
       reject: vi.fn(),
       timeoutId: setTimeout(() => {}, 60000),
       method: 'test/method',
@@ -321,7 +330,9 @@ describe('acp-connection: JSON-RPC message parsing', () => {
     // @ts-expect-error
     conn['pendingRequests'].set(2, {
       resolve: vi.fn(),
-      reject: (e: Error) => { rejected = e; },
+      reject: (e: Error) => {
+        rejected = e;
+      },
       timeoutId: setTimeout(() => {}, 60000),
       method: 'session/new',
     });
@@ -365,7 +376,9 @@ describe('acp-connection: JSON-RPC message parsing', () => {
     let resolved: unknown = null;
     // @ts-expect-error
     conn['pendingRequests'].set(3, {
-      resolve: (v: unknown) => { resolved = v; },
+      resolve: (v: unknown) => {
+        resolved = v;
+      },
       reject: vi.fn(),
       timeoutId: setTimeout(() => {}, 60000),
       method: 'initialize',
@@ -455,7 +468,9 @@ describe('acp-connection: notification routing', () => {
     // @ts-expect-error
     conn['pendingRequests'].set(5, {
       resolve: vi.fn(),
-      reject: (e: Error) => { rejected = e; },
+      reject: (e: Error) => {
+        rejected = e;
+      },
       timeoutId: setTimeout(() => {}, 60000),
       method: 'session/prompt',
     });

@@ -37,7 +37,7 @@ export const AGENT_TOOL_META: AgentToolMeta[] = [
   {
     value: 'claude-code',
     label: 'Claude Code',
-    description: 'Anthropic\'s official CLI for Claude',
+    description: "Anthropic's official CLI for Claude",
     cliCommand: 'claude',
     defaultAcpArgs: ['--experimental-acp'],
     configLabel: 'Claude Settings',
@@ -80,7 +80,9 @@ export const AGENT_TOOL_META: AgentToolMeta[] = [
 ];
 
 export function getAgentToolMeta(tool: AgentToolKind): AgentToolMeta {
-  return AGENT_TOOL_META.find(m => m.value === tool) || AGENT_TOOL_META[AGENT_TOOL_META.length - 1];
+  return (
+    AGENT_TOOL_META.find((m) => m.value === tool) || AGENT_TOOL_META[AGENT_TOOL_META.length - 1]
+  );
 }
 
 export interface AgentConfigItem {

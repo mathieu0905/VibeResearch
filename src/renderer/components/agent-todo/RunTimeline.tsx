@@ -103,14 +103,21 @@ export function RunTimeline({ runs, selectedRunId, onSelect, onDelete }: RunTime
             </div>
             <div className="text-xs text-notion-text-secondary capitalize">{run.status}</div>
             {run.status === 'failed' && run.errorMessage && (
-              <div className="text-xs text-notion-red mt-0.5 leading-tight line-clamp-2" title={run.errorMessage}>
+              <div
+                className="text-xs text-notion-red mt-0.5 leading-tight line-clamp-2"
+                title={run.errorMessage}
+              >
                 {run.errorMessage}
               </div>
             )}
             {(() => {
               const usage = parseTokenUsage(run.tokenUsage);
               if (!usage) return null;
-              const total = usage.inputTokens + usage.outputTokens + usage.cacheReadTokens + usage.cacheCreationTokens;
+              const total =
+                usage.inputTokens +
+                usage.outputTokens +
+                usage.cacheReadTokens +
+                usage.cacheCreationTokens;
               return (
                 <div
                   className="text-xs text-notion-text-tertiary mt-0.5"

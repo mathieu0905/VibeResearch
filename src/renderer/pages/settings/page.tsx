@@ -659,7 +659,10 @@ function StorageSettings() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    ipc.getStorageRoot().then(setStorageDir).catch(() => {});
+    ipc
+      .getStorageRoot()
+      .then(setStorageDir)
+      .catch(() => {});
   }, []);
 
   const handleSelectFolder = async () => {
@@ -1976,18 +1979,23 @@ function UsageSettings() {
   const [summary, setSummary] = useState<TokenUsageSummary | null>(null);
   const [view, setView] = useState<'summary' | 'records'>('summary');
   const [refreshing, setRefreshing] = useState(false);
+  const [agentStats, setAgentStats] = useState<
+    Array<{ id: string; name: string; callCount: number }>
+  >([]);
 
   const loadUsage = useMemo(
     () =>
       async (showSpinner = false) => {
         if (showSpinner) setRefreshing(true);
         try {
-          const [nextRecords, nextSummary] = await Promise.all([
+          const [nextRecords, nextSummary, nextAgentStats] = await Promise.all([
             ipc.getTokenUsageRecords(),
             ipc.getTokenUsageSummary(),
+            ipc.getAgentRunStats(),
           ]);
           setRecords(nextRecords);
           setSummary(nextSummary);
+          setAgentStats(nextAgentStats);
         } finally {
           if (showSpinner) setRefreshing(false);
         }
@@ -2204,6 +2212,43 @@ function UsageSettings() {
               )}
             />
           </div>
+        </div>
+      )}
+
+      {/* Agent Workload */}
+      {agentStats.length > 0 && (
+        <div className="rounded-xl border border-notion-border bg-white">
+          <div className="border-b border-notion-border px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-notion-text-tertiary">
+            Agent Calls
+          </div>
+          {agentStats.map((a, i) => {
+            const maxCalls = Math.max(...agentStats.map((x) => x.callCount), 1);
+            const pct = (a.callCount / maxCalls) * 100;
+            return (
+              <div
+                key={a.id}
+                className={`px-4 py-3 ${i < agentStats.length - 1 ? 'border-b border-notion-border' : ''}`}
+              >
+                <div className="mb-1.5 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs font-medium text-notion-text">{a.name}</span>
+                    <span className="ml-2 text-xs text-notion-text-tertiary">
+                      task runs + connection tests
+                    </span>
+                  </div>
+                  <span className="text-xs font-semibold tabular-nums text-notion-text">
+                    {a.callCount}
+                  </span>
+                </div>
+                <div className="h-1 w-full overflow-hidden rounded-full bg-notion-sidebar">
+                  <div
+                    className="h-full rounded-full bg-blue-500 transition-all"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

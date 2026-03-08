@@ -77,6 +77,13 @@ export class AgentTodoRepository {
     return this.prisma.agentConfig.delete({ where: { id } });
   }
 
+  async incrementAgentCallCount(id: string) {
+    return this.prisma.agentConfig.update({
+      where: { id },
+      data: { callCount: { increment: 1 } },
+    });
+  }
+
   // ── AgentTodo ──────────────────────────────────────────────────────────────
 
   async findAllTodos(query?: { status?: string; projectId?: string }) {
@@ -192,5 +199,13 @@ export class AgentTodoRepository {
       where: { runId },
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  async getAgentRunStats() {
+    const configs = await this.prisma.agentConfig.findMany({
+      select: { id: true, name: true, callCount: true },
+      orderBy: { callCount: 'desc' },
+    });
+    return configs;
   }
 }

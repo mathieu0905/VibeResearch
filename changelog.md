@@ -185,8 +185,6 @@
 - **`use-agent-stream.ts`**: Added `availableCommands` state; listen for `agent-todo:commands` IPC event to update it. Exported `SlashCommand` type.
 - **`page.tsx`**: Slash command popup menu above the chat textarea — triggered by typing `/`, filtered by subsequent characters. Arrow keys navigate, Tab/Enter selects, Escape closes. Placeholder updated to hint at `/` commands.
 
-
-
 ### feat: Configurable storage root with full data migration
 
 **Scope**: `src/main/store/storage-path.ts`, `src/main/store/app-settings-store.ts`, `src/main/services/providers.service.ts`, `src/main/ipc/providers.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`, `src/renderer/pages/papers/overview/page.tsx`, `src/renderer/pages/papers/notes/page.tsx`
@@ -237,8 +235,6 @@
 - **use-agent-stream**: Added `canChat` state (true when status is `completed`) and `stderrLines` array for real-time stderr output.
 - **use-ipc**: Added `sendAgentMessage(todoId, runId, text)` IPC client method.
 - **Task detail page**: Added a persistent ChatInput bar at the bottom of the message stream (shown when a run is selected). Supports Enter-to-send (with IME guard), auto-resize textarea, Send/Stop buttons. Also added a floating stderr output panel (terminal-style, dark bg) shown while the agent is running.
-
-
 
 ### feat: Redesign Ideas tab — inline chat, dropdown selectors for Papers/Repos, Generate Task modal
 

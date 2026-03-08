@@ -1,23 +1,48 @@
 /**
- * Codex ACP Connection Test
+ * ACP End-to-End Integration Test
  *
- * Tests the codex-acp bridge directly to verify Karen agent can connect.
- * Uses the user's existing ~/.codex/config.toml and ~/.codex/auth.json.
+ * Reads agent config from the real DB, spawns the real CLI via ACP,
+ * sends a simple prompt, and verifies streaming chunks arrive.
+ *
+ * - If no enabled agent is found in DB, the test is skipped.
+ * - If the agent fails to connect (network/auth issue), the test is skipped.
+ * - Only runs when RUN_ACP_E2E=1 is set, to avoid slowing down normal CI.
  */
 
 import { describe, it, expect, beforeAll } from 'vitest';
 import { spawn } from 'child_process';
 import path from 'path';
 import os from 'os';
-import fs from 'fs';
 
-const RUN = process.env.RUN_CODEX_E2E === '1';
+const RUN = process.env.RUN_ACP_E2E === '1';
 
-// Check if codex config exists
-function hasCodexConfig(): boolean {
-  const configPath = path.join(os.homedir(), '.codex', 'config.toml');
-  const authPath = path.join(os.homedir(), '.codex', 'auth.json');
-  return fs.existsSync(configPath) && fs.existsSync(authPath);
+// ── Read agent config from DB ──────────────────────────────────────────────
+
+interface AgentRow {
+  id: string;
+  name: string;
+  cliPath: string | null;
+  backend: string;
+  acpArgs: string; // JSON string
+  extraEnv: string; // JSON string
+  enabled: number;
+}
+
+async function getEnabledAgent(): Promise<AgentRow | null> {
+  const { execSync } = await import('child_process');
+  const storageDir =
+    process.env.VIBE_RESEARCH_STORAGE_DIR ?? path.join(os.homedir(), '.vibe-research');
+  const dbPath = path.join(storageDir, 'vibe-research.db');
+
+  try {
+    const sql = `SELECT id, name, cliPath, backend, acpArgs, extraEnv, enabled FROM AgentConfig WHERE enabled = 1 ORDER BY createdAt ASC LIMIT 1;`;
+    const out = execSync(`sqlite3 -json "${dbPath}" "${sql}"`, { encoding: 'utf8' }).trim();
+    if (!out) return null;
+    const rows = JSON.parse(out) as AgentRow[];
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -36,6 +61,18 @@ function buildCleanEnv(extra: Record<string, string> = {}): NodeJS.ProcessEnv {
   return env as NodeJS.ProcessEnv;
 }
 
+function buildSpawnArgs(cliPath: string, acpArgs: string[]): { cmd: string; args: string[] } {
+  const parts = cliPath.trim().split(/\s+/);
+  let cmd = parts[0];
+  let args = [...parts.slice(1), ...acpArgs];
+
+  if (cmd === 'npx' && !args.includes('--yes')) {
+    args = ['--yes', '--prefer-offline', ...args];
+  }
+
+  return { cmd, args };
+}
+
 interface AcpResult {
   sessionId: string | null;
   chunks: string[];
@@ -43,14 +80,17 @@ interface AcpResult {
   connectOk: boolean;
 }
 
-async function runCodexAcpPrompt(prompt: string, timeoutMs = 60_000): Promise<AcpResult> {
+async function runAcpPrompt(
+  cliPath: string,
+  acpArgs: string[],
+  extraEnv: Record<string, string>,
+  cwd: string,
+  prompt: string,
+  timeoutMs = 60_000,
+): Promise<AcpResult> {
   return new Promise((resolve) => {
-    const cwd = os.homedir();
-    const env = buildCleanEnv();
-
-    // codex-acp uses npx @zed-industries/codex-acp
-    const cmd = 'npx';
-    const args = ['--yes', '--prefer-offline', '@zed-industries/codex-acp'];
+    const { cmd, args } = buildSpawnArgs(cliPath, acpArgs);
+    const env = buildCleanEnv(extraEnv);
 
     const proc = spawn(cmd, args, {
       cwd,
@@ -147,6 +187,7 @@ async function runCodexAcpPrompt(prompt: string, timeoutMs = 60_000): Promise<Ac
 
     proc.stderr.on('data', (d: Buffer) => {
       const text = d.toString();
+      // If auth error surfaces on stderr after session/new, bail early
       if (text.includes('Authentication required') || text.includes('authentication')) {
         done({ sessionId, chunks, error: `Auth error: ${text.trim()}`, connectOk: false });
       }
@@ -175,32 +216,48 @@ async function runCodexAcpPrompt(prompt: string, timeoutMs = 60_000): Promise<Ac
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
-describe('Codex ACP: codex-acp bridge', () => {
-  let hasConfig: boolean;
+describe('ACP e2e: real agent from DB', () => {
+  let agent: AgentRow | null = null;
 
-  beforeAll(() => {
-    hasConfig = hasCodexConfig();
+  beforeAll(async () => {
+    if (!RUN) return;
+    agent = await getEnabledAgent();
   });
 
-  it('checks if codex config files exist', () => {
+  it('finds an enabled agent in the database', () => {
     if (!RUN) {
-      console.log('Skipped: set RUN_CODEX_E2E=1 to run');
+      console.log('Skipped: set RUN_ACP_E2E=1 to run');
       return;
     }
-    if (!hasConfig) {
-      console.log('Skipped: ~/.codex/config.toml or ~/.codex/auth.json not found');
+    if (!agent) {
+      console.log('Skipped: no enabled agent found in DB');
       return;
     }
-    expect(hasConfig).toBe(true);
-    console.log('Found ~/.codex/config.toml and ~/.codex/auth.json');
+    expect(agent.id).toBeTruthy();
+    expect(agent.name).toBeTruthy();
+    console.log(`Found agent: ${agent.name} (${agent.id})`);
+    console.log(`  cliPath: ${agent.cliPath ?? agent.backend}`);
+    console.log(`  acpArgs: ${agent.acpArgs}`);
   });
 
   it('connects via ACP (initialize + session/new)', async () => {
-    if (!RUN || !hasConfig) return;
+    if (!RUN || !agent) return;
 
-    console.log('\nSpawning: npx @zed-industries/codex-acp');
+    const cliPath = agent.cliPath ?? agent.backend;
+    const acpArgs = JSON.parse(agent.acpArgs) as string[];
+    const extraEnv = JSON.parse(agent.extraEnv || '{}') as Record<string, string>;
+    const cwd = os.homedir();
 
-    const result = await runCodexAcpPrompt('Reply with exactly one word: hello', 45_000);
+    console.log(`\nSpawning: ${cliPath} ${acpArgs.join(' ')}`);
+
+    const result = await runAcpPrompt(
+      cliPath,
+      acpArgs,
+      extraEnv,
+      cwd,
+      'Reply with exactly one word: hello',
+      30_000,
+    );
 
     console.log(`  sessionId: ${result.sessionId}`);
     console.log(`  chunks received: ${result.chunks.length}`);
@@ -208,20 +265,32 @@ describe('Codex ACP: codex-acp bridge', () => {
     if (result.error) console.log(`  error: ${result.error}`);
 
     if (!result.connectOk) {
-      console.log('Skipped: codex-acp could not connect (auth/network issue)');
+      console.log('Skipped: agent could not connect (auth/network issue)');
       return;
     }
 
     expect(result.sessionId).toBeTruthy();
-  }, 50_000);
+  }, 35_000);
 
-  it('receives streaming message chunks from codex', async () => {
-    if (!RUN || !hasConfig) return;
+  it('receives streaming message chunks from agent', async () => {
+    if (!RUN || !agent) return;
 
-    const result = await runCodexAcpPrompt('Reply with exactly one word: hello', 45_000);
+    const cliPath = agent.cliPath ?? agent.backend;
+    const acpArgs = JSON.parse(agent.acpArgs) as string[];
+    const extraEnv = JSON.parse(agent.extraEnv || '{}') as Record<string, string>;
+    const cwd = os.homedir();
+
+    const result = await runAcpPrompt(
+      cliPath,
+      acpArgs,
+      extraEnv,
+      cwd,
+      'Reply with exactly one word: hello',
+      30_000,
+    );
 
     if (!result.connectOk) {
-      console.log('Skipped: codex-acp could not connect');
+      console.log('Skipped: agent could not connect');
       return;
     }
 
@@ -234,5 +303,5 @@ describe('Codex ACP: codex-acp bridge', () => {
     const fullResponse = result.chunks.join('');
     console.log(`Full response: "${fullResponse}"`);
     expect(fullResponse.length).toBeGreaterThan(0);
-  }, 50_000);
+  }, 35_000);
 });
