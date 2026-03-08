@@ -167,8 +167,9 @@ export class DownloadService {
           await this.papersRepository.updatePdfPath(paperId, filePath);
           return { success: true, size: stats.size, skipped: true };
         }
-        // Invalid file, delete it and re-download
+        // Invalid file — clear DB path, delete file, then re-download
         console.warn(`[download] Invalid PDF file detected, re-downloading: ${filePath}`);
+        await this.papersRepository.updatePdfPath(paperId, null);
         await fs.unlink(filePath).catch(() => {});
       }
     } catch {
@@ -198,7 +199,8 @@ export class DownloadService {
 
       return { success: true, size: buffer.length, skipped: false };
     } catch (error) {
-      // Clean up failed download
+      // Clean up failed download — also clear DB path so UI shows download button
+      await this.papersRepository.updatePdfPath(paperId, null);
       await fs.unlink(filePath).catch(() => {});
       return { success: false, size: 0, skipped: false, error: String(error) };
     }

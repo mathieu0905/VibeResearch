@@ -183,8 +183,9 @@ export class PapersService {
           if (!paper.pdfPath) await this.papersRepository.updatePdfPath(paperId, filePath);
           return { pdfPath: filePath, size: stats.size, skipped: true };
         }
-        // Invalid file, delete it and re-download
+        // Invalid file — clear DB path, delete file, then re-download
         console.warn(`[papers] Invalid PDF file detected, re-downloading: ${filePath}`);
+        await this.papersRepository.updatePdfPath(paperId, null);
         await fs.unlink(filePath).catch(() => {});
       }
     } catch {

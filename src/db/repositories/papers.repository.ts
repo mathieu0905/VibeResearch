@@ -194,10 +194,17 @@ export class PapersRepository {
     };
   }
 
-  async updatePdfPath(id: string, pdfPath: string) {
+  async updatePdfPath(id: string, pdfPath: string | null) {
     return this.prisma.paper.update({
       where: { id },
       data: { pdfPath },
+    });
+  }
+
+  async clearPdfPathByFilePath(filePath: string) {
+    await this.prisma.paper.updateMany({
+      where: { pdfPath: filePath },
+      data: { pdfPath: null },
     });
   }
 
