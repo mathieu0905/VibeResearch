@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { ProjectsService } from '../services/projects.service';
 import { type IpcResult, ok, err } from '@shared';
 
@@ -9,6 +9,8 @@ function getProjectsService() {
   if (!svc) svc = new ProjectsService();
   return svc;
 }
+
+const activeIdeaChats = new Map<string, AbortController>();
 
 export function setupProjectsIpc() {
   // Projects
@@ -187,6 +189,75 @@ export function setupProjectsIpc() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[projects:idea:delete] Error:', msg);
+      return err(msg);
+    }
+  });
+
+  // Idea Chat (streaming)
+  ipcMain.handle(
+    'projects:idea:chat',
+    async (
+      event,
+      input: {
+        sessionId: string;
+        projectId: string;
+        paperIds: string[];
+        repoIds?: string[];
+        messages: { role: 'user' | 'assistant'; content: string }[];
+      },
+    ) => {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      if (!win) return { error: 'No window found' };
+
+      const existing = activeIdeaChats.get(input.sessionId);
+      if (existing) existing.abort();
+
+      const controller = new AbortController();
+      activeIdeaChats.set(input.sessionId, controller);
+
+      try {
+        await getProjectsService().ideaChat(
+          {
+            projectId: input.projectId,
+            paperIds: input.paperIds,
+            repoIds: input.repoIds,
+            messages: input.messages,
+          },
+          (chunk) => {
+            win.webContents.send('idea-chat:output', chunk);
+          },
+          controller.signal,
+        );
+        win.webContents.send('idea-chat:done');
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[projects:idea:chat] Error:', msg);
+        win.webContents.send('idea-chat:error', msg);
+      } finally {
+        activeIdeaChats.delete(input.sessionId);
+      }
+
+      return { sessionId: input.sessionId, started: true };
+    },
+  );
+
+  ipcMain.handle('projects:idea:chatKill', async (_, sessionId: string) => {
+    const controller = activeIdeaChats.get(sessionId);
+    if (controller) {
+      controller.abort();
+      activeIdeaChats.delete(sessionId);
+      return { killed: true };
+    }
+    return { killed: false };
+  });
+
+  ipcMain.handle('projects:idea:extract-task', async (_, input): Promise<IpcResult<unknown>> => {
+    try {
+      const result = await getProjectsService().extractTaskFromChat(input);
+      return ok(result);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[projects:idea:extract-task] Error:', msg);
       return err(msg);
     }
   });

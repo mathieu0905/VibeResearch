@@ -478,6 +478,20 @@ export const ipc = {
     invoke<ProjectIdea>('projects:idea:update', id, data),
   deleteProjectIdea: (id: string) => invoke<ProjectIdea>('projects:idea:delete', id),
 
+  startIdeaChat: (input: {
+    sessionId: string;
+    projectId: string;
+    paperIds: string[];
+    repoIds?: string[];
+    messages: { role: 'user' | 'assistant'; content: string }[];
+  }) => invoke<{ sessionId: string; started: boolean }>('projects:idea:chat', input),
+  killIdeaChat: (sessionId: string) =>
+    invoke<{ killed: boolean }>('projects:idea:chatKill', sessionId),
+  extractTaskFromChat: (input: {
+    projectId: string;
+    messages: { role: 'user' | 'assistant'; content: string }[];
+  }) => invoke<{ title: string; prompt: string }>('projects:idea:extract-task', input),
+
   // Ingest
   importChromeHistoryFromFile: (filePath: string) =>
     invoke<{ imported: number; previewTitles: string[] }>('ingest:chromeHistoryFromFile', filePath),

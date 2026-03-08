@@ -1,6 +1,32 @@
 # Changelog
 ## 2026-03-08
 
+### feat: Conversational idea chat → Agent Task creation in Projects
+
+**Scope**: `src/main/services/projects.service.ts`, `src/main/ipc/projects.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/projects/page.tsx`, `src/renderer/components/ideas/IdeaChatModal.tsx` (new)
+
+**Changes**:
+- `projects.service.ts`: Extracted `buildSourceContext()` private helper from `generateIdea()`; added `ideaChat()` streaming method (uses `streamText` with paper/repo context) and `extractTaskFromChat()` non-streaming method (extracts JSON title+prompt from conversation)
+- `projects.ipc.ts`: Added `BrowserWindow` import, `activeIdeaChats` AbortController map, and 3 new IPC handlers: `projects:idea:chat` (streaming, pushes `idea-chat:output/done/error`), `projects:idea:chatKill`, `projects:idea:extract-task`
+- `use-ipc.ts`: Added `startIdeaChat`, `killIdeaChat`, `extractTaskFromChat` IPC methods
+- `IdeaChatModal.tsx`: New right-drawer chat component (640px, slides in from right); two views — chat (multi-turn streaming conversation) and task-form (pre-filled title/prompt/agent/cwd, creates agent todo on confirm)
+- `projects/page.tsx`: Added `MessageSquare` icon import, `IdeaChatModal` import, `showChatModal` state in `IdeasTab`, "Discuss & Generate" button, and `IdeaChatModal` mount at bottom of `IdeasTab`
+
+**IPC channels**: `projects:idea:chat` (invoke), `projects:idea:chatKill` (invoke), `projects:idea:extract-task` (invoke), `idea-chat:output/done/error` (pushed events)
+
+
+
+### feat: Redesign Chat input box; add fullscreen mode for Chat panel
+
+**Scope**: `src/renderer/pages/papers/reader/page.tsx`
+
+**Changes**:
+- Removed top border (`border-t`) above the chat input area
+- Redesigned input box to match Codex-style layout: textarea on top, bottom toolbar with `+` (new chat), model selector (with dropdown), and a rounded send/stop button
+- Dropdown for chat history/clear/new chat now opens upward from the model selector in the input toolbar
+- Added fullscreen toggle button (`Maximize2`/`Minimize2`) in the Chat header; clicking it overlays the chat panel over the full reader area (`absolute inset-0 z-30`)
+- Chat header simplified to show current chat title only (selector moved to input toolbar)
+
 ### feat: Move Agent Task creation to Projects page; Agent Tasks page becomes read-only
 
 **Scope**: `prisma/schema.prisma`, `src/db/repositories/projects.repository.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/projects/page.tsx`, `src/renderer/pages/agent-todos/page.tsx`, `src/renderer/components/agent-todo/TodoForm.tsx`, `src/renderer/components/agent-todo/TodoCard.tsx`

@@ -3,7 +3,8 @@ import path from 'path';
 import os from 'os';
 import { ProjectsRepository, PapersRepository } from '@db';
 import { getShellPath } from './cli-runner.service';
-import { generateWithModelKind } from './ai-provider.service';
+import { generateWithModelKind, getLanguageModelFromConfig, streamText } from './ai-provider.service';
+import { getActiveModel, getModelWithKey } from '../store/model-config-store';
 
 export interface CloneResult {
   success: boolean;
@@ -282,6 +283,159 @@ export class ProjectsService {
     });
 
     return { id: created.id, title: created.title, content: created.content };
+  }
+
+  private async buildSourceContext(input: {
+    projectId: string;
+    paperIds: string[];
+    repoIds?: string[];
+  }): Promise<{ paperContext: string; repoContext: string; project: Awaited<ReturnType<ProjectsRepository['getProject']>> }> {
+    const project = await this.repo.getProject(input.projectId);
+    if (!project) throw new Error('Project not found');
+
+    // Fetch paper details
+    const papers = await Promise.all(
+      input.paperIds.map((id) => this.papersRepo.findById(id).catch(() => null)),
+    );
+    const validPapers = papers.filter(Boolean) as Awaited<
+      ReturnType<PapersRepository['findById']>
+    >[];
+
+    const paperContext = validPapers
+      .map((p) => {
+        const parts = [`Title: ${p!.title}`];
+        if (p!.abstract) parts.push(`Abstract: ${p!.abstract}`);
+        return parts.join('\n');
+      })
+      .join('\n\n---\n\n');
+
+    // Fetch repo commit summaries
+    let repoContext = '';
+    if (input.repoIds && input.repoIds.length > 0) {
+      const repoSections: string[] = [];
+      for (const repoId of input.repoIds) {
+        const repo = project.repos.find((r: (typeof project.repos)[number]) => r.id === repoId);
+        if (!repo) continue;
+        const repoName = repo.repoUrl
+          .replace(/\.git$/, '')
+          .split('/')
+          .slice(-2)
+          .join('/');
+        const parts = [`Repository: ${repoName}`, `URL: ${repo.repoUrl}`];
+        if (repo.localPath) {
+          const commits = await this.getCommits(repo.localPath, 20);
+          if (commits.length > 0) {
+            parts.push(
+              'Recent commits:\n' +
+                commits.map((c) => `  [${c.shortHash}] ${c.message}`).join('\n'),
+            );
+          }
+        }
+        repoSections.push(parts.join('\n'));
+      }
+      repoContext = repoSections.join('\n\n---\n\n');
+    }
+
+    return { paperContext, repoContext, project };
+  }
+
+  async ideaChat(
+    input: {
+      projectId: string;
+      paperIds: string[];
+      repoIds?: string[];
+      messages: { role: 'user' | 'assistant'; content: string }[];
+    },
+    onChunk: (chunk: string) => void,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const { paperContext, repoContext, project } = await this.buildSourceContext(input);
+
+    const modelConfig = getActiveModel('chat');
+    if (!modelConfig) {
+      throw new Error('No chat model configured. Please set up a chat model in Settings.');
+    }
+    const configWithKey = getModelWithKey(modelConfig.id);
+    if (!configWithKey) throw new Error('Model config not found');
+    const model = getLanguageModelFromConfig(configWithKey);
+
+    const systemPrompt = [
+      'You are a research ideation assistant helping researchers explore and develop novel research ideas.',
+      'You engage in thoughtful, conversational dialogue to help the user brainstorm, refine, and deepen research directions.',
+      'Draw on the provided papers and code context to ground your suggestions in concrete evidence.',
+      'Ask clarifying questions, suggest connections between ideas, and help the user think through feasibility and novelty.',
+      'Be concise but substantive. Respond in the same language as the user.',
+    ].join(' ');
+
+    const contextParts: string[] = [
+      `Project: ${project.name}`,
+      project.description ? `Description: ${project.description}` : '',
+    ].filter(Boolean);
+    if (paperContext) contextParts.push('Papers:\n' + paperContext);
+    if (repoContext) contextParts.push('Repositories:\n' + repoContext);
+    const contextStr = contextParts.join('\n\n');
+
+    const formattedMessages: Array<{ role: 'user' | 'assistant'; content: string }> = [
+      {
+        role: 'user',
+        content: `${contextStr}\n\nI will discuss research ideas with you. Please be ready.`,
+      },
+      {
+        role: 'assistant',
+        content: 'I understand the project context and the provided materials. I\'m ready to help you explore and develop research ideas. What would you like to discuss?',
+      },
+      ...input.messages,
+    ];
+
+    const { textStream } = streamText({
+      model,
+      system: systemPrompt,
+      messages: formattedMessages,
+      maxOutputTokens: 4096,
+      abortSignal: signal,
+    });
+
+    let fullText = '';
+    for await (const chunk of textStream) {
+      fullText += chunk;
+      onChunk(chunk);
+    }
+
+    return fullText;
+  }
+
+  async extractTaskFromChat(input: {
+    projectId: string;
+    messages: { role: 'user' | 'assistant'; content: string }[];
+  }): Promise<{ title: string; prompt: string }> {
+    const conversationText = input.messages
+      .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+      .join('\n\n');
+
+    const systemPrompt = [
+      'You are a task extraction assistant.',
+      'Given a research ideation conversation, extract a concrete agent coding task.',
+      'Return JSON with exactly two fields:',
+      '"title": a concise task title (max 15 words)',
+      '"prompt": a detailed task description (2-4 paragraphs) suitable for a coding agent, including background, specific goals, and expected outputs.',
+      'Respond ONLY with valid JSON, no markdown, no explanation.',
+    ].join(' ');
+
+    const response = await generateWithModelKind('chat', systemPrompt, conversationText);
+
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]) as { title?: string; prompt?: string };
+        if (parsed.title && parsed.prompt) {
+          return { title: parsed.title, prompt: parsed.prompt };
+        }
+      }
+    } catch {
+      // fallback
+    }
+
+    return { title: 'Research Task', prompt: response.trim() };
   }
 
   async updateIdea(id: string, data: { title?: string; content?: string }) {

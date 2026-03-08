@@ -30,11 +30,13 @@ import {
   Bot,
   Play,
   Square,
+  MessageSquare,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { CwdPicker } from '../../components/agent-todo/CwdPicker';
 import { TodoForm } from '../../components/agent-todo/TodoForm';
 import { TodoCard } from '../../components/agent-todo/TodoCard';
+import { IdeaChatModal } from '../../components/ideas/IdeaChatModal';
 
 // ── Animation variants ────────────────────────────────────────────────────────
 
@@ -876,6 +878,7 @@ function IdeasTab({ project, onChange }: { project: ProjectItem; onChange: () =>
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [showPaperPicker, setShowPaperPicker] = useState(false);
   const [paperSearch, setPaperSearch] = useState('');
+  const [showChatModal, setShowChatModal] = useState(false);
 
   useEffect(() => {
     ipc.listPapers().then(setPapers);
@@ -1027,6 +1030,16 @@ function IdeasTab({ project, onChange }: { project: ProjectItem; onChange: () =>
               </motion.button>
             )}
           </AnimatePresence>
+
+          <motion.button
+            onClick={() => setShowChatModal(true)}
+            className="inline-flex items-center gap-2 rounded-lg border border-notion-border px-3 py-2 text-sm font-medium text-notion-text hover:bg-notion-sidebar-hover transition-colors"
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <MessageSquare size={14} />
+            Discuss &amp; Generate
+          </motion.button>
         </div>
       </motion.div>
 
@@ -1143,6 +1156,18 @@ function IdeasTab({ project, onChange }: { project: ProjectItem; onChange: () =>
           </AnimatePresence>
         </motion.div>
       )}
+
+      <IdeaChatModal
+        isOpen={showChatModal}
+        onClose={() => setShowChatModal(false)}
+        projectId={project.id}
+        projectWorkdir={project.workdir}
+        paperIds={selectedPaperIds}
+        repoIds={selectedRepoIds}
+        onTaskCreated={() => {
+          /* task created */
+        }}
+      />
     </div>
   );
 }
