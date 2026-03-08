@@ -2,6 +2,29 @@
 
 ## 2026-03-08
 
+### feat: Model dropdown + API config for Claude Code
+
+**Scope**: `src/shared/types/agent-todo.ts`, `src/renderer/components/settings/AgentSettings.tsx`, `src/main/services/agent-todo.service.ts`
+
+**Changes**:
+
+- **Model dropdown**: Added `ModelOption` interface and predefined models array to `AgentToolMeta`. Models for Claude Code: Opus 4.6, Sonnet 4.6, Haiku 4.5. Models for Code X: GPT 5.4/5.3/5.2/5.1, O3 High/Medium/Low.
+- **UI**: Model selector now shows dropdown with predefined options plus "Custom model..." option for manual input.
+- **Bug fix**: Fixed CLI Path being overwritten when switching agent types — now preserves custom CLI paths.
+- **API config for Claude Code**: Added API Key + Base URL configuration fields for Claude Code agents (previously only available for Code X). Service layer now injects `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` env vars for Claude Code, `OPENAI_API_KEY` and `OPENAI_BASE_URL` for Code X.
+- **Model env var injection**: `runTodo` now sets `ANTHROPIC_MODEL` for Claude Code and `OPENAI_MODEL` for Code X based on task/agent model selection.
+
+### feat: Agent Workload stats in Usage Settings
+
+**Scope**: `src/db/repositories/agent-todo.repository.ts`, `src/main/services/agent-todo.service.ts`, `src/main/ipc/agent-todo.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`
+
+**Changes**:
+
+- Added `getAgentRunStats()` to repository: queries all agent runs, computes per-agent totals (completed/failed/cancelled/running) and daily run counts for the last 14 days.
+- Exposed via `agent-todo:get-stats` IPC handler and `ipc.getAgentRunStats()` client method.
+- Added **Agent Workload** section to Usage Settings: bar chart (14-day daily runs via `@nivo/bar`) + per-agent progress bars showing completed/failed/total counts.
+- Installed `@nivo/bar` package.
+
 ### feat: Simplify agent types to Claude Code + Code X with proper logos
 
 **Scope**: `src/shared/types/agent-todo.ts`, `src/renderer/components/settings/AgentSettings.tsx`, `prisma/schema.prisma`, `src/db/repositories/agent-todo.repository.ts`, `src/main/services/agent-todo.service.ts`
