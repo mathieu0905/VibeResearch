@@ -109,6 +109,7 @@ export interface PaperItem {
   indexedAt?: string | null;
   metadataSource?: string | null;
   rating?: number | null;
+  year?: number | null;
   createdAt?: string;
   lastReadAt?: string | null;
 }

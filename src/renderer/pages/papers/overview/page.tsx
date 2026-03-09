@@ -69,7 +69,6 @@ import {
   getTagStyle,
   paperToBibtex,
 } from '@shared';
-import { useToast } from '../../../components/toast';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -850,6 +849,7 @@ function TagEditor({
 // ─── Collection Picker ────────────────────────────────────────────────────────
 
 function CollectionPicker({ paperId }: { paperId: string }) {
+  const toast = useToast();
   const [allCollections, setAllCollections] = useState<CollectionItem[]>([]);
   const [paperCollections, setPaperCollections] = useState<CollectionItem[]>([]);
   const [open, setOpen] = useState(false);
@@ -877,16 +877,18 @@ function CollectionPicker({ paperId }: { paperId: string }) {
 
   const toggle = async (colId: string) => {
     try {
+      const col = allCollections.find((c) => c.id === colId);
       if (isInCollection(colId)) {
         await ipc.removePaperFromCollection(colId, paperId);
         setPaperCollections((prev) => prev.filter((c) => c.id !== colId));
+        toast.success(`Removed from ${col?.name ?? 'collection'}`);
       } else {
         await ipc.addPaperToCollection(colId, paperId);
-        const col = allCollections.find((c) => c.id === colId);
         if (col) setPaperCollections((prev) => [...prev, col]);
+        toast.success(`Added to ${col?.name ?? 'collection'}`);
       }
     } catch {
-      // ignore
+      toast.error('Failed to update collection');
     }
   };
 

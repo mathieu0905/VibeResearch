@@ -14,21 +14,24 @@ import { TabsProvider } from './hooks/use-tabs';
 import { ChatProvider } from './hooks/use-chat';
 import { AnalysisProvider } from './hooks/use-analysis';
 import { AppShell } from './components/app-shell';
+import { ToastProvider } from './components/toast';
 
 function RootLayout() {
   const matches = useMatches();
   const fullWidth = matches.some((m) => (m.handle as { fullWidth?: boolean })?.fullWidth);
 
   return (
-    <ChatProvider>
-      <AnalysisProvider>
-        <TabsProvider>
-          <AppShell fullWidth={fullWidth}>
-            <Outlet />
-          </AppShell>
-        </TabsProvider>
-      </AnalysisProvider>
-    </ChatProvider>
+    <ToastProvider>
+      <ChatProvider>
+        <AnalysisProvider>
+          <TabsProvider>
+            <AppShell fullWidth={fullWidth}>
+              <Outlet />
+            </AppShell>
+          </TabsProvider>
+        </AnalysisProvider>
+      </ChatProvider>
+    </ToastProvider>
   );
 }
 

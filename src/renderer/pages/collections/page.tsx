@@ -10,9 +10,10 @@ import { useTabs } from '../../hooks/use-tabs';
 import { LoadingSpinner } from '../../components/loading-spinner';
 import { CollectionModal } from '../../components/collection-modal';
 import { ResearchProfileView } from '../../components/research-profile';
-import { ArrowLeft, Trash2, Pencil, FileText, Loader2 } from 'lucide-react';
+import { ArrowLeft, Trash2, Pencil, FileText, Loader2, Plus, Search, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cleanArxivTitle } from '@shared';
+import { useToast } from '../../components/toast';
 
 type TabType = 'papers' | 'profile';
 
@@ -29,6 +30,10 @@ export function CollectionPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [showAddPapers, setShowAddPapers] = useState(false);
+  const [allPapers, setAllPapers] = useState<PaperItem[]>([]);
+  const [addSearch, setAddSearch] = useState('');
+  const toast = useToast();
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -67,13 +72,42 @@ export function CollectionPage() {
       try {
         await ipc.removePaperFromCollection(id, paperId);
         setPapers((prev) => prev.filter((p) => p.id !== paperId));
-        setProfile(null); // Reset profile to reload
+        setProfile(null);
+        toast.success('Paper removed from collection');
       } catch {
-        alert('Failed to remove paper');
+        toast.error('Failed to remove paper');
       }
     },
-    [id],
+    [id, toast],
   );
+
+  const handleAddPaperToCollection = useCallback(
+    async (paperId: string) => {
+      if (!id) return;
+      try {
+        await ipc.addPaperToCollection(id, paperId);
+        // Reload papers list
+        const updated = await ipc.listCollectionPapers(id);
+        setPapers(updated);
+        setProfile(null);
+        toast.success('Paper added to collection');
+      } catch {
+        toast.error('Failed to add paper');
+      }
+    },
+    [id, toast],
+  );
+
+  const openAddPapers = useCallback(async () => {
+    try {
+      const all = await ipc.listPapers();
+      setAllPapers(all);
+      setShowAddPapers(true);
+      setAddSearch('');
+    } catch {
+      toast.error('Failed to load papers');
+    }
+  }, [toast]);
 
   const handleEdit = useCallback(
     async (data: { name: string; icon?: string; color?: string; description?: string }) => {
@@ -101,15 +135,18 @@ export function CollectionPage() {
     }
   }, [id, navigate]);
 
-  // ESC for delete confirm
+  // ESC for modals
   useEffect(() => {
-    if (!showDeleteConfirm) return;
+    if (!showDeleteConfirm && !showAddPapers) return;
     const handle = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowDeleteConfirm(false);
+      if (e.key === 'Escape') {
+        setShowDeleteConfirm(false);
+        setShowAddPapers(false);
+      }
     };
     window.addEventListener('keydown', handle);
     return () => window.removeEventListener('keydown', handle);
-  }, [showDeleteConfirm]);
+  }, [showDeleteConfirm, showAddPapers]);
 
   if (loading) {
     return (
@@ -148,6 +185,13 @@ export function CollectionPage() {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={openAddPapers}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border px-3 py-1.5 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+          >
+            <Plus size={14} />
+            Add Papers
+          </button>
           <button
             onClick={() => setShowEditModal(true)}
             className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border px-3 py-1.5 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
@@ -312,6 +356,118 @@ export function CollectionPage() {
                 >
                   {deleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
                   Delete
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Papers Modal */}
+      <AnimatePresence>
+        {showAddPapers && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={() => setShowAddPapers(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="flex max-h-[70vh] w-full max-w-lg flex-col rounded-xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-notion-text">Add Papers from Library</h3>
+              <div className="relative mt-3">
+                <Search
+                  size={14}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"
+                />
+                <input
+                  type="text"
+                  value={addSearch}
+                  onChange={(e) => setAddSearch(e.target.value)}
+                  placeholder="Search papers..."
+                  className="w-full rounded-lg border border-notion-border py-2 pl-9 pr-3 text-sm text-notion-text placeholder:text-notion-text-tertiary focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  autoFocus
+                />
+              </div>
+              <div className="mt-3 flex-1 overflow-y-auto">
+                {(() => {
+                  const paperIds = new Set(papers.map((p) => p.id));
+                  const filtered = allPapers.filter((p) => {
+                    if (!addSearch.trim()) return true;
+                    const q = addSearch.toLowerCase();
+                    return (
+                      p.title.toLowerCase().includes(q) ||
+                      p.authors?.some((a) => a.toLowerCase().includes(q))
+                    );
+                  });
+                  if (filtered.length === 0) {
+                    return (
+                      <p className="py-8 text-center text-sm text-notion-text-tertiary">
+                        No papers found
+                      </p>
+                    );
+                  }
+                  return (
+                    <div className="space-y-1">
+                      {filtered.map((paper) => {
+                        const isAdded = paperIds.has(paper.id);
+                        return (
+                          <button
+                            key={paper.id}
+                            onClick={() => {
+                              if (isAdded) {
+                                handleRemovePaper(paper.id);
+                              } else {
+                                handleAddPaperToCollection(paper.id);
+                              }
+                            }}
+                            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${
+                              isAdded
+                                ? 'bg-blue-50 hover:bg-blue-100/70'
+                                : 'hover:bg-notion-sidebar/50'
+                            }`}
+                          >
+                            <div
+                              className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded ${
+                                isAdded
+                                  ? 'bg-blue-600 text-white'
+                                  : 'border border-notion-border text-transparent'
+                              }`}
+                            >
+                              <Check size={12} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium text-notion-text">
+                                {cleanArxivTitle(paper.title)}
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-notion-text-tertiary">
+                                {paper.authors && paper.authors.length > 0 && (
+                                  <span>{paper.authors.slice(0, 2).join(', ')}</span>
+                                )}
+                                {paper.year && <span>{paper.year}</span>}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setShowAddPapers(false)}
+                  className="rounded-lg bg-notion-sidebar px-4 py-2 text-sm font-medium text-notion-text transition-colors hover:bg-notion-border"
+                >
+                  Done
                 </button>
               </div>
             </motion.div>

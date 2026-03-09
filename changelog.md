@@ -16,6 +16,9 @@
 - **Collection modal**: Create/edit modal with name, emoji picker, color picker, description fields, framer-motion animations, ESC support.
 - **Research profile component**: Pure-CSS horizontal bar charts grouped by tag category (domain/method/topic), year distribution, top 10 authors.
 - **Tests**: Integration tests covering CRUD, default collection delete protection, paper add/remove/batch, research profile accuracy, full chain (papers + tags → collection → profile).
+- **Add Papers from Library**: Collection detail page header now has "Add Papers" button that opens a modal to browse and search all Library papers, with checkmark toggle to add/remove papers.
+- **Toast feedback**: All collection operations (add/remove paper, batch add) now show success/error toast notifications.
+- **PaperItem.year**: Added `year` field to `PaperItem` interface for display in paper lists.
 
 ## 2026-03-09
 

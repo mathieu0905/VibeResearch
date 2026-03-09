@@ -25,6 +25,8 @@ import {
   Search,
   RotateCcw,
   Library,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TagCategory } from '@shared';
@@ -266,6 +268,8 @@ export function PapersByTag({
   const [showCollectionPicker, setShowCollectionPicker] = useState(false);
   const [batchCollections, setBatchCollections] = useState<CollectionItem[]>([]);
   const [isExportingBibtex, setIsExportingBibtex] = useState(false);
+  const [bibtexContent, setBibtexContent] = useState<string | null>(null);
+  const [bibtexCopied, setBibtexCopied] = useState(false);
 
   const navigate = useNavigate();
   const toast = useToast();
@@ -553,15 +557,11 @@ export function PapersByTag({
     setIsExportingBibtex(true);
     try {
       const bibtex = await ipc.exportBibtex(Array.from(selectedIds));
-      const saved = await ipc.saveBibtexFile(bibtex);
-      if (saved) {
-        toast.success(
-          `Exported ${selectedIds.size} paper${selectedIds.size > 1 ? 's' : ''} to BibTeX`,
-        );
-      }
+      setBibtexContent(bibtex);
+      setBibtexCopied(false);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      toast.error(`Failed to export BibTeX: ${message}`);
+      toast.error(`Failed to generate BibTeX: ${message}`);
     } finally {
       setIsExportingBibtex(false);
     }
@@ -898,9 +898,9 @@ export function PapersByTag({
                 {isExportingBibtex ? (
                   <Loader2 size={14} className="animate-spin" />
                 ) : (
-                  <Download size={14} />
+                  <FileText size={14} />
                 )}
-                Export BibTeX
+                Copy BibTeX
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(true)}
@@ -959,6 +959,56 @@ export function PapersByTag({
                   Delete
                 </button>
               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* BibTeX modal */}
+      <AnimatePresence>
+        {bibtexContent && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={() => setBibtexContent(null)}
+            onKeyDown={(e) => e.key === 'Escape' && setBibtexContent(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="w-full max-w-2xl rounded-xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-notion-text">BibTeX</h3>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(bibtexContent);
+                      setBibtexCopied(true);
+                      setTimeout(() => setBibtexCopied(false), 2000);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-notion-accent px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-notion-accent/90"
+                  >
+                    {bibtexCopied ? <Check size={14} /> : <Copy size={14} />}
+                    {bibtexCopied ? 'Copied!' : 'Copy'}
+                  </button>
+                  <button
+                    onClick={() => setBibtexContent(null)}
+                    className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-notion-sidebar-hover"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+              <pre className="max-h-96 overflow-auto rounded-lg bg-notion-sidebar p-4 text-xs text-notion-text font-mono whitespace-pre-wrap">
+                {bibtexContent}
+              </pre>
             </motion.div>
           </motion.div>
         )}
