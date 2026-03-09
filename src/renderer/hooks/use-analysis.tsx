@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ipc, onIpc, type AnalysisJobStatus } from './use-ipc';
+import { useMainReady } from './use-main-ready';
 
 interface StartAnalysisInput {
   paperId: string;
@@ -33,6 +34,7 @@ function upsertJob(jobs: AnalysisJobStatus[], nextJob: AnalysisJobStatus) {
 
 export function AnalysisProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<AnalysisJobStatus[]>([]);
+  const isMainReady = useMainReady();
 
   const refreshJobs = useCallback(async () => {
     const nextJobs = await ipc.listAnalysisJobs().catch(() => null);
@@ -42,6 +44,8 @@ export function AnalysisProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!isMainReady) return;
+
     void refreshJobs();
 
     if (!window.electronAPI?.on) return;
@@ -51,7 +55,7 @@ export function AnalysisProvider({ children }: { children: React.ReactNode }) {
       if (!job?.jobId) return;
       setJobs((prev) => upsertJob(prev, job));
     });
-  }, [refreshJobs]);
+  }, [refreshJobs, isMainReady]);
 
   const startAnalysis = useCallback(
     async (input: StartAnalysisInput) => {

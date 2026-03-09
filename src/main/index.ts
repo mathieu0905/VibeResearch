@@ -370,6 +370,9 @@ app.whenReady().then(async () => {
   // Ensure default collections exist
   ensureDefaultCollections();
 
+  // Simple ping handler for renderer to check if main is ready
+  ipcMain.handle('ping', () => 'pong');
+
   // Register all IPC handlers
   setupPapersIpc();
   setupReadingIpc();
@@ -430,6 +433,11 @@ app.whenReady().then(async () => {
 
   const win = createWindow();
   setupWindowControls(win);
+
+  // Notify renderer that main process is ready
+  win.webContents.on('did-finish-load', () => {
+    win.webContents.send('main:ready');
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -24,6 +24,8 @@ export default defineConfig({
                 'sqlite-vec',
                 '@huggingface/transformers',
                 'onnxruntime-node',
+                'ssh2',
+                'cpu-features',
               ],
             },
           },

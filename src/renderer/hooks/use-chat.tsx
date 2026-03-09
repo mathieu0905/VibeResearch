@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ipc, onIpc, type ChatJobStatus } from './use-ipc';
+import { useMainReady } from './use-main-ready';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
@@ -38,6 +39,7 @@ function upsertJob(jobs: ChatJobStatus[], nextJob: ChatJobStatus) {
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [jobs, setJobs] = useState<ChatJobStatus[]>([]);
+  const isMainReady = useMainReady();
 
   const refreshJobs = useCallback(async () => {
     const nextJobs = await ipc.listChatJobs().catch(() => null);
@@ -47,6 +49,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!isMainReady) return;
+
     void refreshJobs();
 
     if (!window.electronAPI?.on) return;
@@ -56,7 +60,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (!job?.jobId) return;
       setJobs((prev) => upsertJob(prev, job));
     });
-  }, [refreshJobs]);
+  }, [refreshJobs, isMainReady]);
 
   const startChat = useCallback(
     async (input: StartChatInput) => {

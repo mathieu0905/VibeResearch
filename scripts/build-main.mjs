@@ -68,6 +68,9 @@ const external = [
   // Transformers.js + ONNX Runtime — must stay external for WASM/native loading
   '@huggingface/transformers',
   'onnxruntime-node',
+  // SSH2 + native dependencies — must remain external for native module loading
+  'ssh2',
+  'cpu-features',
 ];
 
 const alias = {

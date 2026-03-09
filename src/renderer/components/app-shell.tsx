@@ -25,6 +25,7 @@ import {
 import { useTabs } from '../hooks/use-tabs';
 import { ipc, PaperItem, ProjectItem, CollectionItem } from '../hooks/use-ipc';
 import { useAnalysis } from '../hooks/use-analysis';
+import { useMainReady } from '../hooks/use-main-ready';
 import { CollectionModal } from './collection-modal';
 
 // Detect if running on Windows
@@ -53,10 +54,15 @@ const SIDEBAR_COLLAPSED_KEY = 'researchclaw-sidebar-collapsed';
 // Windows window controls component
 function WindowsWindowControls() {
   const [isMaximized, setIsMaximized] = useState(false);
+  const isMainReady = useMainReady();
 
   useEffect(() => {
-    ipc.windowIsMaximized().then(setIsMaximized);
-  }, []);
+    if (!isMainReady) return;
+    ipc
+      .windowIsMaximized()
+      .then(setIsMaximized)
+      .catch(() => {});
+  }, [isMainReady]);
 
   const handleMaximize = async () => {
     await ipc.windowMaximize();
@@ -106,6 +112,7 @@ export function AppShell({
   const pathname = location.pathname;
   const { tabs, activeId, activateTab, closeTab } = useTabs();
   const { jobs: analysisJobs } = useAnalysis();
+  const isMainReady = useMainReady();
   const [recentItems, setRecentItems] = useState<RecentItem[]>([]);
   const [isCollapsed, setIsCollapsed] = useState(() => {
     const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
@@ -123,6 +130,8 @@ export function AppShell({
   };
 
   useEffect(() => {
+    if (!isMainReady) return;
+
     async function loadRecentItems() {
       try {
         const [papers, projects] = await Promise.all([ipc.listPapers(), ipc.listProjects()]);
@@ -161,7 +170,7 @@ export function AppShell({
       .listCollections()
       .then(setCollections)
       .catch(() => {});
-  }, [pathname]); // Reload when route changes (handles deletions + new reads)
+  }, [pathname, isMainReady]); // Reload when route changes (handles deletions + new reads)
 
   const activeAnalysisJobs = useMemo(
     () => analysisJobs.filter((job) => job.active),

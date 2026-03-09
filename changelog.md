@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-03-09 (session 44)
+
+### fix: Fix IPC handler race condition on app startup
+
+- **Scope**: `src/main/index.ts`, `src/renderer/hooks/use-main-ready.ts`, `src/renderer/hooks/use-chat.tsx`, `src/renderer/hooks/use-analysis.tsx`, `src/renderer/components/app-shell.tsx`, `scripts/build-main.mjs`, `vite.config.ts`, `src/db/index.ts`
+- **Problem**: Renderer was calling IPC handlers (`reading:chatJobs`, `reading:analysisJobs`, `collections:list`) before main process finished registering them, causing "No handler registered" errors on startup.
+- **Solution**: Added `main:ready` event that main process sends after all IPC handlers are registered. Created `useMainReady` hook that renderer uses to wait for main process readiness before making IPC calls. Updated `ChatProvider`, `AnalysisProvider`, and `AppShell` to use this hook.
+- **Fixes also**: Added `ssh2` and `cpu-features` to external modules in both esbuild and vite configs to fix native module bundling errors. Added missing exports for `TaskResultRepository` and `ExperimentReportRepository` in `src/db/index.ts`.
+- **Validation**: Build and precommit tests pass.
+
 ## 2026-03-09 (session 35)
 
 ### fix: Rebuild better-sqlite3 for Electron installs
