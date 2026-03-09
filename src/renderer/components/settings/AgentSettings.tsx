@@ -71,6 +71,98 @@ function CodeXLogo({ size = 20 }: { size?: number }) {
   );
 }
 
+// Gemini Logo Component
+function GeminiLogo({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <title>Gemini</title>
+      <path
+        d="M20.616 10.835a14.147 14.147 0 01-4.45-3.001 14.111 14.111 0 01-3.678-6.452.503.503 0 00-.975 0 14.134 14.134 0 01-3.679 6.452 14.155 14.155 0 01-4.45 3.001c-.65.28-1.318.505-2.002.678a.502.502 0 000 .975c.684.172 1.35.397 2.002.677a14.147 14.147 0 014.45 3.001 14.112 14.112 0 013.679 6.453.502.502 0 00.975 0c.172-.685.397-1.351.677-2.003a14.145 14.145 0 013.001-4.45 14.113 14.113 0 016.453-3.678.503.503 0 000-.975 13.245 13.245 0 01-2.003-.678z"
+        fill="#3186FF"
+      />
+    </svg>
+  );
+}
+
+// OpenCLAW Logo Component
+function OpenClawLogo({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 120 120"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <title>OpenCLAW</title>
+      <defs>
+        <linearGradient id="openclaw-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#ff4d4d" />
+          <stop offset="100%" stopColor="#991b1b" />
+        </linearGradient>
+      </defs>
+      <path
+        d="M60 10 C30 10 15 35 15 55 C15 75 30 95 45 100 L45 110 L55 110 L55 100 C55 100 60 102 65 100 L65 110 L75 110 L75 100 C90 95 105 75 105 55 C105 35 90 10 60 10Z"
+        fill="url(#openclaw-gradient)"
+      />
+      <path
+        d="M20 45 C5 40 0 50 5 60 C10 70 20 65 25 55 C28 48 25 45 20 45Z"
+        fill="url(#openclaw-gradient)"
+      />
+      <path
+        d="M100 45 C115 40 120 50 115 60 C110 70 100 65 95 55 C92 48 95 45 100 45Z"
+        fill="url(#openclaw-gradient)"
+      />
+      <path
+        d="M45 15 Q35 5 30 8"
+        stroke="#ff4d4d"
+        strokeWidth="3"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <path
+        d="M75 15 Q85 5 90 8"
+        stroke="#ff4d4d"
+        strokeWidth="3"
+        strokeLinecap="round"
+        fill="none"
+      />
+      <circle cx="45" cy="35" r="6" fill="#050810" />
+      <circle cx="75" cy="35" r="6" fill="#050810" />
+      <circle cx="46" cy="34" r="2.5" fill="#00e5cc" />
+      <circle cx="76" cy="34" r="2.5" fill="#00e5cc" />
+    </svg>
+  );
+}
+
+// OpenCode Logo Component
+function OpenCodeLogo({ size = 20 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 240 300"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <title>OpenCode</title>
+      <path d="M180 240H60V120H180V240Z" fill="#CFCECD" />
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"
+        fill="#211E1E"
+      />
+    </svg>
+  );
+}
+
 // Get logo component by agent type
 function getAgentLogo(tool: AgentToolKind, size?: number) {
   switch (tool) {
@@ -78,6 +170,12 @@ function getAgentLogo(tool: AgentToolKind, size?: number) {
       return <ClaudeLogo size={size} />;
     case 'codex':
       return <CodeXLogo size={size} />;
+    case 'gemini':
+      return <GeminiLogo size={size} />;
+    case 'openclaw':
+      return <OpenClawLogo size={size} />;
+    case 'opencode':
+      return <OpenCodeLogo size={size} />;
     default:
       return <Bot size={size} />;
   }
@@ -156,6 +254,9 @@ export function AgentSettings() {
   function backendToAgentTool(backend: string): AgentToolKind {
     if (backend === 'claude-code') return 'claude-code';
     if (backend === 'codex') return 'codex';
+    if (backend === 'gemini') return 'gemini';
+    if (backend === 'openclaw') return 'openclaw';
+    if (backend === 'opencode') return 'opencode';
     return 'custom';
   }
 
@@ -852,7 +953,7 @@ export function AgentSettings() {
                     key={agent.id}
                     className={`rounded-lg border overflow-hidden transition-colors ${
                       agent.enabled
-                        ? 'bg-green-50 border-green-200'
+                        ? 'border-blue-200 bg-blue-50/40'
                         : 'bg-white border-notion-border'
                     }`}
                   >

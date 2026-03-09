@@ -66,6 +66,20 @@ const AGENTS_TO_DETECT = [
     ],
   },
   {
+    backend: 'openclaw',
+    name: 'OpenCLAW',
+    cli: 'openclaw',
+    acpArgs: [] as string[],
+    configFiles: [],
+  },
+  {
+    backend: 'opencode',
+    name: 'OpenCode',
+    cli: 'opencode',
+    acpArgs: [] as string[],
+    configFiles: [],
+  },
+  {
     backend: 'qwen',
     name: 'Qwen Code',
     cli: 'qwen',

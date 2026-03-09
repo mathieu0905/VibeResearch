@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-09 (session 45)
+
+### feat: Add Gemini, OpenCLAW, OpenCode agent logos and detection support
+
+- **Scope**: `src/renderer/components/settings/AgentSettings.tsx`, `src/shared/types/agent-todo.ts`, `src/main/agent/agent-detector.ts`
+- **Changes**:
+  - Added GeminiLogo, OpenClawLogo, OpenCodeLogo components for agent type icons
+  - Extended `AgentToolKind` type to include 'gemini' | 'openclaw' | 'opencode'
+  - Added metadata for new agent types in `AGENT_TOOL_META` (models, config paths, etc.)
+  - Added OpenCLAW and OpenCode to auto-detection list in agent-detector.ts
+  - Updated `getAgentLogo()` and `backendToAgentTool()` to handle new agent types
+  - Changed active agent card style from green to blue (`bg-blue-50/40 border-blue-200`) for consistency with other settings sections
+
 ## 2026-03-09 (session 44)
 
 ### fix: Fix IPC handler race condition on app startup

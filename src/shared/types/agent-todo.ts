@@ -1,5 +1,5 @@
 // ---- Agent 配置 ----
-export type AgentToolKind = 'claude-code' | 'codex' | 'custom';
+export type AgentToolKind = 'claude-code' | 'codex' | 'gemini' | 'openclaw' | 'opencode' | 'custom';
 
 /**
  * Model option for agent configuration
@@ -76,6 +76,50 @@ export const AGENT_TOOL_META: AgentToolMeta[] = [
       { value: 'o3-medium', label: 'O3 Medium', description: 'Medium reasoning' },
       { value: 'o3-low', label: 'O3 Low', description: 'Low reasoning' },
     ],
+  },
+  {
+    value: 'gemini',
+    label: 'Gemini CLI',
+    description: 'Google Gemini via gemini CLI',
+    cliCommand: 'gemini',
+    defaultAcpArgs: ['--acp'],
+    configLabel: 'Gemini Settings',
+    configPath: '~/.gemini/settings.json',
+    authLabel: 'OAuth credentials',
+    authPath: '~/.gemini/oauth_creds.json',
+    supportsYolo: false,
+    requiresApiKey: false,
+    supportsBaseUrl: false,
+    models: [
+      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', description: 'Most capable' },
+      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', description: 'Fast' },
+    ],
+  },
+  {
+    value: 'openclaw',
+    label: 'OpenCLAW',
+    description: 'OpenCLAW agent framework',
+    cliCommand: 'openclaw',
+    defaultAcpArgs: [],
+    configLabel: 'OpenCLAW Config',
+    authLabel: 'OpenCLAW Auth',
+    supportsYolo: false,
+    requiresApiKey: false,
+    supportsBaseUrl: false,
+    models: [],
+  },
+  {
+    value: 'opencode',
+    label: 'OpenCode',
+    description: 'OpenCode agent CLI',
+    cliCommand: 'opencode',
+    defaultAcpArgs: [],
+    configLabel: 'OpenCode Config',
+    authLabel: 'OpenCode Auth',
+    supportsYolo: false,
+    requiresApiKey: false,
+    supportsBaseUrl: false,
+    models: [],
   },
   {
     value: 'custom',
