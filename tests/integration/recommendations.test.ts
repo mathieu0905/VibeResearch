@@ -112,6 +112,23 @@ vi.mock('../../src/main/services/recommendation-sources/arxiv-source', () => ({
   },
 }));
 
+const settingsMocks = vi.hoisted(() => ({
+  getSemanticSearchSettings: vi.fn(() => ({
+    enabled: true,
+    autoProcess: true,
+    autoEnrich: true,
+    autoStartOllama: true,
+    baseUrl: 'http://127.0.0.1:11434',
+    embeddingModel: 'test-model',
+    embeddingProvider: 'builtin',
+    recommendationExploration: 0.35,
+  })),
+}));
+
+vi.mock('../../src/main/store/app-settings-store', () => ({
+  getSemanticSearchSettings: settingsMocks.getSemanticSearchSettings,
+}));
+
 vi.mock('../../src/main/services/local-semantic.service', () => ({
   localSemanticService: {
     isEnabled: mocks.semanticEnabled,
@@ -144,6 +161,16 @@ describe('RecommendationService hybrid recall and reranking', () => {
     mockState.candidates = new Map();
     mockState.results = new Map();
     mocks.semanticEnabled.mockReturnValue(true);
+    settingsMocks.getSemanticSearchSettings.mockReturnValue({
+      enabled: true,
+      autoProcess: true,
+      autoEnrich: true,
+      autoStartOllama: true,
+      baseUrl: 'http://127.0.0.1:11434',
+      embeddingModel: 'test-model',
+      embeddingProvider: 'builtin',
+      recommendationExploration: 0.35,
+    });
     mocks.semanticKeywordSearch.mockResolvedValue([]);
     mocks.semanticSeedSearch.mockResolvedValue([]);
     mocks.arxivSearch.mockResolvedValue([]);
@@ -422,6 +449,78 @@ describe('RecommendationService hybrid recall and reranking', () => {
     expect(
       items.map((item) => item.title).filter((title) => title.includes('sparse attention')),
     ).toHaveLength(1);
+  });
+
+  it('increases novelty pressure when exploration is higher', async () => {
+    settingsMocks.getSemanticSearchSettings.mockReturnValue({
+      enabled: true,
+      autoProcess: true,
+      autoEnrich: true,
+      autoStartOllama: true,
+      baseUrl: 'http://127.0.0.1:11434',
+      embeddingModel: 'test-model',
+      embeddingProvider: 'builtin',
+      recommendationExploration: 1,
+    });
+
+    mocks.semanticKeywordSearch.mockResolvedValue([
+      {
+        source: 'semantic_scholar',
+        externalId: 'dup-high-a',
+        title: 'Transformer routing with sparse attention',
+        authors: ['Researcher X'],
+        abstract: 'Sparse transformer routing for language systems.',
+        sourceUrl: 'https://example.com/dup-high-a',
+        pdfUrl: null,
+        publishedAt: new Date('2025-12-01T00:00:00Z'),
+        venue: 'ACL',
+        citationCount: 10,
+        metadata: {},
+      },
+      {
+        source: 'semantic_scholar',
+        externalId: 'dup-high-b',
+        title: 'Transformer routing with efficient sparse attention',
+        authors: ['Researcher Y'],
+        abstract: 'Efficient sparse transformer routing for language systems.',
+        sourceUrl: 'https://example.com/dup-high-b',
+        pdfUrl: null,
+        publishedAt: new Date('2025-11-15T00:00:00Z'),
+        venue: 'EMNLP',
+        citationCount: 9,
+        metadata: {},
+      },
+      {
+        source: 'semantic_scholar',
+        externalId: 'novel-high-c',
+        title: 'Transformer planning with memory routing',
+        authors: ['Researcher Z'],
+        abstract: 'Memory-guided planning for transformer systems.',
+        sourceUrl: 'https://example.com/novel-high-c',
+        pdfUrl: null,
+        publishedAt: new Date('2025-09-01T00:00:00Z'),
+        venue: 'ICLR',
+        citationCount: 5,
+        metadata: {},
+      },
+    ]);
+
+    mocks.embedTexts.mockImplementation(async (texts: string[]) =>
+      texts.map((text) => {
+        const value = text.toLowerCase();
+        if (value.includes('attention is all you need')) return [1, 0, 0];
+        if (value.includes('sparse attention')) return [1, 0, 0];
+        if (value.includes('efficient sparse')) return [0.995, 0.005, 0];
+        if (value.includes('memory routing')) return [0.75, 0.45, 0];
+        return [0.4, 0.4, 0];
+      }),
+    );
+
+    const service = new RecommendationService();
+    await service.generateRecommendations(2);
+    const items = await service.listRecommendations();
+
+    expect(items.map((item) => item.title)).toContain('Transformer planning with memory routing');
   });
 
   it('falls back to rule-only ranking when embeddings fail', async () => {

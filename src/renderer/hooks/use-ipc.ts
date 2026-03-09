@@ -389,6 +389,7 @@ export interface SemanticSearchSettings {
   baseUrl: string;
   embeddingModel: string;
   embeddingProvider: 'builtin' | 'ollama';
+  recommendationExploration: number;
 }
 
 export interface BuiltinModelStatus {
@@ -901,6 +902,11 @@ export const ipc = {
     invoke<PaperItem>('recommendations:save', candidateId),
   trackRecommendationOpened: (candidateId: string) =>
     invoke<{ success: boolean }>('recommendations:opened', candidateId),
+
+  // Comparison
+  startComparison: (input: { sessionId: string; paperIds: string[] }) =>
+    invoke<{ jobId: string; started: boolean }>('comparison:start', input),
+  killComparison: (jobId: string) => invoke<{ killed: boolean }>('comparison:kill', jobId),
 
   // Citations & Graph
   extractCitations: (paper: {

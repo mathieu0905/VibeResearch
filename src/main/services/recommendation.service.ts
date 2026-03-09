@@ -9,6 +9,7 @@ import {
   type ExternalRecommendationCandidate,
 } from './recommendation-sources/shared';
 import { localSemanticService } from './local-semantic.service';
+import { getSemanticSearchSettings } from '../store/app-settings-store';
 import { cosineSimilarity } from './semantic-utils';
 
 interface WeightedSignal {
@@ -69,7 +70,7 @@ const QUERY_STOP_WORDS = new Set([
   'with',
 ]);
 
-const NOVELTY_PENALTY_WEIGHT = 0.14;
+const BASE_NOVELTY_PENALTY_WEIGHT = 0.14;
 const HIGH_SIMILARITY_THRESHOLD = 0.88;
 
 const HYBRID_WEIGHTS = {
@@ -675,9 +676,16 @@ export class RecommendationService {
       );
     }, -1);
 
-    const penalty =
-      maxSimilarity >= HIGH_SIMILARITY_THRESHOLD ? maxSimilarity * NOVELTY_PENALTY_WEIGHT : 0;
+    const exploration = this.getRecommendationExploration();
+    const penaltyWeight = BASE_NOVELTY_PENALTY_WEIGHT * (0.5 + exploration);
+    const penalty = maxSimilarity >= HIGH_SIMILARITY_THRESHOLD ? maxSimilarity * penaltyWeight : 0;
     return candidate.score - penalty;
+  }
+
+  private getRecommendationExploration(): number {
+    const value = getSemanticSearchSettings().recommendationExploration;
+    if (!Number.isFinite(value)) return 0.35;
+    return Math.max(0, Math.min(1, value));
   }
 
   private buildSeedPaperSemanticText(seedPaper: InterestProfile['seedPapers'][number]): string {

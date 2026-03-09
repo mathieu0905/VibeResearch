@@ -20,6 +20,7 @@ export interface SemanticSearchSettings {
   baseUrl: string;
   embeddingModel: string;
   embeddingProvider: 'builtin' | 'ollama';
+  recommendationExploration: number;
 }
 
 interface AppSettings {
@@ -45,6 +46,7 @@ const DEFAULT_SEMANTIC_SEARCH_SETTINGS: SemanticSearchSettings = {
   baseUrl: 'http://127.0.0.1:11434',
   embeddingModel: 'nomic-embed-text',
   embeddingProvider: 'builtin',
+  recommendationExploration: 0.35,
 };
 
 function getSettingsPath(): string {

@@ -2513,3 +2513,14 @@
 - **Rationale**: After seed diversification, recommendations could still feel repetitive when multiple nearly identical candidates were fetched for the same seed paper; light semantic deduplication improves exploration without discarding strong candidates entirely
 - **Test Design**: Validate the diversified selector prefers a more distinct candidate over a near-duplicate while keeping the existing fallback and multi-seed behaviors intact
 - **Validation**: `npx vitest run tests/integration/recommendations.test.ts`, `npm run build:main`
+
+### Improvement: Add User-Controlled Recommendation Exploration
+
+- **Scope**: `src/main/store/app-settings-store.ts`, `src/main/services/recommendation.service.ts`, `src/renderer/pages/settings/page.tsx`, `src/renderer/hooks/use-ipc.ts`, `tests/integration/recommendations.test.ts`
+- **Changes**:
+  - Added a persisted `recommendationExploration` setting to semantic search settings and exposed it through the renderer IPC settings flow
+  - Wired the exploration value into recommendation novelty penalties so users can tune the balance between tightly focused results and more varied recommendations
+  - Added a settings slider for recommendation exploration and extended recommendation tests to cover higher-exploration behavior
+- **Rationale**: After adding diversification and semantic deduplication, the remaining step was giving users control over how conservative or exploratory the final recommendation list should feel
+- **Test Design**: Validate recommendation selection under the default and high-exploration settings while preserving the existing semantic fallback paths
+- **Validation**: `npx vitest run tests/integration/recommendations.test.ts`, `npm run build:main`
