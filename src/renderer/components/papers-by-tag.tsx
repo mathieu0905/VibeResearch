@@ -22,11 +22,13 @@ import {
   Settings,
   Upload,
   Search,
+  RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TagCategory } from '@shared';
 import { CATEGORY_COLORS, CATEGORY_LABELS, TAG_CATEGORIES, cleanArxivTitle } from '@shared';
 import { TagManagementModal } from './tag-management-modal';
+import { useToast } from './toast';
 
 const EXCLUDED_TAGS = ['arxiv', 'chrome', 'manual', 'pdf'];
 const MAX_VISIBLE_CHIPS = 8;
@@ -48,11 +50,37 @@ const CATEGORY_FILTER_OPTIONS: { value: CategoryFilter; label: string }[] = [
   { value: 'topic', label: 'Topic' },
 ];
 
-const DOT_COLORS: Record<string, string> = {
-  domain: 'bg-blue-400',
-  method: 'bg-purple-400',
-  topic: 'bg-green-400',
-};
+function ProcessingBadge({ status }: { status?: string }) {
+  if (!status || status === 'idle') return null;
+
+  const styles: Record<string, string> = {
+    queued: 'bg-amber-50 text-amber-700',
+    extracting_text: 'bg-amber-50 text-amber-700',
+    extracting_metadata: 'bg-amber-50 text-amber-700',
+    chunking: 'bg-amber-50 text-amber-700',
+    embedding: 'bg-amber-50 text-amber-700',
+    completed: 'bg-green-50 text-green-700',
+    failed: 'bg-red-50 text-red-700',
+  };
+
+  const labels: Record<string, string> = {
+    queued: 'Queued',
+    extracting_text: 'Extracting',
+    extracting_metadata: 'Metadata',
+    chunking: 'Chunking',
+    embedding: 'Indexing',
+    completed: 'Indexed',
+    failed: 'Needs retry',
+  };
+
+  return (
+    <span
+      className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${styles[status] ?? 'bg-slate-50 text-slate-600'}`}
+    >
+      {labels[status] ?? status}
+    </span>
+  );
+}
 
 // Generic pill dropdown
 function PillDropdown<T extends string>({
@@ -223,6 +251,7 @@ export function PapersByTag({
   const [yearFilter, setYearFilter] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
+  const [retryingPaperId, setRetryingPaperId] = useState<string | null>(null);
   const [showTagModal, setShowTagModal] = useState(false);
   const [taggingStatus, setTaggingStatus] = useState<TaggingStatus | null>(null);
   const [showTagManagement, setShowTagManagement] = useState(false);
@@ -232,8 +261,10 @@ export function PapersByTag({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isExportingBibtex, setIsExportingBibtex] = useState(false);
 
   const navigate = useNavigate();
+  const toast = useToast();
 
   const fetchPapers = useCallback(async () => {
     setLoading(true);
@@ -301,10 +332,16 @@ export function PapersByTag({
     fetchPapers();
   }, [fetchPapers]);
 
+  useEffect(() => {
+    return onIpc('papers:processingStatus', () => {
+      void fetchPapers();
+    });
+  }, [fetchPapers]);
+
   const availableYears = useMemo(() => {
     const years = new Set<number>();
     papers.forEach((p) => {
-      if (p.year) years.add(p.year);
+      if (p.submittedAt) years.add(new Date(p.submittedAt).getFullYear());
     });
     return Array.from(years).sort((a, b) => b - a);
   }, [papers]);
@@ -346,7 +383,11 @@ export function PapersByTag({
         if (created < importTimeCutoff) return false;
       }
 
-      if (yearFilter !== null && paper.year !== yearFilter) return false;
+      if (
+        yearFilter !== null &&
+        (paper.submittedAt ? new Date(paper.submittedAt).getFullYear() : null) !== yearFilter
+      )
+        return false;
 
       return true;
     });
@@ -383,8 +424,8 @@ export function PapersByTag({
   const handleBatchAutoTag = useCallback(async () => {
     try {
       await ipc.tagUntagged();
-    } catch {
-      // silent
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Auto-tagging failed');
     }
   }, []);
 
@@ -418,6 +459,26 @@ export function PapersByTag({
     [downloadingPdf],
   );
 
+  const handleRetryProcessing = useCallback(
+    async (paperId: string) => {
+      setRetryingPaperId(paperId);
+      try {
+        await ipc.retryPaperProcessing(paperId);
+        setPapers((prev) =>
+          prev.map((paper) =>
+            paper.id === paperId ? { ...paper, processingStatus: 'queued' } : paper,
+          ),
+        );
+        void fetchPapers();
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Retrying paper processing failed');
+      } finally {
+        setRetryingPaperId(null);
+      }
+    },
+    [fetchPapers],
+  );
+
   const toggleSelect = useCallback((paperId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -449,7 +510,11 @@ export function PapersByTag({
         const created = new Date(paper.createdAt);
         if (created < importTimeCutoff) return false;
       }
-      if (yearFilter !== null && paper.year !== yearFilter) return false;
+      if (
+        yearFilter !== null &&
+        (paper.submittedAt ? new Date(paper.submittedAt).getFullYear() : null) !== yearFilter
+      )
+        return false;
       return true;
     });
     setSelectedIds(new Set(filtered.map((p) => p.id)));
@@ -478,6 +543,25 @@ export function PapersByTag({
       setShowDeleteConfirm(false);
     }
   }, [selectedIds]);
+
+  const handleExportBibtex = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    setIsExportingBibtex(true);
+    try {
+      const bibtex = await ipc.exportBibtex(Array.from(selectedIds));
+      const saved = await ipc.saveBibtexFile(bibtex);
+      if (saved) {
+        toast.success(
+          `Exported ${selectedIds.size} paper${selectedIds.size > 1 ? 's' : ''} to BibTeX`,
+        );
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(`Failed to export BibTeX: ${message}`);
+    } finally {
+      setIsExportingBibtex(false);
+    }
+  }, [selectedIds, toast]);
 
   if (loading) {
     return (
@@ -694,8 +778,14 @@ export function PapersByTag({
           >
             <Loader2 size={14} className="animate-spin text-purple-600" />
             <span className="text-sm text-purple-700">
-              Auto-tagging in progress... {taggingStatus.completed}/{taggingStatus.total}
+              {taggingStatus.message || 'Auto-tagging in progress...'} {taggingStatus.completed}/
+              {taggingStatus.total}
             </span>
+            {taggingStatus.currentPaperTitle && (
+              <span className="truncate text-xs text-purple-600">
+                {taggingStatus.currentPaperTitle}
+              </span>
+            )}
             <button
               onClick={() => ipc.cancelTagging()}
               className="ml-auto text-xs font-medium text-purple-600 hover:text-purple-800"
@@ -756,6 +846,18 @@ export function PapersByTag({
                 className="rounded-lg px-3 py-1.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100"
               >
                 Cancel
+              </button>
+              <button
+                onClick={handleExportBibtex}
+                disabled={selectedIds.size === 0 || isExportingBibtex}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isExportingBibtex ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Download size={14} />
+                )}
+                Export BibTeX
               </button>
               <button
                 onClick={() => setShowDeleteConfirm(true)}
@@ -834,9 +936,11 @@ export function PapersByTag({
                 paper={paper}
                 deleting={deleting}
                 downloadingPdf={downloadingPdf}
+                retryingPaperId={retryingPaperId}
                 onDelete={handleDelete}
                 onDownload={handleDownloadPdf}
-                onOpen={(shortId) => navigate(`/papers/${shortId}`)}
+                onRetry={handleRetryProcessing}
+                onOpen={(shortId, state) => navigate(`/papers/${shortId}`, { state })}
                 isSelectMode={isSelectMode}
                 isSelected={selectedIds.has(paper.id)}
                 onToggleSelect={toggleSelect}
@@ -921,8 +1025,10 @@ function PaperCard({
   paper,
   deleting,
   downloadingPdf,
+  retryingPaperId,
   onDelete,
   onDownload,
+  onRetry,
   onOpen,
   isSelectMode,
   isSelected,
@@ -931,9 +1037,11 @@ function PaperCard({
   paper: PaperItem;
   deleting: string | null;
   downloadingPdf: string | null;
+  retryingPaperId: string | null;
   onDelete: (id: string) => void;
   onDownload: (paper: PaperItem) => void;
-  onOpen: (shortId: string) => void;
+  onRetry: (id: string) => void;
+  onOpen: (shortId: string, state?: unknown) => void;
   isSelectMode: boolean;
   isSelected: boolean;
   onToggleSelect: (id: string) => void;
@@ -943,9 +1051,6 @@ function PaperCard({
   const visibleTags = (paper.categorizedTags || [])
     .filter((t) => !EXCLUDED_TAGS.includes(t.name.toLowerCase()))
     .slice(0, 3);
-
-  const firstTagCategory = visibleTags[0]?.category ?? 'topic';
-  const dotColor = DOT_COLORS[firstTagCategory] ?? 'bg-gray-300';
 
   const authorsSnippet = paper.authors?.slice(0, 2).join(', ');
   const hasMoreAuthors = paper.authors && paper.authors.length > 2;
@@ -988,25 +1093,41 @@ function PaperCard({
           )}
         </AnimatePresence>
 
-        {/* Accent dot */}
-        <div className={`h-2 w-2 flex-shrink-0 rounded-full ${dotColor}`} />
+        {/* Icon */}
+        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50">
+          <FileText size={16} className="text-blue-500" />
+        </div>
 
         {/* Clickable content area */}
         <button
-          onClick={() => (isSelectMode ? onToggleSelect(paper.id) : onOpen(paper.shortId))}
+          onClick={() =>
+            isSelectMode ? onToggleSelect(paper.id) : onOpen(paper.shortId, { from: '/papers' })
+          }
           className="min-w-0 flex-1 text-left"
         >
           <span className="block truncate text-sm font-semibold text-notion-text">
             {cleanArxivTitle(paper.title)}
           </span>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            {paper.year && <span className="text-xs text-notion-text-tertiary">{paper.year}</span>}
+            {paper.submittedAt && (
+              <span className="text-xs text-notion-text-tertiary">
+                {new Date(paper.submittedAt).getFullYear()}
+              </span>
+            )}
             {authorsSnippet && (
               <span className="text-xs text-notion-text-tertiary">
                 {authorsSnippet}
                 {hasMoreAuthors ? ' et al.' : ''}
               </span>
             )}
+            <ProcessingBadge status={paper.processingStatus} />
+          </div>
+          {paper.processingStatus === 'failed' && paper.processingError && (
+            <p className="mt-1 line-clamp-2 break-all text-xs text-red-700/90">
+              {paper.processingError}
+            </p>
+          )}
+          <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {visibleTags.map((tag) => {
               const colors = CATEGORY_COLORS[tag.category as TagCategory] || CATEGORY_COLORS.topic;
               return (
@@ -1029,6 +1150,23 @@ function PaperCard({
         {/* Action buttons — visible on hover only */}
         {!isSelectMode && (
           <div className="flex flex-shrink-0 items-center gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+            {paper.processingStatus === 'failed' && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetry(paper.id);
+                }}
+                disabled={retryingPaperId === paper.id}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-tertiary hover:bg-amber-50 hover:text-amber-700 disabled:opacity-100"
+                title="Retry processing"
+              >
+                {retryingPaperId === paper.id ? (
+                  <Loader2 size={14} className="animate-spin text-amber-600" />
+                ) : (
+                  <RotateCcw size={14} />
+                )}
+              </button>
+            )}
             {!paper.pdfPath && paper.pdfUrl && (
               <button
                 onClick={(e) => {

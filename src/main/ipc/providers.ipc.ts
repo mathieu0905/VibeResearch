@@ -1,9 +1,12 @@
-import { ipcMain, dialog, shell } from 'electron';
+import { ipcMain, dialog, shell, app } from 'electron';
 import { spawn } from 'child_process';
+import fs from 'fs/promises';
 import { providersService } from '../services/providers.service';
 import { getShellPath } from '../services/cli-runner.service';
 import { type IpcResult, ok, err } from '@shared';
-import type { ProxyScope } from '../store/app-settings-store';
+import type { ProxyScope, SemanticSearchSettings } from '../store/app-settings-store';
+import { resumeAutomaticPaperProcessing } from '../services/paper-processing.service';
+import { warmupOllamaService } from '../services/ollama.service';
 
 export function setupProvidersIpc() {
   ipcMain.handle('providers:list', async (): Promise<IpcResult<unknown>> => {
@@ -78,13 +81,17 @@ export function setupProvidersIpc() {
     }
   });
 
-  ipcMain.handle('settings:setPapersDir', async (_, dir: string): Promise<IpcResult<unknown>> => {
+  ipcMain.handle('settings:setStorageDir', async (_, dir: string): Promise<IpcResult<unknown>> => {
     try {
-      const result = providersService.setPapersDir(dir);
+      const result = providersService.setStorageDir(dir);
+      if (!result.success) return err(result.error ?? 'Migration failed');
+      // Relaunch the app so it picks up the new DATABASE_URL and storage paths
+      app.relaunch();
+      app.exit(0);
       return ok(result);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      console.error('[settings:setPapersDir] Error:', msg);
+      console.error('[settings:setStorageDir] Error:', msg);
       return err(msg);
     }
   });
@@ -93,13 +100,29 @@ export function setupProvidersIpc() {
     try {
       const result = await dialog.showOpenDialog({
         properties: ['openDirectory', 'createDirectory'],
-        title: 'Select Papers Folder',
+        title: 'Select Storage Folder',
       });
       if (result.canceled || result.filePaths.length === 0) return ok(null);
       return ok(result.filePaths[0]);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error('[settings:selectFolder] Error:', msg);
+      return err(msg);
+    }
+  });
+
+  ipcMain.handle('settings:selectPdfFile', async (): Promise<IpcResult<string[] | null>> => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openFile', 'multiSelections'],
+        title: 'Select PDF Files',
+        filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+      });
+      if (result.canceled || result.filePaths.length === 0) return ok(null);
+      return ok(result.filePaths);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[settings:selectPdfFile] Error:', msg);
       return err(msg);
     }
   });
@@ -143,16 +166,19 @@ export function setupProvidersIpc() {
     },
   );
 
-  ipcMain.handle('settings:testProxy', async (_, proxyUrl?: string): Promise<IpcResult<unknown>> => {
-    try {
-      const result = await providersService.testProxy(proxyUrl);
-      return ok(result);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[settings:testProxy] Error:', msg);
-      return err(msg);
-    }
-  });
+  ipcMain.handle(
+    'settings:testProxy',
+    async (_, proxyUrl?: string): Promise<IpcResult<unknown>> => {
+      try {
+        const result = await providersService.testProxy(proxyUrl);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:testProxy] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
 
   ipcMain.handle('settings:getStorageRoot', async (): Promise<IpcResult<unknown>> => {
     try {
@@ -164,6 +190,110 @@ export function setupProvidersIpc() {
       return err(msg);
     }
   });
+
+  ipcMain.handle('settings:getSemanticSearch', async (): Promise<IpcResult<unknown>> => {
+    try {
+      const result = providersService.getSemanticSearchSettings();
+      return ok(result);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[settings:getSemanticSearch] Error:', msg);
+      return err(msg);
+    }
+  });
+
+  ipcMain.handle(
+    'settings:setSemanticSearch',
+    async (_, settings: Partial<SemanticSearchSettings>): Promise<IpcResult<unknown>> => {
+      try {
+        const result = providersService.setSemanticSearchSettings(settings);
+        await warmupOllamaService('settings-save').catch((error) => {
+          console.warn('[settings:setSemanticSearch] Failed to warm up Ollama:', error);
+        });
+        await resumeAutomaticPaperProcessing().catch((error) => {
+          console.warn('[settings:setSemanticSearch] Failed to resume processing:', error);
+        });
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:setSemanticSearch] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'settings:testSemanticEmbedding',
+    async (_, settings?: Partial<SemanticSearchSettings>): Promise<IpcResult<unknown>> => {
+      try {
+        const result = await providersService.testSemanticEmbedding(settings);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:testSemanticEmbedding] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'settings:getSemanticDebugInfo',
+    async (_, settings?: Partial<SemanticSearchSettings>): Promise<IpcResult<unknown>> => {
+      try {
+        const result = await providersService.getSemanticDebugInfo(settings);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:getSemanticDebugInfo] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'settings:startSemanticModelPull',
+    async (_, settings?: Partial<SemanticSearchSettings>): Promise<IpcResult<unknown>> => {
+      try {
+        const result = providersService.startSemanticModelPull(settings);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:startSemanticModelPull] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  ipcMain.handle('settings:listSemanticModelPullJobs', async (): Promise<IpcResult<unknown>> => {
+    try {
+      const result = providersService.listSemanticModelPullJobs();
+      return ok(result);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[settings:listSemanticModelPullJobs] Error:', msg);
+      return err(msg);
+    }
+  });
+
+  ipcMain.handle(
+    'settings:saveBibtexFile',
+    async (_, content: string): Promise<IpcResult<boolean>> => {
+      try {
+        const result = await dialog.showSaveDialog({
+          title: 'Export BibTeX',
+          defaultPath: 'references.bib',
+          filters: [{ name: 'BibTeX Files', extensions: ['bib'] }],
+        });
+        if (result.canceled || !result.filePath) return ok(false);
+        await fs.writeFile(result.filePath, content, 'utf-8');
+        return ok(true);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:saveBibtexFile] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
 
   ipcMain.handle(
     'shell:openInEditor',
@@ -204,27 +334,11 @@ export function setupProvidersIpc() {
           });
         };
 
-        // First try to open with the configured editor
+        // Try to open with the configured editor
         const cmdParts = cmd.trim().split(/\s+/);
         const binary = cmdParts[0];
         const args = [...cmdParts.slice(1), dirPath];
         const result = await runSpawn(binary, args);
-
-        // If editor command fails, fall back to macOS 'open' or Electron shell
-        if (!result.success) {
-          // On macOS, use 'open' command which works for both apps and folders
-          if (process.platform === 'darwin') {
-            const openResult = await runSpawn('open', [dirPath]);
-            return ok(openResult);
-          }
-          // On other platforms, use Electron's shell.openPath
-          try {
-            await shell.openPath(dirPath);
-            return ok({ success: true });
-          } catch (shellErr) {
-            return ok({ success: false, error: String(shellErr) });
-          }
-        }
 
         return ok(result);
       } catch (e) {
