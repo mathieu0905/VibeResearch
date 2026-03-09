@@ -135,7 +135,7 @@ if (!process.env.PRISMA_QUERY_ENGINE_LIBRARY) {
   }
 }
 
-async function dropVecTablesForPrisma(dbPath: string): Promise<void> {
+async function dropDerivedIndexTablesForPrisma(dbPath: string): Promise<void> {
   if (!fs.existsSync(dbPath)) return;
 
   closeVecDb();
@@ -146,6 +146,12 @@ async function dropVecTablesForPrisma(dbPath: string): Promise<void> {
     'vec_chunks_info',
     'vec_chunks_rowids',
     'vec_chunks_vector_chunks00',
+    'paper_search_units_fts',
+    'paper_search_units_fts_config',
+    'paper_search_units_fts_content',
+    'paper_search_units_fts_data',
+    'paper_search_units_fts_docsize',
+    'paper_search_units_fts_idx',
   ];
 
   for (const table of tables) {
@@ -206,8 +212,8 @@ async function ensureDatabase() {
 
     console.log('[ensureDatabase] Schema changed or first run, running db push...');
 
-    // Proactively drop vec tables before db push to avoid introspect errors
-    await dropVecTablesForPrisma(dbPath);
+    // Proactively drop derived search/vector tables before db push to avoid Prisma introspect errors
+    await dropDerivedIndexTablesForPrisma(dbPath);
 
     execSync(
       `"${prismaPath}" db push --schema="${schemaPath}" --skip-generate --accept-data-loss`,

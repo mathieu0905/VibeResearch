@@ -372,6 +372,7 @@ model RecommendationResult {
   qualityScore      Float
   reason            String
   triggerPaperTitle String?
+  triggerPaperId    String?
   status            String                  @default("new")
   generatedAt       DateTime                @default(now())
   createdAt         DateTime                @default(now())

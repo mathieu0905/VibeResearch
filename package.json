@@ -19,16 +19,19 @@
     "release:mac": "bash scripts/build-release.sh",
     "release:win": "powershell -ExecutionPolicy Bypass -File scripts/build-release-win.ps1",
     "release:linux": "bash scripts/build-release-linux.sh",
-    "postinstall": "prisma generate",
+    "postinstall": "prisma generate && npm run ensure:native",
     "precommit:check": "vitest run tests/integration/papers.test.ts tests/integration/reading.test.ts tests/integration/projects.test.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "lint": "prettier . --check",
     "format": "prettier . --write",
     "format:check": "prettier . --check",
-    "prepare": "husky"
+    "prepare": "husky",
+    "predev": "npm run ensure:native",
+    "ensure:native": "node scripts/ensure-native-modules.mjs"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.7.6",

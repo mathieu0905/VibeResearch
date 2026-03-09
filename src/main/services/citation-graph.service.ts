@@ -10,8 +10,11 @@ export class CitationGraphService {
 
   async getGraphData(options?: { includeGhostNodes?: boolean }): Promise<GraphData> {
     const includeGhost = options?.includeGhostNodes ?? true;
-    const rawCitations = await this.citationsRepo.getGraphData();
-    return this.assembleGraph(rawCitations, includeGhost);
+    const [rawCitations, localPapers] = await Promise.all([
+      this.citationsRepo.getGraphData(),
+      this.citationsRepo.getAllLocalPapersForGraph(),
+    ]);
+    return this.assembleGraph(rawCitations, includeGhost, localPapers);
   }
 
   async getGraphForPaper(
@@ -19,8 +22,11 @@ export class CitationGraphService {
     depth: number = 1,
     includeGhostNodes: boolean = true,
   ): Promise<GraphData> {
-    const rawCitations = await this.citationsRepo.getGraphDataForPaper(paperId, depth);
-    return this.assembleGraph(rawCitations, includeGhostNodes);
+    const [rawCitations, paper] = await Promise.all([
+      this.citationsRepo.getGraphDataForPaper(paperId, depth),
+      this.citationsRepo.getPaperForGraph(paperId),
+    ]);
+    return this.assembleGraph(rawCitations, includeGhostNodes, paper ? [paper] : []);
   }
 
   async findCitationPath(fromId: string, toId: string): Promise<string[] | null> {
@@ -124,6 +130,7 @@ export class CitationGraphService {
   private assembleGraph(
     rawCitations: Awaited<ReturnType<CitationsRepository['getGraphData']>>,
     includeGhost: boolean,
+    localPapers: Awaited<ReturnType<CitationsRepository['getAllLocalPapersForGraph']>> = [],
   ): GraphData {
     const nodesMap = new Map<string, GraphNode>();
     const edges: GraphEdge[] = [];
@@ -132,6 +139,20 @@ export class CitationGraphService {
     // Count citations per paper
     const citationCount = new Map<string, number>();
     const referenceCount = new Map<string, number>();
+
+    for (const paper of localPapers) {
+      nodesMap.set(paper.id, {
+        id: paper.id,
+        shortId: paper.shortId,
+        title: paper.title,
+        authors: JSON.parse(paper.authorsJson) as string[],
+        year: paper.submittedAt?.getFullYear(),
+        tags: paper.tags.map((t) => t.tag.name),
+        citationCount: 0,
+        referenceCount: 0,
+        isInLibrary: true,
+      });
+    }
 
     for (const c of rawCitations) {
       // Track counts

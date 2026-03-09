@@ -293,12 +293,14 @@ export function ImportModal({
     setStep('importing');
     let successCount = 0;
     let failedCount = 0;
+    const importedPaperIds: string[] = [];
 
     for (const result of selected) {
       try {
         const arxivId = result.externalIds.ArXiv;
         const input = arxivId ? `https://arxiv.org/abs/${arxivId}` : result.url || result.title;
-        await ipc.downloadPaper(input);
+        const response = await ipc.downloadPaper(input);
+        importedPaperIds.push(response.paper.id);
         successCount++;
       } catch (err) {
         console.error('Failed to import:', result.title, err);
@@ -310,6 +312,16 @@ export function ImportModal({
       `Imported ${successCount} paper${successCount !== 1 ? 's' : ''}${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
     );
     setStep('done');
+
+    // Auto-tag imported papers in background
+    if (importedPaperIds.length > 0) {
+      for (const paperId of importedPaperIds) {
+        ipc.tagPaper(paperId).catch((err) => {
+          console.warn('Auto-tagging failed for paper:', paperId, err);
+        });
+      }
+    }
+
     if (successCount > 0) {
       onImported();
     }

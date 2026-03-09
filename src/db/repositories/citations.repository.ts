@@ -13,6 +13,15 @@ export interface CreateCitationParams {
 export class CitationsRepository {
   private prisma = getPrismaClient();
 
+  private graphPaperSelect = {
+    id: true,
+    shortId: true,
+    title: true,
+    authorsJson: true,
+    submittedAt: true,
+    tags: { include: { tag: true } },
+  } as const;
+
   async createMany(citations: CreateCitationParams[]) {
     const results = [];
     for (const c of citations) {
@@ -70,24 +79,10 @@ export class CitationsRepository {
     const citations = await this.prisma.paperCitation.findMany({
       include: {
         sourcePaper: {
-          select: {
-            id: true,
-            shortId: true,
-            title: true,
-            authorsJson: true,
-            submittedAt: true,
-            tags: { include: { tag: true } },
-          },
+          select: this.graphPaperSelect,
         },
         targetPaper: {
-          select: {
-            id: true,
-            shortId: true,
-            title: true,
-            authorsJson: true,
-            submittedAt: true,
-            tags: { include: { tag: true } },
-          },
+          select: this.graphPaperSelect,
         },
       },
     });
@@ -109,24 +104,10 @@ export class CitationsRepository {
         where: { sourcePaperId: item.id },
         include: {
           sourcePaper: {
-            select: {
-              id: true,
-              shortId: true,
-              title: true,
-              authorsJson: true,
-              submittedAt: true,
-              tags: { include: { tag: true } },
-            },
+            select: this.graphPaperSelect,
           },
           targetPaper: {
-            select: {
-              id: true,
-              shortId: true,
-              title: true,
-              authorsJson: true,
-              submittedAt: true,
-              tags: { include: { tag: true } },
-            },
+            select: this.graphPaperSelect,
           },
         },
       });
@@ -135,24 +116,10 @@ export class CitationsRepository {
         where: { targetPaperId: item.id },
         include: {
           sourcePaper: {
-            select: {
-              id: true,
-              shortId: true,
-              title: true,
-              authorsJson: true,
-              submittedAt: true,
-              tags: { include: { tag: true } },
-            },
+            select: this.graphPaperSelect,
           },
           targetPaper: {
-            select: {
-              id: true,
-              shortId: true,
-              title: true,
-              authorsJson: true,
-              submittedAt: true,
-              tags: { include: { tag: true } },
-            },
+            select: this.graphPaperSelect,
           },
         },
       });
@@ -214,5 +181,19 @@ export class CitationsRepository {
       select: { id: true, title: true, shortId: true, sourceUrl: true },
     });
     return papers;
+  }
+
+  async getAllLocalPapersForGraph() {
+    return this.prisma.paper.findMany({
+      select: this.graphPaperSelect,
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async getPaperForGraph(paperId: string) {
+    return this.prisma.paper.findUnique({
+      where: { id: paperId },
+      select: this.graphPaperSelect,
+    });
   }
 }

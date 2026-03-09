@@ -8,6 +8,18 @@ import { CitationsRepository, type CreateCitationParams } from '@db';
 
 const S2_API_BASE = 'https://api.semanticscholar.org/graph/v1';
 
+export class CitationExtractionError extends Error {
+  retryable: boolean;
+  status?: number;
+
+  constructor(message: string, options?: { retryable?: boolean; status?: number }) {
+    super(message);
+    this.name = 'CitationExtractionError';
+    this.retryable = options?.retryable ?? false;
+    this.status = options?.status;
+  }
+}
+
 interface S2Reference {
   paperId: string | null;
   title: string;
@@ -57,14 +69,96 @@ async function fetchS2Citations(s2PaperId: string): Promise<S2PaperCitations | n
       `${S2_API_BASE}/paper/${s2PaperId}?fields=references,citations,references.${fields},citations.${fields}`,
       { timeoutMs: 15_000 },
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const retryable = res.status === 429 || res.status >= 500;
+      throw new CitationExtractionError(
+        `Semantic Scholar request failed with status ${res.status}`,
+        { retryable, status: res.status },
+      );
+    }
     const json = JSON.parse(res.text());
     return {
       references: json.references ?? [],
       citations: json.citations ?? [],
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if (error instanceof CitationExtractionError) throw error;
+    throw new CitationExtractionError('Semantic Scholar request failed', { retryable: true });
+  }
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function shouldFallbackToTitleSearch(error: unknown): boolean {
+  return error instanceof CitationExtractionError && error.status === 404;
+}
+
+async function searchS2PaperIdByTitle(title: string): Promise<string | null> {
+  try {
+    const query = encodeURIComponent(title);
+    const res = await proxyFetch(
+      `${S2_API_BASE}/paper/search?query=${query}&limit=1&fields=title`,
+      { timeoutMs: 10_000 },
+    );
+    if (!res.ok) {
+      throw new CitationExtractionError(
+        `Semantic Scholar title search failed with status ${res.status}`,
+        { retryable: isRetryableStatus(res.status), status: res.status },
+      );
+    }
+
+    const json = JSON.parse(res.text());
+    const first = json?.data?.[0];
+    if (!first?.paperId) return null;
+
+    if (!isTitleSimilar(title, first.title)) return null;
+    return first.paperId;
+  } catch (error) {
+    if (error instanceof CitationExtractionError) throw error;
+    throw new CitationExtractionError('Semantic Scholar title search failed', { retryable: true });
+  }
+}
+
+async function resolveS2PaperId(paper: {
+  shortId: string;
+  title: string;
+  sourceUrl?: string | null;
+}): Promise<string | null> {
+  const arxivId = extractArxivId(paper);
+  if (arxivId) {
+    return `ArXiv:${arxivId}`;
+  }
+
+  return searchS2PaperIdByTitle(paper.title);
+}
+
+async function fetchPaperCitationsWithFallback(paper: {
+  shortId: string;
+  title: string;
+  sourceUrl?: string | null;
+}): Promise<{ s2Id: string | null; data: S2PaperCitations | null }> {
+  const primaryS2Id = await resolveS2PaperId(paper);
+  if (!primaryS2Id) {
+    return { s2Id: null, data: null };
+  }
+
+  try {
+    const data = await fetchS2Citations(primaryS2Id);
+    return { s2Id: primaryS2Id, data };
+  } catch (error) {
+    if (!extractArxivId(paper) || !shouldFallbackToTitleSearch(error)) {
+      throw error;
+    }
+
+    const titleS2Id = await searchS2PaperIdByTitle(paper.title);
+    if (!titleS2Id || titleS2Id === primaryS2Id) {
+      throw error;
+    }
+
+    const data = await fetchS2Citations(titleS2Id);
+    return { s2Id: titleS2Id, data };
   }
 }
 
@@ -77,20 +171,12 @@ export class CitationExtractionService {
     title: string;
     sourceUrl?: string | null;
   }): Promise<{ referencesFound: number; citationsFound: number; matched: number }> {
-    // Determine S2 paper ID
-    const arxivId = extractArxivId(paper);
-    let s2Id = arxivId ? `ArXiv:${arxivId}` : null;
-
-    // If no arXiv ID, try title search
-    if (!s2Id) {
-      s2Id = await this.searchS2ByTitle(paper.title);
-    }
-
-    if (!s2Id) {
+    const result = await fetchPaperCitationsWithFallback(paper);
+    if (!result?.s2Id) {
       return { referencesFound: 0, citationsFound: 0, matched: 0 };
     }
 
-    const data = await fetchS2Citations(s2Id);
+    const data = result.data;
     if (!data) {
       return { referencesFound: 0, citationsFound: 0, matched: 0 };
     }
@@ -188,25 +274,5 @@ export class CitationExtractionService {
     }
 
     return null;
-  }
-
-  private async searchS2ByTitle(title: string): Promise<string | null> {
-    try {
-      const query = encodeURIComponent(title);
-      const res = await proxyFetch(
-        `${S2_API_BASE}/paper/search?query=${query}&limit=1&fields=title`,
-        { timeoutMs: 10_000 },
-      );
-      if (!res.ok) return null;
-
-      const json = JSON.parse(res.text());
-      const first = json?.data?.[0];
-      if (!first?.paperId) return null;
-
-      if (!isTitleSimilar(title, first.title)) return null;
-      return first.paperId;
-    } catch {
-      return null;
-    }
   }
 }

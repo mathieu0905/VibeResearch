@@ -116,6 +116,33 @@ describe('citations integration', () => {
   });
 
   describe('Graph data assembly', () => {
+    it('includes isolated local papers when no citations exist', async () => {
+      const graphService = new CitationGraphService();
+
+      const attention = await createPaper(
+        'Attention Is All You Need',
+        'https://arxiv.org/abs/1706.03762',
+      );
+
+      const graph = await graphService.getGraphData({ includeGhostNodes: true });
+
+      expect(graph.stats.totalNodes).toBe(1);
+      expect(graph.stats.totalEdges).toBe(0);
+      expect(graph.stats.connectedComponents).toBe(1);
+
+      expect(graph.nodes).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: attention.id,
+            title: 'Attention Is All You Need',
+            isInLibrary: true,
+            citationCount: 0,
+            referenceCount: 0,
+          }),
+        ]),
+      );
+    });
+
     it('assembles graph from 5 papers and 8 edges', async () => {
       const repo = new CitationsRepository();
       const graphService = new CitationGraphService();

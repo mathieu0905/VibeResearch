@@ -410,18 +410,18 @@ export class RecommendationService {
     };
   }
 
-  private findTriggerPaperTitle(
+  private findTriggerPaper(
     candidate: ExternalRecommendationCandidate,
     profile: InterestProfile,
-  ): string | null {
+  ): { id: string; title: string } | null {
     const candidateText = `${candidate.title} ${candidate.abstract ?? ''}`.toLowerCase();
-    const trigger = profile.seedTitles.find((seedTitle) => {
-      const seedWords = normalizeTitle(seedTitle)
+    const trigger = profile.seedPapers.find((seedPaper) => {
+      const seedWords = normalizeTitle(seedPaper.title)
         .split(' ')
         .filter((word) => word.length >= 4);
       return seedWords.some((word) => candidateText.includes(word));
     });
-    return trigger ?? profile.seedTitles[0] ?? null;
+    return trigger ?? profile.seedPapers[0] ?? null;
   }
 
   private buildReason(

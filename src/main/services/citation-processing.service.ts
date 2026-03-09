@@ -4,7 +4,7 @@
  * Follows the same queue pattern as paper-processing.service.ts.
  */
 import { PapersRepository } from '@db';
-import { CitationExtractionService } from './citation-extraction.service';
+import { CitationExtractionError, CitationExtractionService } from './citation-extraction.service';
 
 const queue: string[] = [];
 const queuedIds = new Set<string>();
@@ -40,7 +40,13 @@ async function processPaper(paperId: string) {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.warn(`[citation-processing] Failed for "${paper.title}": ${message}`);
-    // Mark as extracted anyway to avoid retrying endlessly on API errors
+    if (error instanceof CitationExtractionError && error.retryable) {
+      console.warn(
+        `[citation-processing] Will retry later for "${paper.title}" (transient upstream error)`,
+      );
+      return;
+    }
+
     await repo.markCitationsExtracted(paperId);
   }
 }

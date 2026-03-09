@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-03-09 (session 35)
+
+### fix: Rebuild better-sqlite3 for Electron installs
+
+- **Scope**: `package.json`, `scripts/ensure-native-modules.mjs`
+- **Problem**: The app initializes a vector index through `better-sqlite3` at startup, but `postinstall` only ran `prisma generate`. When dependencies were installed with a standalone Node.js runtime first, `better-sqlite3` stayed compiled for that Node ABI and Electron 35 later failed to load it with `NODE_MODULE_VERSION` mismatch errors.
+- **Fix**: Added a dedicated `rebuild:native` script and an `ensure:native` guard script. `postinstall` now runs the guard after `prisma generate`, and `npm run dev` triggers the same guard through `predev`, so other devices can auto-detect ABI mismatches and rebuild `better-sqlite3` before startup.
+
 ## 2026-03-09 (session 43)
 
 ### feat: Route short semantic queries through sentence and lexical evidence
@@ -2387,3 +2395,55 @@
 - **Rationale**: Once users can see which library paper caused a recommendation, the next natural step is letting them jump straight to that local context
 - **Test Design**: Validate schema generation, formatting, and app build after threading the trigger paper id through the stack
 - **Validation**: `npx prisma generate`, `npm run build`
+
+### Fix: Allow Prisma db push with Derived SQLite Index Tables Present
+
+- **Scope**: `src/main/index.ts`
+- **Changes**:
+  - Expanded the pre-`db push` cleanup step to drop both sqlite-vec tables and FTS5 derived search-unit tables before Prisma introspects the SQLite schema
+- **Rationale**: Prisma schema description can fail on SQLite databases that contain virtual/derived indexing tables even when the underlying database file is otherwise healthy
+- **Test Design**: Validate the app still builds after updating the startup database bootstrap path
+- **Validation**: `npm run build`
+
+### Fix: Restore Recommendation Refresh After Trigger Paper Refactor
+
+- **Scope**: `src/main/services/recommendation.service.ts`
+- **Changes**:
+  - Replaced the stale `findTriggerPaperTitle` helper shape with a `findTriggerPaper` helper that returns the full local seed paper record
+  - Switched trigger matching to use `profile.seedPapers` instead of the removed `seedTitles` field
+  - Preserved the fallback to the first seed paper so recommendation cards still show a trigger when no direct text match is found
+- **Rationale**: Recommendation refresh was crashing because scoring still called a helper removed during the trigger-paper ID refactor
+- **Test Design**: Validate the main-process TypeScript build after repairing the recommendation scoring helper path
+- **Validation**: `npm run build:main`
+
+### Fix: Sync Recommendation Trigger Paper ID with Prisma Schema
+
+- **Scope**: `prisma/schema.prisma`, recommendation persistence stack
+- **Changes**:
+  - Added the missing `triggerPaperId` field to the `RecommendationResult` Prisma model
+  - Kept recommendation result persistence aligned with the trigger-paper ID now written by the repository and service layer
+- **Rationale**: Recommendation refresh was still failing at runtime because Prisma did not recognize `triggerPaperId` during `recommendationResult.upsert()`
+- **Test Design**: Regenerate Prisma client and rebuild the main process after updating the schema
+- **Validation**: `npx prisma generate`, `npm run build:main`
+
+### Fix: Show Local Papers in Citation Graph Before Extraction Completes
+
+- **Scope**: `src/main/services/citation-graph.service.ts`, `src/db/repositories/citations.repository.ts`, `tests/integration/citations.test.ts`
+- **Changes**:
+  - Seeded graph nodes from local library papers instead of deriving nodes only from `PaperCitation` rows
+  - Preserved isolated papers in both global graph and single-paper graph views when no citation edges exist yet
+  - Added an integration test covering the zero-citation case with `Attention Is All You Need`
+- **Rationale**: The graph was rendering empty whenever citation extraction had not populated `PaperCitation`, even though papers already existed in the library
+- **Test Design**: Validate the graph service returns isolated local nodes before any citation rows are created
+- **Validation**: `npx vitest run tests/integration/citations.test.ts`
+
+### Fix: Keep Citation Extraction Retryable on Semantic Scholar Rate Limits
+
+- **Scope**: `src/main/services/citation-extraction.service.ts`, `src/main/services/citation-processing.service.ts`, `tests/integration/citation-extraction.test.ts`
+- **Changes**:
+  - Raised explicit retryable errors for Semantic Scholar rate limits and upstream failures instead of silently returning zero citations
+  - Stopped background citation processing from marking papers as extracted when the failure is transient
+  - Added a regression test for the `429 Too Many Requests` path
+- **Rationale**: Papers were being permanently marked as citation-processed after temporary Semantic Scholar failures, leaving `PaperCitation` empty and preventing automatic retries
+- **Test Design**: Mock Semantic Scholar responses and verify the extraction service surfaces retryable failures
+- **Validation**: `npx vitest run tests/integration/citations.test.ts tests/integration/citation-extraction.test.ts`
