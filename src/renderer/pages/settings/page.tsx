@@ -2751,6 +2751,7 @@ function SemanticSettingsPanel() {
   const [settings, setSettings] = useState<SemanticSearchSettings>({
     enabled: true,
     autoProcess: true,
+    autoEnrich: true,
     autoStartOllama: true,
     baseUrl: 'http://127.0.0.1:11434',
     embeddingModel: 'nomic-embed-text',
@@ -3055,6 +3056,24 @@ function SemanticSettingsPanel() {
               className={`flex h-5 w-5 items-center justify-center rounded-full ${settings.autoProcess ? 'bg-violet-500 text-white' : 'bg-notion-sidebar text-notion-text-tertiary'}`}
             >
               {settings.autoProcess ? <Check size={12} strokeWidth={3} /> : <X size={12} />}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSettings((prev) => ({ ...prev, autoEnrich: !prev.autoEnrich }))}
+            className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition-colors ${settings.autoEnrich ? 'border-violet-200 bg-violet-50' : 'border-notion-border bg-white'}`}
+          >
+            <div>
+              <p className="text-sm font-medium text-notion-text">Auto analyze + auto tag</p>
+              <p className="mt-1 text-xs text-notion-text-secondary">
+                Automatically generate an analysis note and tags after a paper is added.
+              </p>
+            </div>
+            <div
+              className={`flex h-5 w-5 items-center justify-center rounded-full ${settings.autoEnrich ? 'bg-violet-500 text-white' : 'bg-notion-sidebar text-notion-text-tertiary'}`}
+            >
+              {settings.autoEnrich ? <Check size={12} strokeWidth={3} /> : <X size={12} />}
             </div>
           </button>
         </div>

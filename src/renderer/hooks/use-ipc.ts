@@ -15,6 +15,7 @@ import type {
   AgentTodoMessageItem,
   AgentToolKind,
   GraphData,
+  RecommendationItem,
 } from '@shared';
 
 declare global {
@@ -204,6 +205,12 @@ export interface AgenticSearchResult {
   papers: AgenticSearchPaper[];
 }
 
+export interface SemanticSearchSnippet {
+  type: 'title' | 'tag' | 'abstract' | 'sentence' | 'chunk';
+  text: string;
+  score: number;
+}
+
 export interface SemanticSearchPaper {
   id: string;
   shortId: string;
@@ -217,6 +224,8 @@ export interface SemanticSearchPaper {
   matchedChunks: string[];
   processingStatus?: string;
   processingError?: string | null;
+  matchSignals?: Array<'title' | 'tag' | 'abstract' | 'sentence' | 'chunk'>;
+  matchedSnippets?: SemanticSearchSnippet[];
 }
 
 export interface SemanticSearchResult {
@@ -375,6 +384,7 @@ export interface ProxyScope {
 export interface SemanticSearchSettings {
   enabled: boolean;
   autoProcess: boolean;
+  autoEnrich: boolean;
   autoStartOllama: boolean;
   baseUrl: string;
   embeddingModel: string;
@@ -434,6 +444,7 @@ export interface SemanticDebugResult {
   embeddingModel: string;
   enabled: boolean;
   autoProcess: boolean;
+  autoEnrich: boolean;
   autoStartOllama: boolean;
   startedOllama: boolean;
   health: SemanticDebugProbeResult;
@@ -554,6 +565,10 @@ export interface CollectionItem {
   updatedAt: string;
 }
 
+export interface RecommendationRefreshResult {
+  generatedAt: string;
+  count: number;
+}
 export interface ResearchProfile {
   tagDistribution: Array<{ name: string; category: string; count: number }>;
   yearDistribution: Array<{ year: number; count: number }>;
@@ -874,6 +889,18 @@ export const ipc = {
     invoke<CollectionItem[]>('collections:getForPaper', paperId),
   getResearchProfile: (collectionId: string) =>
     invoke<ResearchProfile>('collections:researchProfile', collectionId),
+
+  // Recommendations
+  listRecommendations: (filter?: { status?: 'new' | 'ignored' | 'saved' }) =>
+    invoke<RecommendationItem[]>('recommendations:list', filter ?? {}),
+  refreshRecommendations: (limit?: number) =>
+    invoke<RecommendationRefreshResult>('recommendations:refresh', limit),
+  ignoreRecommendation: (candidateId: string) =>
+    invoke<{ success: boolean }>('recommendations:ignore', candidateId),
+  saveRecommendation: (candidateId: string) =>
+    invoke<PaperItem>('recommendations:save', candidateId),
+  trackRecommendationOpened: (candidateId: string) =>
+    invoke<{ success: boolean }>('recommendations:opened', candidateId),
 
   // Citations & Graph
   extractCitations: (paper: {

@@ -559,17 +559,6 @@ async function runImport(
   }
   broadcastStatus();
 
-  // Auto-trigger background tagging for newly imported papers
-  if (success > 0) {
-    import('./tagging.service')
-      .then(({ tagUntaggedPapers }) => {
-        tagUntaggedPapers().catch((err) =>
-          console.error('[ingest] Background tagging failed:', err),
-        );
-      })
-      .catch(() => undefined);
-  }
-
   return { imported: success, skipped, previewTitles: previewTitles.slice(0, 5) };
 }
 

@@ -23,6 +23,13 @@
 - **Solution**: Reduced batch size from 32 to 8, disabled ONNX memory arena (`enableCpuMemArena: false`), set single-threaded execution (`numThreads: 1`), and configured conservative memory allocation strategy.
 - **Validation**: Builtin embedding tests pass with lower memory footprint.
 
+### fix: Lower semantic search similarity threshold for better recall
+
+- **Scope**: `src/main/services/semantic-utils.ts`
+- **Problem**: Semantic search failed to return results for short queries like "OpenHarmony" because similarity scores (0.21-0.34) were below the 0.35 threshold. Short queries naturally have lower cosine similarity with long document chunks.
+- **Solution**: Lowered `MIN_SEMANTIC_CHUNK_SIMILARITY` from 0.35 to 0.25 to improve recall for short queries while maintaining reasonable precision.
+- **Validation**: Manual testing shows "OpenHarmony" query now returns relevant papers (HapRepair, Phantom Rendering Detection) with similarity scores 0.27-0.34.
+
 ## 2026-03-09 (session 42)
 
 ### feat: Add Literature Graph with citation extraction and visualization
@@ -2304,3 +2311,50 @@
 - **Rationale**: The agent todo flow had no direct regression coverage despite owning task configuration, scheduling, and run lifecycle state transitions
 - **Test Design**: Mock repository, scheduler, and runner dependencies to assert observable persistence and orchestration behavior without requiring Electron IPC
 - **Validation**: `npx vitest run tests/integration/agent-todo.service.test.ts`
+
+### Feat: Auto Analyze and Tag Newly Added Papers
+
+- **Scope**: `src/main/services/auto-paper-enrichment.service.ts`, `src/main/services/papers.service.ts`, `src/main/services/download.service.ts`, `src/main/services/ingest.service.ts`, `tests/integration/auto-paper-enrichment.test.ts`
+- **Changes**:
+  - Added a background auto-enrichment queue that runs paper analysis and auto-tagging for newly added papers
+  - Triggered the queue from paper creation, local PDF import, and successful PDF download paths
+  - Replaced ingest’s broad post-import batch-tagging kick with per-paper auto-enrichment scheduling to avoid duplicate work
+  - Added regression tests for queue deduplication, skip behavior, and paper-service trigger hooks
+- **Rationale**: After adding a paper, users expect analysis notes and tags to appear automatically without manually running two separate actions
+- **Test Design**: Mock repository and AI service boundaries to verify new papers enqueue exactly once and existing analysis/tags are not redundantly regenerated
+- **Validation**: `npx vitest run tests/integration/auto-paper-enrichment.test.ts`
+
+### Feature: External Recommendations Page with Candidate Pool
+
+- **Scope**: `prisma/schema.prisma`, recommendation service/IPC stack, `src/renderer/pages/recommendations/page.tsx`
+- **Changes**:
+  - Added persistent recommendation candidates, results, and feedback models for external paper discovery
+  - Implemented a recommendation pipeline that builds a profile from local papers/tags, pulls candidates from Semantic Scholar and arXiv, deduplicates against the local library, and ranks results with rule-based explanations
+  - Added recommendation IPC handlers and a dedicated Recommendations page with refresh, open, ignore, and save-to-library actions
+  - Reused existing paper creation/download flows so accepted recommendations can enter the local library cleanly
+- **Rationale**: Recommendations are more valuable when they can discover relevant papers outside the existing local library rather than only resurfacing already imported papers
+- **Test Design**: Validate through Prisma client generation and production build to ensure schema, main-process wiring, and renderer integration compile together
+- **Validation**: `npx prisma generate`, `npm run build`
+
+### Feat: Add Toggle for Auto Analyze and Auto Tag
+
+- **Scope**: `src/main/store/app-settings-store.ts`, `src/main/services/auto-paper-enrichment.service.ts`, `src/main/services/providers.service.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`, `tests/integration/auto-paper-enrichment.test.ts`
+- **Changes**:
+  - Added a persisted `autoEnrich` setting under semantic settings, defaulting to enabled
+  - Added a Settings UI toggle for automatic analysis note generation and auto-tagging after paper add
+  - Made the auto-enrichment queue respect the saved toggle before enqueueing work
+  - Added regression coverage for the disabled-setting path
+- **Rationale**: Some users want automatic enrichment by default, while others prefer full manual control over AI-triggered actions
+- **Test Design**: Mock settings and service boundaries to verify auto-enrichment is skipped entirely when the toggle is off
+- **Validation**: `npx vitest run tests/integration/auto-paper-enrichment.test.ts && npm run build:main`
+
+### Improvement: Feedback-aware Recommendation Ranking
+
+- **Scope**: `src/main/services/recommendation.service.ts`, `src/db/repositories/recommendations.repository.ts`
+- **Changes**:
+  - Folded recommendation feedback history (`opened`, `saved`, `ignored`) back into the ranking profile
+  - Added positive topic/author boosts and negative topic dampening so recommendations react to prior user actions
+  - Upgraded recommendation reasons to explain when a result is elevated because of earlier engagement with a topic or author
+- **Rationale**: A recommendation system should improve after users interact with results rather than recomputing each refresh from only the local library snapshot
+- **Test Design**: Validate the updated recommendation pipeline through production build and formatter checks
+- **Validation**: `npm run build`, `npx prettier --check src/db/repositories/recommendations.repository.ts src/main/services/recommendation.service.ts`

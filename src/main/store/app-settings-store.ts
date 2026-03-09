@@ -15,6 +15,7 @@ export interface ProxyScope {
 export interface SemanticSearchSettings {
   enabled: boolean;
   autoProcess: boolean;
+  autoEnrich: boolean;
   autoStartOllama: boolean;
   baseUrl: string;
   embeddingModel: string;
@@ -39,6 +40,7 @@ const DEFAULT_PROXY_SCOPE: ProxyScope = {
 const DEFAULT_SEMANTIC_SEARCH_SETTINGS: SemanticSearchSettings = {
   enabled: true,
   autoProcess: true,
+  autoEnrich: true,
   autoStartOllama: true,
   baseUrl: 'http://127.0.0.1:11434',
   embeddingModel: 'nomic-embed-text',
@@ -49,6 +51,10 @@ function getSettingsPath(): string {
   return getAppSettingsPath();
 }
 
+function getDefaultPapersDir(): string {
+  return getPapersBaseDir();
+}
+
 function load(): AppSettings {
   try {
     const settingsPath = getSettingsPath();
@@ -56,7 +62,7 @@ function load(): AppSettings {
       const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as AppSettings;
       // Only reset papersDir if it's empty
       if (!saved.papersDir || saved.papersDir.trim() === '') {
-        saved.papersDir = DEFAULT_PAPERS_DIR;
+        saved.papersDir = getDefaultPapersDir();
       }
       saved.semanticSearch = {
         ...DEFAULT_SEMANTIC_SEARCH_SETTINGS,
@@ -78,7 +84,7 @@ function load(): AppSettings {
     // ignore
   }
   return {
-    papersDir: DEFAULT_PAPERS_DIR,
+    papersDir: getDefaultPapersDir(),
     editorCommand: 'code',
     proxy: undefined,
     semanticSearch: DEFAULT_SEMANTIC_SEARCH_SETTINGS,

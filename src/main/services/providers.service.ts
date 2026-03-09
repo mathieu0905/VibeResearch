@@ -40,6 +40,7 @@ import {
 } from '../../db/repositories/papers.repository';
 import { getSelectedModelInfo } from './ai-provider.service';
 import * as vecIndex from './vec-index.service';
+import * as searchUnitIndex from './search-unit-index.service';
 
 export interface SemanticEmbeddingTestResult {
   success: boolean;
@@ -74,6 +75,7 @@ export interface SemanticDebugResult {
   embeddingModel: string;
   enabled: boolean;
   autoProcess: boolean;
+  autoEnrich: boolean;
   autoStartOllama: boolean;
   startedOllama: boolean;
   health: SemanticDebugProbeResult;
@@ -305,6 +307,7 @@ export class ProvidersService {
       console.log(`[providers] ${reason}, resetting vec index`);
       try {
         vecIndex.resetIndex();
+        searchUnitIndex.resetIndex();
       } catch (err) {
         console.warn('[providers] Failed to reset vec index:', err);
       }
@@ -437,6 +440,7 @@ export class ProvidersService {
       embeddingModel: settings.embeddingModel,
       enabled: settings.enabled,
       autoProcess: settings.autoProcess,
+      autoEnrich: settings.autoEnrich,
       autoStartOllama: settings.autoStartOllama,
       startedOllama,
       health,
