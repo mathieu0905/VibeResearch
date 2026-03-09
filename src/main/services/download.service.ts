@@ -7,6 +7,8 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { Agent } from 'node:http';
 import { proxyFetch } from './proxy-fetch';
 import { schedulePaperProcessing } from './paper-processing.service';
+import { scheduleAutoPaperEnrichment } from './auto-paper-enrichment.service';
+import { PapersService } from './papers.service';
 
 /** Minimum size for a valid PDF (arXiv PDFs are typically > 50KB) */
 const MIN_PDF_SIZE = 1024; // 1KB
@@ -87,6 +89,7 @@ function parseInput(input: string): {
 
 export class DownloadService {
   private papersRepository = new PapersRepository();
+  private papersService = new PapersService();
 
   private getPaperFolder(shortId: string): string {
     return path.join(getPapersDir(), shortId);
@@ -136,8 +139,7 @@ export class DownloadService {
     }
 
     await this.ensurePaperFolder(shortId);
-    const paper = await this.papersRepository.create({
-      shortId,
+    const paper = await this.papersService.create({
       title,
       authors,
       source: 'arxiv',
@@ -171,6 +173,7 @@ export class DownloadService {
         if (isValidPdf(fileBuffer)) {
           await this.papersRepository.updatePdfPath(paperId, filePath);
           schedulePaperProcessing(paperId);
+          scheduleAutoPaperEnrichment(paperId);
           return { success: true, size: stats.size, skipped: true };
         }
         // Invalid file — clear DB path, delete file, then re-download
@@ -203,6 +206,7 @@ export class DownloadService {
       await fs.writeFile(filePath, buffer);
       await this.papersRepository.updatePdfPath(paperId, filePath);
       schedulePaperProcessing(paperId);
+      scheduleAutoPaperEnrichment(paperId);
 
       return { success: true, size: buffer.length, skipped: false };
     } catch (error) {

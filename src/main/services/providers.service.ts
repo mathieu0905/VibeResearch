@@ -40,6 +40,7 @@ import {
 } from '../../db/repositories/papers.repository';
 import { getSelectedModelInfo } from './ai-provider.service';
 import * as vecIndex from './vec-index.service';
+import * as searchUnitIndex from './search-unit-index.service';
 
 export interface SemanticEmbeddingTestResult {
   success: boolean;
@@ -74,6 +75,7 @@ export interface SemanticDebugResult {
   embeddingModel: string;
   enabled: boolean;
   autoProcess: boolean;
+  autoEnrich: boolean;
   autoStartOllama: boolean;
   startedOllama: boolean;
   health: SemanticDebugProbeResult;
@@ -292,19 +294,27 @@ export class ProvidersService {
     const current = getSemanticSearchSettings();
     setSemanticSearchSettings(settings);
 
-    // If embedding model changed, reset vec index and clear indexedAt
-    if (settings.embeddingModel && settings.embeddingModel !== current.embeddingModel) {
-      console.log(
-        `[providers] Embedding model changed: ${current.embeddingModel} → ${settings.embeddingModel}, resetting vec index`,
-      );
+    // If embedding model or provider changed, reset vec index and clear indexedAt
+    const modelChanged =
+      settings.embeddingModel && settings.embeddingModel !== current.embeddingModel;
+    const providerChanged =
+      settings.embeddingProvider && settings.embeddingProvider !== current.embeddingProvider;
+
+    if (modelChanged || providerChanged) {
+      const reason = providerChanged
+        ? `provider changed: ${current.embeddingProvider} → ${settings.embeddingProvider}`
+        : `model changed: ${current.embeddingModel} → ${settings.embeddingModel}`;
+      console.log(`[providers] ${reason}, resetting vec index`);
       try {
         vecIndex.resetIndex();
+        searchUnitIndex.resetIndex();
       } catch (err) {
         console.warn('[providers] Failed to reset vec index:', err);
       }
       void this.papersRepository
         .clearAllIndexedAt()
         .catch((err) => console.warn('[providers] Failed to clear indexedAt:', err));
+      localSemanticService.switchProvider();
     }
 
     return { success: true };
@@ -318,7 +328,13 @@ export class ProvidersService {
       ...settingsOverrides,
     };
     const startedAt = Date.now();
-    const startedOllama = await warmupOllamaService('settings-test-embedding', settings);
+    let startedOllama = false;
+
+    // Only warm up Ollama if using the ollama provider
+    if ((settings.embeddingProvider ?? 'builtin') === 'ollama') {
+      startedOllama = await warmupOllamaService('settings-test-embedding', settings);
+    }
+
     const [embedding] = await localSemanticService.embedTexts(
       ['Vibe Research semantic embedding test.'],
       settings,
@@ -328,10 +344,15 @@ export class ProvidersService {
       throw new Error('Embedding model returned an empty vector.');
     }
 
+    const providerName =
+      (settings.embeddingProvider ?? 'builtin') === 'builtin'
+        ? 'all-MiniLM-L6-v2'
+        : settings.embeddingModel;
+
     return {
       success: true,
-      model: settings.embeddingModel,
-      baseUrl: settings.baseUrl,
+      model: providerName,
+      baseUrl: settings.embeddingProvider === 'ollama' ? settings.baseUrl : 'local',
       dimensions: embedding.length,
       elapsedMs: Date.now() - startedAt,
       startedOllama,
@@ -349,6 +370,10 @@ export class ProvidersService {
     return listSemanticModelPullJobs();
   }
 
+  getBuiltinModelStatus() {
+    return localSemanticService.getProviderStatus();
+  }
+
   async getSemanticDebugInfo(
     settingsOverrides: Partial<SemanticSearchSettings> = {},
   ): Promise<SemanticDebugResult> {
@@ -357,7 +382,12 @@ export class ProvidersService {
       ...settingsOverrides,
     };
     const baseUrl = trimTrailingSlash(settings.baseUrl);
-    const startedOllama = await warmupOllamaService('settings-debug', settings);
+    let startedOllama = false;
+
+    // Only warm up Ollama if using the ollama provider
+    if ((settings.embeddingProvider ?? 'builtin') === 'ollama') {
+      startedOllama = await warmupOllamaService('settings-debug', settings);
+    }
 
     const [health, tags, embed, embeddings, indexSummary] = await Promise.all([
       probe(`${baseUrl}/api/tags`),
@@ -410,6 +440,7 @@ export class ProvidersService {
       embeddingModel: settings.embeddingModel,
       enabled: settings.enabled,
       autoProcess: settings.autoProcess,
+      autoEnrich: settings.autoEnrich,
       autoStartOllama: settings.autoStartOllama,
       startedOllama,
       health,

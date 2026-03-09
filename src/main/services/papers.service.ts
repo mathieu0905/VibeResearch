@@ -4,7 +4,11 @@ import { PapersRepository, SourceEventsRepository } from '@db';
 import { extractArxivId, type CategorizedTag } from '@shared';
 import { getPapersDir } from '../store/app-settings-store';
 import { schedulePaperProcessing } from './paper-processing.service';
+import { scheduleCitationExtraction } from './citation-processing.service';
+import { scheduleAutoPaperEnrichment } from './auto-paper-enrichment.service';
 import * as vecIndex from './vec-index.service';
+import * as searchUnitIndex from './search-unit-index.service';
+import { rebuildSearchUnitsForPaper } from './search-unit-sync.service';
 
 export interface CreatePaperInput {
   title: string;
@@ -76,6 +80,8 @@ export class PapersService {
     if (input.pdfPath || input.pdfUrl || input.source === 'arxiv') {
       schedulePaperProcessing(created.id);
     }
+    scheduleCitationExtraction(created.id);
+    scheduleAutoPaperEnrichment(created.id);
 
     return created;
   }
@@ -171,6 +177,8 @@ export class PapersService {
     });
 
     schedulePaperProcessing(created.id);
+    scheduleCitationExtraction(created.id);
+    scheduleAutoPaperEnrichment(created.id);
 
     return created;
   }
@@ -193,6 +201,7 @@ export class PapersService {
         const fileBuffer = await fs.readFile(filePath);
         if (isValidPdf(fileBuffer)) {
           if (!paper.pdfPath) await this.papersRepository.updatePdfPath(paperId, filePath);
+          scheduleAutoPaperEnrichment(paperId);
           return { pdfPath: filePath, size: stats.size, skipped: true };
         }
         // Invalid file — clear DB path, delete file, then re-download
@@ -232,6 +241,7 @@ export class PapersService {
     await fs.writeFile(filePath, buffer);
     await this.papersRepository.updatePdfPath(paperId, filePath);
     schedulePaperProcessing(paperId);
+    scheduleAutoPaperEnrichment(paperId);
 
     return { pdfPath: filePath, size: buffer.length, skipped: false };
   }
@@ -286,6 +296,7 @@ export class PapersService {
 
         const rawTitle = titleMatch[1].replace(/^\[[\w./-]+\]\s*/, '').trim();
         await this.papersRepository.updateTitle(paper.id, rawTitle);
+        await rebuildSearchUnitsForPaper(paper.id).catch(() => undefined);
         fixed++;
       } catch {
         failed++;
@@ -304,6 +315,7 @@ export class PapersService {
       const bareTitle = paper.title.replace(/^\[\d{4}\.\d{4,5}(v\d+)?\]\s*/, '');
       if (bareTitle !== paper.title) {
         await this.papersRepository.updateTitle(paper.id, bareTitle);
+        await rebuildSearchUnitsForPaper(paper.id).catch(() => undefined);
         updated++;
       }
     }
@@ -316,6 +328,7 @@ export class PapersService {
     if (!existing) return null;
     try {
       vecIndex.deleteChunksByPaperId(id);
+      searchUnitIndex.deleteUnitsByPaperId(id);
     } catch {
       // vec cleanup failure should not block deletion
     }
@@ -329,6 +342,8 @@ export class PapersService {
       try {
         const chunkIds = await this.papersRepository.listChunkIdsForPapers(ids);
         vecIndex.deleteChunksByIds(chunkIds);
+        const unitIds = await this.papersRepository.listSearchUnitIdsForPapers(ids);
+        searchUnitIndex.deleteUnitsByIds(unitIds);
       } catch {
         // vec cleanup failure should not block deletion
       }

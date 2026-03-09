@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ipc, type ScanResult, type ImportStatus } from '../hooks/use-ipc';
+import { ipc, type ScanResult, type ImportStatus, type SearchResultItem } from '../hooks/use-ipc';
 import { onIpc } from '../hooks/use-ipc';
 import { cleanArxivTitle } from '@shared';
 import {
@@ -16,6 +16,7 @@ import {
   CheckSquare,
   Square,
   Trash2,
+  Search,
 } from 'lucide-react';
 
 // Animation variants
@@ -51,7 +52,7 @@ const modalVariants = {
   },
 };
 
-type Tab = 'chrome' | 'local';
+type Tab = 'chrome' | 'local' | 'search';
 type Step = 'initial' | 'scanning' | 'preview' | 'importing' | 'done';
 
 interface BatchProgress {
@@ -80,7 +81,7 @@ export function ImportModal({
   onClose: () => void;
   onImported: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>('chrome');
+  const [tab, setTab] = useState<Tab>('search');
   const [step, setStep] = useState<Step>('initial');
   const [days, setDays] = useState<number | null>(1);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
@@ -94,6 +95,14 @@ export function ImportModal({
   const [error, setError] = useState('');
   const [isVisible, setIsVisible] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
+
+  // Search tab state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResultItem[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [selectedSearchIds, setSelectedSearchIds] = useState<Set<string>>(new Set());
+  const [searchError, setSearchError] = useState('');
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Handle ESC key to close
   useEffect(() => {
@@ -206,6 +215,117 @@ export function ImportModal({
   const handleCancel = useCallback(async () => {
     await ipc.cancelImport();
   }, []);
+
+  // Search papers
+  const handleSearch = useCallback(async (query: string) => {
+    if (!query.trim()) return;
+    setIsSearching(true);
+    setSearchError('');
+    try {
+      const result = await ipc.searchPapers(query, 20);
+      setSearchResults(result.results);
+      setSelectedSearchIds(new Set());
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Search failed';
+      setSearchError(message);
+      // If rate limited, show helpful message
+      if (message.includes('429')) {
+        setSearchError('Too many requests. Please wait a moment and try again.');
+      }
+    } finally {
+      setIsSearching(false);
+    }
+  }, []);
+
+  // Auto-search with debounce (500ms delay)
+  useEffect(() => {
+    if (tab !== 'search') return;
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearchError('');
+      return;
+    }
+
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // Set new timeout for auto-search
+    searchTimeoutRef.current = setTimeout(() => {
+      handleSearch(searchQuery);
+    }, 500);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery, tab, handleSearch]);
+
+  // Toggle search result selection
+  const toggleSearchResult = useCallback((paperId: string) => {
+    setSelectedSearchIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(paperId)) {
+        next.delete(paperId);
+      } else {
+        next.add(paperId);
+      }
+      return next;
+    });
+  }, []);
+
+  // Toggle all search results
+  const toggleAllSearchResults = useCallback(() => {
+    if (selectedSearchIds.size === searchResults.length) {
+      setSelectedSearchIds(new Set());
+    } else {
+      setSelectedSearchIds(new Set(searchResults.map((r) => r.paperId)));
+    }
+  }, [searchResults, selectedSearchIds.size]);
+
+  // Import selected search results
+  const handleImportSearchResults = useCallback(async () => {
+    const selected = searchResults.filter((r) => selectedSearchIds.has(r.paperId));
+    if (selected.length === 0) return;
+
+    setStep('importing');
+    let successCount = 0;
+    let failedCount = 0;
+    const importedPaperIds: string[] = [];
+
+    for (const result of selected) {
+      try {
+        const arxivId = result.externalIds.ArXiv;
+        const input = arxivId ? `https://arxiv.org/abs/${arxivId}` : result.url || result.title;
+        const response = await ipc.downloadPaper(input);
+        importedPaperIds.push(response.paper.id);
+        successCount++;
+      } catch (err) {
+        console.error('Failed to import:', result.title, err);
+        failedCount++;
+      }
+    }
+
+    setLocalDoneMessage(
+      `Imported ${successCount} paper${successCount !== 1 ? 's' : ''}${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
+    );
+    setStep('done');
+
+    // Auto-tag imported papers in background
+    if (importedPaperIds.length > 0) {
+      for (const paperId of importedPaperIds) {
+        ipc.tagPaper(paperId).catch((err) => {
+          console.warn('Auto-tagging failed for paper:', paperId, err);
+        });
+      }
+    }
+
+    if (successCount > 0) {
+      onImported();
+    }
+  }, [searchResults, selectedSearchIds, onImported]);
 
   // Add PDF files (deduplicating)
   const addPdfFiles = useCallback((newFiles: string[]) => {
@@ -376,6 +496,17 @@ export function ImportModal({
             {step === 'initial' && (
               <div className="flex border-b border-notion-border">
                 <button
+                  onClick={() => handleTabChange('search')}
+                  className={`flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+                    tab === 'search'
+                      ? 'border-b-2 border-blue-500 text-notion-text'
+                      : 'text-notion-text-secondary hover:text-notion-text'
+                  }`}
+                >
+                  <Search size={16} />
+                  Search
+                </button>
+                <button
                   onClick={() => handleTabChange('chrome')}
                   className={`flex flex-1 items-center justify-center gap-2 px-4 py-2.5 text-sm font-medium transition-colors ${
                     tab === 'chrome'
@@ -384,7 +515,7 @@ export function ImportModal({
                   }`}
                 >
                   <Chrome size={16} />
-                  Chrome History
+                  Chrome
                 </button>
                 <button
                   onClick={() => handleTabChange('local')}
@@ -395,7 +526,7 @@ export function ImportModal({
                   }`}
                 >
                   <FileText size={16} />
-                  Local PDF
+                  Local
                 </button>
               </div>
             )}
@@ -412,6 +543,108 @@ export function ImportModal({
                   <AlertCircle size={14} />
                   {error}
                 </motion.div>
+              )}
+
+              {/* Search Tab */}
+              {tab === 'search' && step === 'initial' && (
+                <div className="space-y-4">
+                  <p className="text-sm text-notion-text-secondary">
+                    Search for papers by title, author, or keywords. Results appear as you type.
+                  </p>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="e.g., attention is all you need"
+                      className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 pr-10 text-sm text-notion-text placeholder-notion-text-tertiary focus:border-blue-500 focus:outline-none"
+                      autoFocus
+                    />
+                    <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                      {isSearching ? (
+                        <Loader2 size={16} className="animate-spin text-notion-text-tertiary" />
+                      ) : (
+                        <Search size={16} className="text-notion-text-tertiary" />
+                      )}
+                    </div>
+                  </div>
+
+                  {searchError && (
+                    <div className="flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+                      <AlertCircle size={14} />
+                      {searchError}
+                    </div>
+                  )}
+
+                  {searchResults.length > 0 && (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-notion-text-secondary">
+                          {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                        </p>
+                        <button
+                          onClick={toggleAllSearchResults}
+                          className="flex items-center gap-1.5 text-xs text-notion-text-secondary hover:text-notion-text"
+                        >
+                          {selectedSearchIds.size === searchResults.length ? (
+                            <CheckSquare size={14} />
+                          ) : (
+                            <Square size={14} />
+                          )}
+                          Select all
+                        </button>
+                      </div>
+
+                      <div className="max-h-96 space-y-2 overflow-y-auto">
+                        {searchResults.map((result) => (
+                          <div
+                            key={result.paperId}
+                            onClick={() => toggleSearchResult(result.paperId)}
+                            className={`cursor-pointer rounded-lg border p-3 transition-colors ${
+                              selectedSearchIds.has(result.paperId)
+                                ? 'border-blue-500 bg-blue-50'
+                                : 'border-notion-border bg-white hover:border-blue-300 hover:bg-blue-50/50'
+                            }`}
+                          >
+                            <div className="flex items-start gap-2">
+                              <div className="mt-0.5">
+                                {selectedSearchIds.has(result.paperId) ? (
+                                  <CheckSquare size={16} className="text-blue-600" />
+                                ) : (
+                                  <Square size={16} className="text-notion-text-tertiary" />
+                                )}
+                              </div>
+                              <div className="flex-1 space-y-1">
+                                <h4 className="text-sm font-medium text-notion-text">
+                                  {result.title}
+                                </h4>
+                                <p className="text-xs text-notion-text-secondary">
+                                  {result.authors.map((a) => a.name).join(', ')}
+                                  {result.year && ` · ${result.year}`}
+                                </p>
+                                {result.abstract && (
+                                  <p className="line-clamp-2 text-xs text-notion-text-tertiary">
+                                    {result.abstract}
+                                  </p>
+                                )}
+                                <div className="flex items-center gap-2 text-xs text-notion-text-tertiary">
+                                  {result.citationCount > 0 && (
+                                    <span>{result.citationCount} citations</span>
+                                  )}
+                                  {result.externalIds.ArXiv && (
+                                    <span className="rounded bg-notion-tag-blue px-1.5 py-0.5">
+                                      arXiv:{result.externalIds.ArXiv}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               )}
 
               {/* Chrome History Tab */}
@@ -755,7 +988,17 @@ export function ImportModal({
                   >
                     Cancel
                   </button>
-                  {tab === 'chrome' ? (
+                  {tab === 'search' ? (
+                    <button
+                      onClick={handleImportSearchResults}
+                      disabled={selectedSearchIds.size === 0}
+                      className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white hover:opacity-80 disabled:opacity-50"
+                    >
+                      <Download size={14} />
+                      Import {selectedSearchIds.size > 0 ? `${selectedSearchIds.size} ` : ''}
+                      {selectedSearchIds.size === 1 ? 'paper' : 'papers'}
+                    </button>
+                  ) : tab === 'chrome' ? (
                     <button
                       onClick={handleScan}
                       className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white hover:opacity-80"

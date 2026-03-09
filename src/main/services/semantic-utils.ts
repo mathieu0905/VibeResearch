@@ -83,7 +83,7 @@ export function splitTextIntoChunks(
   return chunks;
 }
 
-export const MIN_SEMANTIC_CHUNK_SIMILARITY = 0.35;
+export const MIN_SEMANTIC_CHUNK_SIMILARITY = 0.25; // Lowered from 0.35 to improve recall for short queries
 
 export function isSemanticScoreMatch(score: number): boolean {
   return Number.isFinite(score) && score >= MIN_SEMANTIC_CHUNK_SIMILARITY;

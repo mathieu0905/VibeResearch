@@ -14,6 +14,8 @@ import type {
   AgentTodoRunItem,
   AgentTodoMessageItem,
   AgentToolKind,
+  GraphData,
+  RecommendationItem,
 } from '@shared';
 
 declare global {
@@ -89,6 +91,20 @@ export interface ScanResult {
   papers: Array<{ arxivId: string; title: string; url: string }>;
   newCount: number;
   existingCount: number;
+}
+
+export interface SearchResultItem {
+  paperId: string;
+  title: string;
+  authors: Array<{ name: string }>;
+  year: number | null;
+  abstract: string | null;
+  citationCount: number;
+  externalIds: {
+    ArXiv?: string;
+    DOI?: string;
+  };
+  url: string | null;
 }
 
 export interface PaperItem {
@@ -189,6 +205,12 @@ export interface AgenticSearchResult {
   papers: AgenticSearchPaper[];
 }
 
+export interface SemanticSearchSnippet {
+  type: 'title' | 'tag' | 'abstract' | 'sentence' | 'chunk';
+  text: string;
+  score: number;
+}
+
 export interface SemanticSearchPaper {
   id: string;
   shortId: string;
@@ -202,6 +224,8 @@ export interface SemanticSearchPaper {
   matchedChunks: string[];
   processingStatus?: string;
   processingError?: string | null;
+  matchSignals?: Array<'title' | 'tag' | 'abstract' | 'sentence' | 'chunk'>;
+  matchedSnippets?: SemanticSearchSnippet[];
 }
 
 export interface SemanticSearchResult {
@@ -360,9 +384,16 @@ export interface ProxyScope {
 export interface SemanticSearchSettings {
   enabled: boolean;
   autoProcess: boolean;
+  autoEnrich: boolean;
   autoStartOllama: boolean;
   baseUrl: string;
   embeddingModel: string;
+  embeddingProvider: 'builtin' | 'ollama';
+}
+
+export interface BuiltinModelStatus {
+  ready: boolean;
+  error?: string;
 }
 
 export interface SemanticEmbeddingTestResult {
@@ -413,6 +444,7 @@ export interface SemanticDebugResult {
   embeddingModel: string;
   enabled: boolean;
   autoProcess: boolean;
+  autoEnrich: boolean;
   autoStartOllama: boolean;
   startedOllama: boolean;
   health: SemanticDebugProbeResult;
@@ -533,6 +565,10 @@ export interface CollectionItem {
   updatedAt: string;
 }
 
+export interface RecommendationRefreshResult {
+  generatedAt: string;
+  count: number;
+}
 export interface ResearchProfile {
   tagDistribution: Array<{ name: string; category: string; count: number }>;
   yearDistribution: Array<{ year: number; count: number }>;
@@ -591,6 +627,8 @@ export const ipc = {
   agenticSearch: (query: string) => invoke<AgenticSearchResult>('papers:agenticSearch', query),
   semanticSearch: (query: string, limit?: number) =>
     invoke<SemanticSearchResult>('papers:semanticSearch', query, limit),
+  searchPapers: (query: string, limit?: number) =>
+    invoke<{ results: SearchResultItem[]; total: number }>('papers:search', query, limit),
   getSourceEvents: (paperId: string) => invoke<SourceEvent[]>('papers:getSourceEvents', paperId),
   exportBibtex: (paperIds: string[]) => invoke<string>('papers:exportBibtex', paperIds),
 
@@ -748,6 +786,7 @@ export const ipc = {
     invoke<SemanticModelPullJob>('settings:startSemanticModelPull', settings),
   listSemanticModelPullJobs: () =>
     invoke<SemanticModelPullJob[]>('settings:listSemanticModelPullJobs'),
+  getBuiltinModelStatus: () => invoke<BuiltinModelStatus>('settings:getBuiltinModelStatus'),
 
   // Shell
   openInEditor: (dirPath: string) =>
@@ -850,6 +889,43 @@ export const ipc = {
     invoke<CollectionItem[]>('collections:getForPaper', paperId),
   getResearchProfile: (collectionId: string) =>
     invoke<ResearchProfile>('collections:researchProfile', collectionId),
+
+  // Recommendations
+  listRecommendations: (filter?: { status?: 'new' | 'ignored' | 'saved' }) =>
+    invoke<RecommendationItem[]>('recommendations:list', filter ?? {}),
+  refreshRecommendations: (limit?: number) =>
+    invoke<RecommendationRefreshResult>('recommendations:refresh', limit),
+  ignoreRecommendation: (candidateId: string) =>
+    invoke<{ success: boolean }>('recommendations:ignore', candidateId),
+  saveRecommendation: (candidateId: string) =>
+    invoke<PaperItem>('recommendations:save', candidateId),
+  trackRecommendationOpened: (candidateId: string) =>
+    invoke<{ success: boolean }>('recommendations:opened', candidateId),
+
+  // Citations & Graph
+  extractCitations: (paper: {
+    id: string;
+    shortId: string;
+    title: string;
+    sourceUrl?: string | null;
+  }) =>
+    invoke<{ referencesFound: number; citationsFound: number; matched: number }>(
+      'citations:extract',
+      paper,
+    ),
+  getCitationsForPaper: (paperId: string) =>
+    invoke<{ references: unknown[]; citedBy: unknown[] }>('citations:getForPaper', paperId),
+  getGraphData: (options?: { includeGhostNodes?: boolean }) =>
+    invoke<GraphData>('citations:getGraphData', options),
+  getGraphForPaper: (paperId: string, depth?: number, includeGhostNodes?: boolean) =>
+    invoke<GraphData>('citations:getGraphForPaper', paperId, depth, includeGhostNodes),
+  findCitationPath: (fromId: string, toId: string) =>
+    invoke<string[] | null>('citations:findPath', fromId, toId),
+  resolveUnmatched: () => invoke<{ resolved: number }>('citations:resolveUnmatched'),
+  getCitationCounts: (paperId: string) =>
+    invoke<{ references: number; citedBy: number }>('citations:getCounts', paperId),
+  exportGraph: (graphData: unknown) =>
+    invoke<{ saved: boolean; filePath?: string }>('citations:exportGraph', graphData),
 
   // Token Usage
   getTokenUsageSummary: () =>

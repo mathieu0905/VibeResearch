@@ -15,9 +15,11 @@ export interface ProxyScope {
 export interface SemanticSearchSettings {
   enabled: boolean;
   autoProcess: boolean;
+  autoEnrich: boolean;
   autoStartOllama: boolean;
   baseUrl: string;
   embeddingModel: string;
+  embeddingProvider: 'builtin' | 'ollama';
 }
 
 interface AppSettings {
@@ -38,13 +40,19 @@ const DEFAULT_PROXY_SCOPE: ProxyScope = {
 const DEFAULT_SEMANTIC_SEARCH_SETTINGS: SemanticSearchSettings = {
   enabled: true,
   autoProcess: true,
+  autoEnrich: true,
   autoStartOllama: true,
   baseUrl: 'http://127.0.0.1:11434',
   embeddingModel: 'nomic-embed-text',
+  embeddingProvider: 'builtin',
 };
 
 function getSettingsPath(): string {
   return getAppSettingsPath();
+}
+
+function getDefaultPapersDir(): string {
+  return getPapersBaseDir();
 }
 
 function load(): AppSettings {
@@ -54,19 +62,29 @@ function load(): AppSettings {
       const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as AppSettings;
       // Only reset papersDir if it's empty
       if (!saved.papersDir || saved.papersDir.trim() === '') {
-        saved.papersDir = DEFAULT_PAPERS_DIR;
+        saved.papersDir = getDefaultPapersDir();
       }
       saved.semanticSearch = {
         ...DEFAULT_SEMANTIC_SEARCH_SETTINGS,
         ...saved.semanticSearch,
       };
+      // Migration: if user had custom Ollama settings but no explicit embeddingProvider,
+      // default them to 'ollama' to preserve their existing setup
+      if (
+        saved.semanticSearch &&
+        !saved.semanticSearch.embeddingProvider &&
+        (saved.semanticSearch.baseUrl !== DEFAULT_SEMANTIC_SEARCH_SETTINGS.baseUrl ||
+          saved.semanticSearch.embeddingModel !== DEFAULT_SEMANTIC_SEARCH_SETTINGS.embeddingModel)
+      ) {
+        saved.semanticSearch.embeddingProvider = 'ollama';
+      }
       return saved;
     }
   } catch {
     // ignore
   }
   return {
-    papersDir: DEFAULT_PAPERS_DIR,
+    papersDir: getDefaultPapersDir(),
     editorCommand: 'code',
     proxy: undefined,
     semanticSearch: DEFAULT_SEMANTIC_SEARCH_SETTINGS,

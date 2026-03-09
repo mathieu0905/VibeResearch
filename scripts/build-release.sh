@@ -48,8 +48,11 @@ if [ -d "$ROOT_DIR/node_modules/.prisma/client" ]; then
 fi
 
 echo "==> Step 3: Package Mac DMG (arm64 + x64)"
-ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/" \
-  npx electron-builder --mac --publish never
+# Use npmmirror for faster downloads in China; skip on CI where global CDN is faster
+if [ -z "$CI" ]; then
+  export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+fi
+npx electron-builder --mac --publish never
 
 # Cleanup: remove the temporary _prisma directory after packaging
 rm -rf "$ROOT_DIR/node_modules/_prisma"

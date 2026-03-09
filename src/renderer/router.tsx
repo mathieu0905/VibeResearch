@@ -7,6 +7,8 @@ import { ReaderPage } from './pages/papers/reader/page';
 import { NotesPage } from './pages/papers/notes/page';
 import { ProjectsPage, ProjectDetailPage } from './pages/projects/page';
 import { CollectionPage } from './pages/collections/page';
+import { GraphPage } from './pages/graph/page';
+import { RecommendationsPage } from './pages/recommendations/page';
 import { SettingsPage } from './pages/settings/page';
 import { AgentTodosPage } from './pages/agent-todos/page';
 import { AgentTodoDetailPage } from './pages/agent-todos/[id]/page';
@@ -49,6 +51,8 @@ export const router = createHashRouter([
       { path: 'papers/:id/reader', element: <ReaderPage />, handle: { fullWidth: true } },
       { path: 'papers/:id/notes', element: <NotesPage />, handle: { fullWidth: true } },
       { path: 'collections/:id', element: <CollectionPage />, handle: { fullWidth: true } },
+      { path: 'graph', element: <GraphPage />, handle: { fullWidth: true } },
+      { path: 'recommendations', element: <RecommendationsPage />, handle: { fullWidth: true } },
       { path: 'projects', element: <ProjectsPage /> },
       { path: 'projects/:id', element: <ProjectDetailPage /> },
       { path: 'agent-todos', element: <AgentTodosPage /> },

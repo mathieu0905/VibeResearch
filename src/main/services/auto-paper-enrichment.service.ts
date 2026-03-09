@@ -1,0 +1,91 @@
+import { PapersRepository, ReadingRepository } from '@db';
+import { getSemanticSearchSettings } from '../store/app-settings-store';
+import { ReadingService } from './reading.service';
+import { tagPaper } from './tagging.service';
+
+const AUTO_ENRICH_CONCURRENCY = Math.max(
+  1,
+  Number.parseInt(process.env.VIBE_AUTO_ENRICH_CONCURRENCY ?? '2', 10) || 2,
+);
+
+const queue: string[] = [];
+const queuedIds = new Set<string>();
+const inFlightIds = new Set<string>();
+let activeWorkers = 0;
+
+function shouldSkipAutomaticEnrichment() {
+  return process.env.VITEST === 'true' && process.env.VIBE_ENABLE_AUTO_ENRICH_IN_TESTS !== '1';
+}
+
+async function enrichPaper(paperId: string) {
+  inFlightIds.add(paperId);
+
+  try {
+    const papersRepository = new PapersRepository();
+    const readingRepository = new ReadingRepository();
+    const readingService = new ReadingService();
+
+    const paper = await papersRepository.findById(paperId);
+    if (!paper) return;
+
+    const existingNotes = await readingRepository.listByPaper(paperId);
+    const hasAnalysis = existingNotes.some((note) => note.title.startsWith('Analysis:'));
+
+    if (!hasAnalysis) {
+      try {
+        await readingService.analyzePaper(
+          {
+            paperId,
+            pdfUrl: paper.pdfUrl ?? undefined,
+          },
+          () => undefined,
+          undefined,
+          () => undefined,
+        );
+      } catch (error) {
+        console.error('[auto-enrich] Analysis failed:', paperId, error);
+      }
+    }
+
+    if (!paper.tagNames?.length) {
+      try {
+        await tagPaper(paperId, { managedStatus: false });
+      } catch (error) {
+        console.error('[auto-enrich] Auto tag failed:', paperId, error);
+      }
+    }
+  } finally {
+    inFlightIds.delete(paperId);
+  }
+}
+
+async function drainQueue() {
+  while (activeWorkers < AUTO_ENRICH_CONCURRENCY && queue.length > 0) {
+    activeWorkers += 1;
+    void (async () => {
+      try {
+        while (queue.length > 0) {
+          const paperId = queue.shift();
+          if (!paperId) continue;
+          queuedIds.delete(paperId);
+          await enrichPaper(paperId);
+        }
+      } finally {
+        activeWorkers -= 1;
+        if (queue.length > 0) {
+          void drainQueue();
+        }
+      }
+    })();
+  }
+}
+
+export function scheduleAutoPaperEnrichment(paperId: string) {
+  if (shouldSkipAutomaticEnrichment()) return;
+  const settings = getSemanticSearchSettings();
+  if (!settings.autoEnrich) return;
+  if (queuedIds.has(paperId) || inFlightIds.has(paperId)) return;
+  queuedIds.add(paperId);
+  queue.push(paperId);
+  void drainQueue();
+}

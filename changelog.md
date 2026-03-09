@@ -1,5 +1,91 @@
 # Changelog
 
+## 2026-03-09 (session 35)
+
+### fix: Rebuild better-sqlite3 for Electron installs
+
+- **Scope**: `package.json`, `scripts/ensure-native-modules.mjs`
+- **Problem**: The app initializes a vector index through `better-sqlite3` at startup, but `postinstall` only ran `prisma generate`. When dependencies were installed with a standalone Node.js runtime first, `better-sqlite3` stayed compiled for that Node ABI and Electron 35 later failed to load it with `NODE_MODULE_VERSION` mismatch errors.
+- **Fix**: Added a dedicated `rebuild:native` script and an `ensure:native` guard script. `postinstall` now runs the guard after `prisma generate`, and `npm run dev` triggers the same guard through `predev`, so other devices can auto-detect ABI mismatches and rebuild `better-sqlite3` before startup.
+
+## 2026-03-09 (session 43)
+
+### feat: Route short semantic queries through sentence and lexical evidence
+
+- **Scope**: `prisma/schema.prisma`, `src/main/services/semantic-search.service.ts`, `src/main/services/search-unit-*.ts`, `src/main/services/paper-processing.service.ts`, `src/main/services/papers.service.ts`, `src/main/index.ts`, `src/db/repositories/papers.repository.ts`, `tests/integration/semantic-search.test.ts`
+- **Problem**: Short semantic queries were matched only against chunk embeddings, so improving recall depended on lowering a global threshold and introduced noisy results.
+- **Solution**: Added `PaperSearchUnit` records for title/abstract/sentence indexing, local FTS + vector indices for search units, query-length routing, mixed lexical + sentence + chunk retrieval, and paper-level fusion/reranking. Title updates now rebuild search units so lexical/sentence evidence stays fresh.
+- **Validation**: Added search-unit and semantic-search tests covering short-term routing, sentence preference, and title rebuild behavior.
+
+### feat: Bundle embedding model for offline-first semantic search
+
+- **Scope**: `models/`, `scripts/download-model.sh`, `electron-builder.yml`, `src/main/services/builtin-embedding-provider.ts`, `src/main/services/embedding-provider.ts`, `src/renderer/pages/settings/page.tsx`, `src/renderer/hooks/use-ipc.ts`
+- **Problem**: Built-in embedding provider downloaded ~86MB ONNX model from Hugging Face on first use, requiring network access.
+- **Solution**: Pre-bundle `Xenova/all-MiniLM-L6-v2` model files (config.json, tokenizer_config.json, tokenizer.json, onnx/model.onnx) directly in the repository under `models/`. Provider now uses `env.localModelPath` + `env.allowRemoteModels = false` for true offline operation. Removed download progress UI from Settings. Added `extraResources` config in electron-builder to include models in packaged app. Added `scripts/download-model.sh` for CI/fresh clone recovery.
+- **Validation**: All tests pass (model loads from bundled files without network).
+
+### fix: Serialize ONNX embedding requests to prevent memory crashes
+
+- **Scope**: `src/main/services/builtin-embedding-provider.ts`, `.env`
+- **Problem**: Concurrent embedding requests (from parallel paper processing) caused ONNX Runtime memory allocation failures (`BFCArena::Alloc` crash with `EXC_BREAKPOINT`).
+- **Solution**: Added `embeddingQueue` promise chain to serialize all `embedTexts()` calls through `_embedTextsInternal()`. Multiple workers can now safely call the shared `localSemanticService` instance without triggering concurrent ONNX inference. Increased default concurrency to 3 workers.
+- **Validation**: Builtin embedding tests pass. App no longer crashes on startup with parallel processing enabled.
+
+### perf: Optimize ONNX Runtime memory usage
+
+- **Scope**: `src/main/services/builtin-embedding-provider.ts`
+- **Problem**: ONNX Runtime memory allocation still caused crashes even with serialized requests.
+- **Solution**: Reduced batch size from 32 to 8, disabled ONNX memory arena (`enableCpuMemArena: false`), set single-threaded execution (`numThreads: 1`), and configured conservative memory allocation strategy.
+- **Validation**: Builtin embedding tests pass with lower memory footprint.
+
+### fix: Lower semantic search similarity threshold for better recall
+
+- **Scope**: `src/main/services/semantic-utils.ts`
+- **Problem**: Semantic search failed to return results for short queries like "OpenHarmony" because similarity scores (0.21-0.34) were below the 0.35 threshold. Short queries naturally have lower cosine similarity with long document chunks.
+- **Solution**: Lowered `MIN_SEMANTIC_CHUNK_SIMILARITY` from 0.35 to 0.25 to improve recall for short queries while maintaining reasonable precision.
+- **Validation**: Manual testing shows "OpenHarmony" query now returns relevant papers (HapRepair, Phantom Rendering Detection) with similarity scores 0.27-0.34.
+
+## 2026-03-09 (session 42)
+
+### feat: Add Literature Graph with citation extraction and visualization
+
+- **Scope**: `prisma/schema.prisma`, `src/db/repositories/citations.repository.ts`, `src/main/services/citation-extraction.service.ts`, `src/main/services/citation-graph.service.ts`, `src/main/ipc/citations.ipc.ts`, `src/renderer/pages/graph/page.tsx`, `src/renderer/components/graph/`, `src/renderer/pages/papers/overview/page.tsx`
+- **Problem**: No way to visualize citation relationships between papers or discover key research nodes.
+- **Solution**: Full citation graph feature with three layers:
+  - **Data layer**: `PaperCitation` model (Prisma), `CitationsRepository` for CRUD, `CitationExtractionService` using Semantic Scholar API (`/paper/{id}?fields=references,citations`) with arXiv ID + title matching to local papers, `CitationGraphService` with PageRank computation and BFS path finding.
+  - **Visualization layer**: Interactive graph page using Cytoscape.js with 4 layout modes (force-directed, dagre hierarchy, circle, grid). Ghost nodes for external references (dashed, semi-transparent). Node detail panel with references/cited-by lists. Export to PNG/JSON.
+  - **Integration**: "Extract Citations" button on paper overview page, citation count display with "View in Graph" link, Graph nav item in sidebar.
+- **Types**: `GraphNode`, `GraphEdge`, `GraphData` added to shared domain types.
+- **Tests**: 14 integration tests covering Citation CRUD, graph assembly (5 papers + 8 edges), PageRank (chain topology), BFS path finding, cascade delete, unmatched resolution, and full import-to-graph chain.
+- **Validation**: All 181 tests pass (14 new + 167 existing).
+
+## 2026-03-09 (session 41)
+
+### feat: Add CI/CD release workflow for automated GitHub Releases
+
+- **Scope**: `.github/workflows/release.yml`, `scripts/build-release.sh`, `scripts/build-release-linux.sh`
+- **Problem**: No automated release pipeline — macOS and Linux builds had to be created manually.
+- **Solution**: Created `.github/workflows/release.yml` triggered on `v*` tags with 4 jobs:
+  - `validate`: lint + test + build (same as CI)
+  - `build-mac`: builds .dmg and .zip on `macos-latest` (arm64)
+  - `build-linux`: builds .AppImage on `ubuntu-latest`
+  - `publish`: collects all artifacts and creates a GitHub Release via `softprops/action-gh-release@v2`
+- **Build script fix**: Conditioned `ELECTRON_MIRROR` (npmmirror.com) to only apply outside CI, so GitHub Actions uses the faster global Electron CDN.
+
+## 2026-03-09 (session 40)
+
+### feat: Add built-in embedding provider for zero-dependency semantic search
+
+- **Scope**: `src/main/services/`, `src/main/store/app-settings-store.ts`, `src/main/ipc/providers.ipc.ts`, `src/renderer/pages/settings/page.tsx`, `scripts/build-main.mjs`, `tests/integration/builtin-embedding.test.ts`
+- **Problem**: Semantic search required Ollama to be installed and running, raising the usage barrier for new users.
+- **Solution**: Introduced `EmbeddingProvider` interface with two implementations:
+  - **BuiltinEmbeddingProvider**: Uses `@huggingface/transformers` with `all-MiniLM-L6-v2` (384-dim, ~80MB) for zero-config local embedding. Model cached in `{storageDir}/models/`, lazy-loaded on first use with download progress broadcast.
+  - **OllamaEmbeddingProvider**: Extracted existing Ollama HTTP call logic into the provider interface.
+- **LocalSemanticService** refactored to delegate to the active provider via `getOrCreateProvider()` / `switchProvider()`.
+- **Settings**: Added `embeddingProvider: 'builtin' | 'ollama'` field (default: `'builtin'`). Migration preserves `'ollama'` for users with custom Ollama config. Provider switch triggers index rebuild (same flow as model change).
+- **UI**: Settings Semantic tab now shows provider selector (Built-in recommended / Ollama advanced) with conditional Ollama settings display and provider switch warning.
+- **Tests**: Integration tests for provider interface, builtin vector generation (384-dim, normalized), semantic similarity, batch processing, and provider switching.
+
 ## 2026-03-09 (session 39)
 
 ### fix: Skip unnecessary Prisma db push on startup via schema hash caching
@@ -2204,3 +2290,170 @@
 - **Rationale**: Users want to see tags appearing in real-time as papers are being tagged, not just at the end
 - **Test Design**: Run auto-tagging on multiple untagged papers, observe tags appearing with animation
 - **Validation**: TypeScript compiles
+
+## 2026-03-09
+
+### Fix: Faster Local Semantic Processing Through Concurrency
+
+- **Scope**: `src/main/services/paper-processing.service.ts`, `tests/integration/paper-processing.test.ts`
+- **Changes**:
+  - Replaced the single-worker paper processing queue with a small bounded worker pool
+  - Allowed metadata extraction to run alongside chunking and embedding instead of blocking the critical path
+  - Added regression tests covering cross-paper concurrency and non-blocking metadata extraction
+- **Rationale**: Built-in embeddings felt slow largely because papers were processed strictly one-by-one and metadata work blocked embedding work unnecessarily
+- **Test Design**: Mock paper processing dependencies and verify later papers and embeddings can proceed before earlier metadata/text tasks finish
+- **Validation**: Targeted Vitest paper-processing integration tests
+
+### Test: Expand Semantic Processing Regression Coverage
+
+- **Scope**: `tests/integration/builtin-embedding.test.ts`, `tests/integration/paper-processing.test.ts`
+- **Changes**:
+  - Added a regression test proving built-in embedding requests are serialized through a single pipeline instance under concurrent calls
+  - Added a paper-processing failure-path test for papers without any local or inferred PDF source
+  - Added a vec-index sync test verifying chunk embeddings are forwarded after chunk replacement
+- **Rationale**: The recent semantic-processing work introduced new concurrency and queueing behavior that needed explicit regression coverage around serialization, failure handling, and index syncing
+- **Test Design**: Mock service dependencies and assert observable side effects at the repository and vec-index boundaries
+- **Validation**: `npx vitest run tests/integration/builtin-embedding.test.ts tests/integration/paper-processing.test.ts`
+
+### Test: Add Agent Todo Service Coverage
+
+- **Scope**: `tests/integration/agent-todo.service.test.ts`
+- **Changes**:
+  - Added service-level tests covering JSON decoding for agent/todo payloads
+  - Added regression coverage for agent config serialization during create and update flows
+  - Added run-history cleanup coverage to ensure `lastRunId` references are cleared before deleting runs
+  - Added cron toggle and message forwarding coverage around repository and scheduler boundaries
+- **Rationale**: The agent todo flow had no direct regression coverage despite owning task configuration, scheduling, and run lifecycle state transitions
+- **Test Design**: Mock repository, scheduler, and runner dependencies to assert observable persistence and orchestration behavior without requiring Electron IPC
+- **Validation**: `npx vitest run tests/integration/agent-todo.service.test.ts`
+
+### Feat: Auto Analyze and Tag Newly Added Papers
+
+- **Scope**: `src/main/services/auto-paper-enrichment.service.ts`, `src/main/services/papers.service.ts`, `src/main/services/download.service.ts`, `src/main/services/ingest.service.ts`, `tests/integration/auto-paper-enrichment.test.ts`
+- **Changes**:
+  - Added a background auto-enrichment queue that runs paper analysis and auto-tagging for newly added papers
+  - Triggered the queue from paper creation, local PDF import, and successful PDF download paths
+  - Replaced ingest’s broad post-import batch-tagging kick with per-paper auto-enrichment scheduling to avoid duplicate work
+  - Added regression tests for queue deduplication, skip behavior, and paper-service trigger hooks
+- **Rationale**: After adding a paper, users expect analysis notes and tags to appear automatically without manually running two separate actions
+- **Test Design**: Mock repository and AI service boundaries to verify new papers enqueue exactly once and existing analysis/tags are not redundantly regenerated
+- **Validation**: `npx vitest run tests/integration/auto-paper-enrichment.test.ts`
+
+### Feature: External Recommendations Page with Candidate Pool
+
+- **Scope**: `prisma/schema.prisma`, recommendation service/IPC stack, `src/renderer/pages/recommendations/page.tsx`
+- **Changes**:
+  - Added persistent recommendation candidates, results, and feedback models for external paper discovery
+  - Implemented a recommendation pipeline that builds a profile from local papers/tags, pulls candidates from Semantic Scholar and arXiv, deduplicates against the local library, and ranks results with rule-based explanations
+  - Added recommendation IPC handlers and a dedicated Recommendations page with refresh, open, ignore, and save-to-library actions
+  - Reused existing paper creation/download flows so accepted recommendations can enter the local library cleanly
+- **Rationale**: Recommendations are more valuable when they can discover relevant papers outside the existing local library rather than only resurfacing already imported papers
+- **Test Design**: Validate through Prisma client generation and production build to ensure schema, main-process wiring, and renderer integration compile together
+- **Validation**: `npx prisma generate`, `npm run build`
+
+### Feat: Add Toggle for Auto Analyze and Auto Tag
+
+- **Scope**: `src/main/store/app-settings-store.ts`, `src/main/services/auto-paper-enrichment.service.ts`, `src/main/services/providers.service.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`, `tests/integration/auto-paper-enrichment.test.ts`
+- **Changes**:
+  - Added a persisted `autoEnrich` setting under semantic settings, defaulting to enabled
+  - Added a Settings UI toggle for automatic analysis note generation and auto-tagging after paper add
+  - Made the auto-enrichment queue respect the saved toggle before enqueueing work
+  - Added regression coverage for the disabled-setting path
+- **Rationale**: Some users want automatic enrichment by default, while others prefer full manual control over AI-triggered actions
+- **Test Design**: Mock settings and service boundaries to verify auto-enrichment is skipped entirely when the toggle is off
+- **Validation**: `npx vitest run tests/integration/auto-paper-enrichment.test.ts && npm run build:main`
+
+### Improvement: Feedback-aware Recommendation Ranking
+
+- **Scope**: `src/main/services/recommendation.service.ts`, `src/db/repositories/recommendations.repository.ts`
+- **Changes**:
+  - Folded recommendation feedback history (`opened`, `saved`, `ignored`) back into the ranking profile
+  - Added positive topic/author boosts and negative topic dampening so recommendations react to prior user actions
+  - Upgraded recommendation reasons to explain when a result is elevated because of earlier engagement with a topic or author
+- **Rationale**: A recommendation system should improve after users interact with results rather than recomputing each refresh from only the local library snapshot
+- **Test Design**: Validate the updated recommendation pipeline through production build and formatter checks
+- **Validation**: `npm run build`, `npx prettier --check src/db/repositories/recommendations.repository.ts src/main/services/recommendation.service.ts`
+
+### Improvement: Show Triggering Local Paper on Recommendation Cards
+
+- **Scope**: recommendation schema/repository/service stack, `src/renderer/pages/recommendations/page.tsx`
+- **Changes**:
+  - Persisted the local seed paper title that most likely triggered each recommendation result
+  - Exposed the trigger paper through shared recommendation types and renderer IPC data
+  - Added a `Triggered by` line on recommendation cards so users can see which local paper likely led to the suggestion
+- **Rationale**: Showing the local paper connection makes recommendations easier to trust and gives users a clearer mental model of why a candidate appeared
+- **Test Design**: Validate schema/client/build integration and confirm the renderer compiles with the new trigger field
+- **Validation**: `npx prisma generate`, `npm run build`
+
+### Improvement: Click Through to Triggering Local Paper
+
+- **Scope**: recommendation result schema/types/service, `src/renderer/pages/recommendations/page.tsx`
+- **Changes**:
+  - Added `triggerPaperId` alongside `triggerPaperTitle` in recommendation results
+  - Upgraded trigger selection to retain the originating local paper identity instead of only its title
+  - Made the `Triggered by` line on recommendation cards clickable so it navigates directly to the local paper overview page
+- **Rationale**: Once users can see which library paper caused a recommendation, the next natural step is letting them jump straight to that local context
+- **Test Design**: Validate schema generation, formatting, and app build after threading the trigger paper id through the stack
+- **Validation**: `npx prisma generate`, `npm run build`
+
+### Fix: Allow Prisma db push with Derived SQLite Index Tables Present
+
+- **Scope**: `src/main/index.ts`
+- **Changes**:
+  - Expanded the pre-`db push` cleanup step to drop both sqlite-vec tables and FTS5 derived search-unit tables before Prisma introspects the SQLite schema
+- **Rationale**: Prisma schema description can fail on SQLite databases that contain virtual/derived indexing tables even when the underlying database file is otherwise healthy
+- **Test Design**: Validate the app still builds after updating the startup database bootstrap path
+- **Validation**: `npm run build`
+
+### Fix: Restore Recommendation Refresh After Trigger Paper Refactor
+
+- **Scope**: `src/main/services/recommendation.service.ts`
+- **Changes**:
+  - Replaced the stale `findTriggerPaperTitle` helper shape with a `findTriggerPaper` helper that returns the full local seed paper record
+  - Switched trigger matching to use `profile.seedPapers` instead of the removed `seedTitles` field
+  - Preserved the fallback to the first seed paper so recommendation cards still show a trigger when no direct text match is found
+- **Rationale**: Recommendation refresh was crashing because scoring still called a helper removed during the trigger-paper ID refactor
+- **Test Design**: Validate the main-process TypeScript build after repairing the recommendation scoring helper path
+- **Validation**: `npm run build:main`
+
+### Fix: Sync Recommendation Trigger Paper ID with Prisma Schema
+
+- **Scope**: `prisma/schema.prisma`, recommendation persistence stack
+- **Changes**:
+  - Added the missing `triggerPaperId` field to the `RecommendationResult` Prisma model
+  - Kept recommendation result persistence aligned with the trigger-paper ID now written by the repository and service layer
+- **Rationale**: Recommendation refresh was still failing at runtime because Prisma did not recognize `triggerPaperId` during `recommendationResult.upsert()`
+- **Test Design**: Regenerate Prisma client and rebuild the main process after updating the schema
+- **Validation**: `npx prisma generate`, `npm run build:main`
+
+### Fix: Show Local Papers in Citation Graph Before Extraction Completes
+
+- **Scope**: `src/main/services/citation-graph.service.ts`, `src/db/repositories/citations.repository.ts`, `tests/integration/citations.test.ts`
+- **Changes**:
+  - Seeded graph nodes from local library papers instead of deriving nodes only from `PaperCitation` rows
+  - Preserved isolated papers in both global graph and single-paper graph views when no citation edges exist yet
+  - Added an integration test covering the zero-citation case with `Attention Is All You Need`
+- **Rationale**: The graph was rendering empty whenever citation extraction had not populated `PaperCitation`, even though papers already existed in the library
+- **Test Design**: Validate the graph service returns isolated local nodes before any citation rows are created
+- **Validation**: `npx vitest run tests/integration/citations.test.ts`
+
+### Fix: Keep Citation Extraction Retryable on Semantic Scholar Rate Limits
+
+- **Scope**: `src/main/services/citation-extraction.service.ts`, `src/main/services/citation-processing.service.ts`, `tests/integration/citation-extraction.test.ts`
+- **Changes**:
+  - Raised explicit retryable errors for Semantic Scholar rate limits and upstream failures instead of silently returning zero citations
+  - Stopped background citation processing from marking papers as extracted when the failure is transient
+  - Added a regression test for the `429 Too Many Requests` path
+- **Rationale**: Papers were being permanently marked as citation-processed after temporary Semantic Scholar failures, leaving `PaperCitation` empty and preventing automatic retries
+- **Test Design**: Mock Semantic Scholar responses and verify the extraction service surfaces retryable failures
+- **Validation**: `npx vitest run tests/integration/citations.test.ts tests/integration/citation-extraction.test.ts`
+
+### Fix: Drop Search-Unit Vec Tables Before Prisma Schema Push
+
+- **Scope**: `src/main/index.ts`
+- **Changes**:
+  - Extended the pre-`prisma db push` cleanup list to also drop the derived `vec_search_units*` sqlite-vec tables
+  - Kept the existing cleanup for `vec_chunks*` and `paper_search_units_fts*` tables intact
+- **Rationale**: Prisma schema introspection failed during startup because the search-unit vector virtual tables remained in the SQLite database and Prisma cannot describe `vec0` virtual tables
+- **Test Design**: Reproduce `prisma db push` against a database containing vec/FTS derived tables, then verify the push succeeds after removing both vector table families
+- **Validation**: `node_modules/.bin/prisma db push --schema=prisma/schema.prisma --skip-generate --accept-data-loss` (verified on a copied DB after dropping both vec table families)

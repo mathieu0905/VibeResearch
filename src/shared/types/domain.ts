@@ -127,6 +127,67 @@ export interface ResearchProfile {
   totalPapers: number;
 }
 
+export type RecommendationSource = 'semantic_scholar' | 'arxiv';
+export type RecommendationStatus = 'new' | 'ignored' | 'saved';
+export type RecommendationFeedbackAction = 'opened' | 'ignored' | 'saved';
+
+export interface RecommendationItem {
+  candidateId: string;
+  title: string;
+  authors: string[];
+  abstract?: string | null;
+  source: RecommendationSource;
+  sourceUrl?: string | null;
+  pdfUrl?: string | null;
+  publishedAt?: string | null;
+  venue?: string | null;
+  citationCount?: number | null;
+  score: number;
+  relevanceScore: number;
+  freshnessScore: number;
+  noveltyScore: number;
+  qualityScore: number;
+  reason: string;
+  triggerPaperTitle?: string | null;
+  triggerPaperId?: string | null;
+  status: RecommendationStatus;
+  generatedAt: string;
+  isInLibrary: boolean;
+}
+
+// ── Graph types ──────────────────────────────────────────────────────────────
+
+export interface GraphNode {
+  id: string;
+  shortId: string;
+  title: string;
+  authors: string[];
+  year?: number;
+  tags: string[];
+  citationCount: number;
+  referenceCount: number;
+  pageRank?: number;
+  isInLibrary: boolean;
+}
+
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  confidence: number;
+  context?: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  stats: {
+    totalNodes: number;
+    totalEdges: number;
+    connectedComponents: number;
+  };
+}
+
 // IPC result types for error handling
 export interface IpcResult<T> {
   success: boolean;
