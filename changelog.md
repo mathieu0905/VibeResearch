@@ -2,6 +2,17 @@
 
 ## 2026-03-09
 
+### refactor: Merge normal and semantic search into unified search mode
+
+- **Scope**: `src/renderer/components/search-content.tsx`
+- **Change**: Consolidated the three-way search toggle (Normal / Semantic / Agentic) into a two-way toggle (Search / Agentic). The unified "Search" mode tries semantic search first, then automatically falls back to keyword-based (normal) search when embeddings are unavailable. This removes cognitive overhead for users who previously had to choose between normal and semantic modes.
+- **UI**: Updated mode selector, search icons, placeholders, and result card styling to reflect the unified search mode. Fallback warning restyled from violet to amber.
+
+### refactor: Merge Models and Semantic settings tabs
+
+- **Scope**: `src/renderer/pages/settings/page.tsx`
+- **Change**: Merged the separate "Semantic" settings tab into the "Models" tab. The semantic search & processing settings now appear as a section below the model configuration and above token usage, reducing the number of settings tabs from 6 to 5.
+
 ### feat: Dashboard Recent Comparisons card + Nested Collection Folders
 
 - **Scope**: `prisma/schema.prisma`, `src/db/repositories/collections.repository.ts`, `src/main/services/collections.service.ts`, `src/main/ipc/collections.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/components/dashboard-content.tsx`, `src/renderer/components/app-shell.tsx`, `src/renderer/components/collection-modal.tsx`, `src/renderer/pages/collections/page.tsx`
