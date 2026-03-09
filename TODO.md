@@ -12,21 +12,21 @@
 
 ### 优先级 P0（立即开始）
 
-- [ ] **Semantic Search 优化**
-  - 添加内置 embedding provider（不依赖 Ollama）
-  - 评估 ONNX Runtime / Transformers.js
-  - 实现 provider 抽象层
-- [ ] **文件上传增强**
-  - 支持多选 PDF
-  - 拖拽上传
-  - 进度条优化
+- [x] **Semantic Search 优化** ✅ (2026-03-09)
+  - ~~添加内置 embedding provider（不依赖 Ollama）~~
+  - ~~评估 ONNX Runtime / Transformers.js~~
+  - ~~实现 provider 抽象层~~
+- [x] **文件上传增强** ✅ (2026-03-09)
+  - ~~支持多选 PDF~~
+  - ~~拖拽上传~~
+  - ~~进度条优化~~
 - [ ] **测试覆盖率提升**
   - 为每个新模块编写集成测试
   - 使用 `requiresModelIt` 处理 API 依赖
 
-- [] **Paper分类**
-  - 分类，我的paper，我感兴趣的paper，等等！
-  - 基于paper分类刻画画像
+- [x] **Paper分类（Collections）** ✅ (2026-03-09)
+  - ~~分类，我的paper，我感兴趣的paper，等等！~~
+  - ~~基于paper分类刻画画像（Research Profile）~~
 
 ### 优先级 P1（第二阶段）
 
@@ -39,39 +39,38 @@
   - 自动重试机制
   - 日志收集
 
-## 模块 A：智能文献图谱 (Literature Graph)
-
-**负责人：** _待分配_
+## 模块 A：智能文献图谱 (Literature Graph) ✅ (2026-03-09)
 
 **目标：** 可视化论文引用关系，构建知识网络
 
-### Phase 1: 数据层 (Week 1-2)
+### Phase 1: 数据层 ✅
 
-- [ ] 设计 `PaperCitation` 表（schema.prisma）
-  - `id`, `sourcePaperId`, `targetPaperId`, `citationType`, `context`
-- [ ] 实现 citation 解析服务（`citation-parser.service.ts`）
-  - 从 PDF 提取 References 章节
-  - 解析引用格式（APA/IEEE/etc）
-  - 匹配已有论文或创建占位符
-- [ ] 添加 IPC handler（`citations.ipc.ts`）
+- [x] 设计 `PaperCitation` 表（schema.prisma）
+  - ~~`id`, `sourcePaperId`, `targetPaperId`, `citationType`, `context`, `externalId`, `externalTitle`, `confidence`~~
+- [x] 实现 citation 提取服务（`citation-extraction.service.ts`）
+  - ~~通过 Semantic Scholar API 提取 references/citations~~
+  - ~~arXiv ID + 标题相似度匹配本地论文~~
+  - ~~Ghost nodes 支持未匹配的外部引用~~
+- [x] 添加 IPC handler（`citations.ipc.ts`）
 
-### Phase 2: 可视化层 (Week 3-4)
+### Phase 2: 可视化层 ✅
 
-- [ ] 创建图谱页面（`src/renderer/pages/graph/page.tsx`）
-- [ ] 集成图可视化库（推荐 Cytoscape.js 或 React Flow）
-- [ ] 实现交互功能
-  - 节点点击跳转论文详情
-  - 高亮引用路径
-  - 筛选器（按年份/领域/引用数）
-- [ ] 添加布局算法（力导向/层次/圆形）
+- [x] 创建图谱页面（`src/renderer/pages/graph/page.tsx`）
+- [x] 集成 Cytoscape.js + cytoscape-dagre
+- [x] 实现交互功能
+  - ~~节点点击详情面板，双击跳转论文~~
+  - ~~高亮引用路径、搜索节点、Ghost nodes 切换~~
+- [x] 添加 4 种布局算法（力导向/dagre 层次/圆形/网格）
 
-### Phase 3: 高级功能 (Week 5-6)
+### Phase 3: 高级功能 ✅
 
-- [ ] 识别关键节点（PageRank 算法）
-- [ ] 引用链分析（A → B → C 路径追踪）
-- [ ] 导出图谱（PNG/SVG/JSON）
+- [x] PageRank 算法（damping=0.85，20 次迭代）
+- [x] BFS 最短路径引用链分析
+- [x] 导出图谱（PNG + JSON）
+- [x] 论文概览页集成（引用统计 + Extract Citations + View in Graph）
+- [x] 14 个集成测试
 
-**依赖：** 需要 PDF 解析服务（已有 `pdf-extractor.service.ts`）
+**依赖：** Semantic Scholar API（复用 `bibtex.service.ts` 集成模式）
 
 ---
 
@@ -213,12 +212,12 @@
 
 ### Phase 2: 引用管理与导出 (Week 3-4)
 
-- [ ] 实现 BibTeX 生成服务（`citation-export.service.ts`）
-  - 从论文元数据生成 BibTeX 条目
-  - 支持批量导出
-- [ ] 添加导出功能 UI
-  - 选择论文 → 一键复制 BibTeX
-  - 导出到 `.bib` 文件
+- [x] 实现 BibTeX 生成服务（`bibtex.service.ts`） ✅ (2026-03-09)
+  - ~~从论文元数据生成 BibTeX 条目~~
+  - ~~支持批量导出~~
+- [x] 添加导出功能 UI ✅ (2026-03-09)
+  - ~~选择论文 → 一键复制 BibTeX~~
+  - ~~导出到 `.bib` 文件~~
 - [ ] 集成 LaTeX 写作助手
   - 自动插入 `\cite{key}`
   - 生成参考文献列表
