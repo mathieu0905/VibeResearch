@@ -524,7 +524,8 @@ export function ComparePage() {
                     )}
                     <MarkdownContent
                       content={partialText}
-                      proseClassName="prose prose-sm max-w-none break-words prose-headings:text-notion-text prose-headings:tracking-tight prose-h2:text-lg prose-h2:mt-8 prose-h2:mb-3 prose-h2:border-b prose-h2:border-notion-border prose-h2:pb-2 prose-h3:text-base prose-h3:mt-6 prose-p:text-notion-text-secondary prose-p:leading-relaxed prose-strong:text-notion-text prose-li:text-notion-text-secondary prose-ul:my-2 prose-li:my-0.5 prose-a:text-notion-accent prose-a:no-underline hover:prose-a:underline"
+                      className="comparison-article"
+                      proseClassName="max-w-none break-words"
                     />
                   </motion.div>
                 )}
