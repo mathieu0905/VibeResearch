@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo.svg" width="160" alt="Vibe Research Logo">
+  <img src="assets/logo.svg" width="160" alt="ResearchClaw Logo">
 </p>
 
-<h1 align="center">Vibe Research</h1>
+<h1 align="center">ResearchClaw</h1>
 
 <p align="center">
   <strong>AI-Powered Research Desktop App</strong>
@@ -13,20 +13,20 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Noietch/VibeResearch/stargazers"><img src="https://img.shields.io/github/stars/Noietch/VibeResearch?style=for-the-badge&logo=github" alt="Stars"></a>
+  <a href="https://github.com/Noietch/ResearchClaw/stargazers"><img src="https://img.shields.io/github/stars/Noietch/ResearchClaw?style=for-the-badge&logo=github" alt="Stars"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC%204.0-lightgrey?style=for-the-badge" alt="License"></a>
-  <a href="https://github.com/Noietch/VibeResearch/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge" alt="PRs Welcome"></a>
+  <a href="https://github.com/Noietch/ResearchClaw/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=for-the-badge" alt="PRs Welcome"></a>
 </p>
 
 ---
 
-## What is Vibe Research?
+## What is ResearchClaw?
 
-**Vibe Research** is a standalone **Electron desktop app** for researchers. It combines AI-powered paper management, interactive reading, and idea generation in a clean interface — no browser, no server, no plugin required.
+**ResearchClaw** is a standalone **Electron desktop app** for researchers. It combines AI-powered paper management, interactive reading, and idea generation in a clean interface — no browser, no server, no plugin required.
 
 ## Screenshot
 
-![Vibe Research Dashboard](assets/screenshot.png)
+![ResearchClaw Dashboard](assets/screenshot.png)
 
 _Dashboard showing today's papers with AI-generated tags (transformer, nlp, planning, instruction-following, etc.)_
 
@@ -56,8 +56,8 @@ _Dashboard showing today's papers with AI-generated tags (transformer, nlp, plan
 
 ```bash
 # Clone and install
-git clone https://github.com/Noietch/VibeResearch.git
-cd VibeResearch
+git clone https://github.com/Noietch/ResearchClaw.git
+cd ResearchClaw
 npm install
 
 # Development mode
@@ -82,7 +82,7 @@ tests/        # Integration tests (service layer)
 scripts/      # build-main.mjs, build-release.sh
 ```
 
-- **Database**: SQLite via Prisma at `~/.vibe-research/vibe-research.db`
+- **Database**: SQLite via Prisma at `~/.researchclaw/researchclaw.db`
 - **AI**: Vercel AI SDK supporting Anthropic, OpenAI, Gemini, and OpenAI-compatible providers
 - **Build**: esbuild (main process) + Vite (renderer)
 
@@ -102,13 +102,13 @@ scripts/      # build-main.mjs, build-release.sh
 
 ---
 
-## 什么是 Vibe Research？
+## 什么是 ResearchClaw？
 
-**Vibe Research** 是一个独立的 **Electron 桌面应用**，专为科研工作者设计。它将 AI 驱动的论文管理、交互式阅读和创意生成整合在一个简洁的界面中 — 无需浏览器、无需服务器、无需插件。
+**ResearchClaw** 是一个独立的 **Electron 桌面应用**，专为科研工作者设计。它将 AI 驱动的论文管理、交互式阅读和创意生成整合在一个简洁的界面中 — 无需浏览器、无需服务器、无需插件。
 
 ## 界面截图
 
-![Vibe Research Dashboard](assets/screenshot.png)
+![ResearchClaw Dashboard](assets/screenshot.png)
 
 _Dashboard 展示今日 arXiv 论文，附带 AI 自动生成的分类标签（transformer、nlp、planning、instruction-following 等）_
 
@@ -138,8 +138,8 @@ _Dashboard 展示今日 arXiv 论文，附带 AI 自动生成的分类标签（t
 
 ```bash
 # 克隆并安装
-git clone https://github.com/Noietch/VibeResearch.git
-cd VibeResearch
+git clone https://github.com/Noietch/ResearchClaw.git
+cd ResearchClaw
 npm install
 
 # 开发模式
@@ -164,7 +164,7 @@ tests/        # 集成测试（服务层）
 scripts/      # build-main.mjs, build-release.sh
 ```
 
-- **数据库**：SQLite via Prisma，路径 `~/.vibe-research/vibe-research.db`
+- **数据库**：SQLite via Prisma，路径 `~/.researchclaw/researchclaw.db`
 - **AI**：Vercel AI SDK，支持 Anthropic、OpenAI、Gemini 及 OpenAI 兼容提供商
 - **构建**：esbuild（主进程）+ Vite（渲染进程）
 

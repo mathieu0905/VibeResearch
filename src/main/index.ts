@@ -45,7 +45,7 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('[main] Unhandled rejection at:', promise, 'reason:', reason);
 });
 
-// Set DATABASE_URL before any DB imports (use ~/.vibe-research/)
+// Set DATABASE_URL before any DB imports (use ~/.researchclaw/)
 ensureStorageDir();
 const dbPath = getDbPath();
 process.env.DATABASE_URL = `file:${dbPath}`;
@@ -248,7 +248,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    title: 'Vibe Research',
+    title: 'ResearchClaw',
     titleBarStyle: 'hidden',
     trafficLightPosition: { x: 13, y: 16 },
     backgroundColor: '#ffffff',
@@ -313,7 +313,7 @@ function setupWindowControls(win: BrowserWindow) {
 function setupFileIpc() {
   // Read local file and return as base64
   ipcMain.handle('file:read', async (_event, filePath: string) => {
-    // Security: only allow files within user's vibe-research directory
+    // Security: only allow files within user's researchclaw directory
     const allowedBase = path.dirname(dbPath);
     const resolvedPath = path.resolve(filePath);
 

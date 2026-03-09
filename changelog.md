@@ -251,6 +251,41 @@
 
 ## 2026-03-09
 
+### refactor: Rename project from Vibe Research to ResearchClaw
+
+**Scope**: Project-wide — config files, docs, storage paths, tests
+
+**Changes**:
+
+- **Core config**: `package.json` (name, description), `electron-builder.yml` (appId, productName, copyright)
+- **Storage paths**: `src/main/store/storage-path.ts` — env var `VIBE_RESEARCH_STORAGE_DIR` → `RESEARCH_CLAW_STORAGE_DIR`, db file `vibe-research.db` → `researchclaw.db`, directory `~/.vibe-research` → `~/.researchclaw`
+- **UI**: `src/renderer/index.html` (title), `src/main/index.ts` (window title), `src/renderer/components/app-shell.tsx` (sidebar collapsed key)
+- **Docs**: `README.md`, `LICENSE`, `docs/usage-en.md`, `docs/usage-zh.md`, `CLAUDE.md`
+- **Build scripts**: `scripts/build-release.sh`, `scripts/build-release-win.sh`, `scripts/build-release-linux.sh`, `scripts/build-release-win.ps1`
+- **Tests**: `tests/support/electron-mock.ts`, `tests/integration/*.test.ts` (env var rename)
+- **Other**: `.env.example`, `scripts/strip-arxiv-prefix.mjs`
+
+**Naming Convention**:
+| Type | Old | New |
+|------|-----|-----|
+| Product | Vibe Research | ResearchClaw |
+| Package | vibe-research | researchclaw |
+| Directory | ~/.vibe-research | ~/.researchclaw |
+| Env var | VIBE*RESEARCH*_ | RESEARCH*CLAW*_ |
+| App ID | com.vibe-research.app | com.researchclaw.app |
+
+### feat: SSH Config auto-scan
+
+**Scope**: `src/shared/types/ssh.ts`, `src/main/ipc/ssh.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/components/settings/SshServerSettings.tsx`
+
+**Changes**:
+
+- Added `SshConfigEntry` type to shared types.
+- Added `ssh:scan-config` IPC handler that parses `~/.ssh/config` (Host, HostName, Port, User, IdentityFile directives; wildcard patterns skipped).
+- Added `scanSshConfig()` IPC client method in renderer.
+- Added "Scan SSH Config" button to SSH Servers settings page — opens a modal listing all parsed hosts with checkboxes, allowing batch import into the server list.
+- Imported entries auto-detect auth method (privateKey if IdentityFile present, password otherwise).
+
 ### fix: Filter codex-acp noisy stderr warnings
 
 **Scope**: `src/main/services/agent-task-runner.ts`

@@ -48,7 +48,7 @@ const navItems = [
   { to: '/agent-todos', label: 'Tasks', icon: Bot },
 ];
 
-const SIDEBAR_COLLAPSED_KEY = 'vibe-research-sidebar-collapsed';
+const SIDEBAR_COLLAPSED_KEY = 'researchclaw-sidebar-collapsed';
 
 // Windows window controls component
 function WindowsWindowControls() {
