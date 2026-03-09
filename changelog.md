@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-09 (session 38)
+
+### feat: Paper Collections (分类) with Research Profile
+
+- **Scope**: Full-stack feature spanning `prisma/schema.prisma`, `src/db`, `src/main`, `src/renderer`, `tests/integration`
+- **Data model**: Added `Collection` and `PaperCollection` models with many-to-many relation to Paper. Collections have name, icon (emoji), color, description, and isDefault flag.
+- **Default collections**: Three default collections (My Papers, Interesting, To Read) created on app startup via `ensureDefaults()`.
+- **Repository**: `CollectionsRepository` with full CRUD, paper add/remove, batch add, research profile aggregation (tag/year/author distributions).
+- **Service + IPC**: `CollectionsService` thin wrapper, `setupCollectionsIpc()` with 9 handlers following existing `try/ok/catch/err` pattern.
+- **Sidebar**: Collections section in sidebar showing icon + name + paper count, with `+` button to create new collections.
+- **Collection detail page**: `/collections/:id` route with Papers tab (paper list with remove) and Research Profile tab (bar charts for tag/year distribution, top authors).
+- **Paper detail page**: Added Collections picker below Tags section — shows current collections as chips, dropdown to toggle membership.
+- **Library batch operations**: Selection toolbar gains "Add to Collection" button with collection picker dropdown.
+- **Collection modal**: Create/edit modal with name, emoji picker, color picker, description fields, framer-motion animations, ESC support.
+- **Research profile component**: Pure-CSS horizontal bar charts grouped by tag category (domain/method/topic), year distribution, top 10 authors.
+- **Tests**: Integration tests covering CRUD, default collection delete protection, paper add/remove/batch, research profile accuracy, full chain (papers + tags → collection → profile).
+
 ## 2026-03-09
 
 ### feat: Add "Scan Local Agents" auto-detection to AgentSettings

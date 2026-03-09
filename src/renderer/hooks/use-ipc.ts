@@ -519,6 +519,26 @@ export interface ModelConfig {
   hasApiKey?: boolean;
 }
 
+export interface CollectionItem {
+  id: string;
+  name: string;
+  icon?: string | null;
+  color?: string | null;
+  description?: string | null;
+  isDefault: boolean;
+  sortOrder: number;
+  paperCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResearchProfile {
+  tagDistribution: Array<{ name: string; category: string; count: number }>;
+  yearDistribution: Array<{ year: number; count: number }>;
+  topAuthors: Array<{ name: string; count: number }>;
+  totalPapers: number;
+}
+
 export interface CliConfig {
   id: string;
   name: string;
@@ -698,8 +718,11 @@ export const ipc = {
 
   // App settings
   getSettings: () =>
-    invoke<{ editorCommand: string; proxy?: string; proxyScope?: ProxyScope }>('settings:get'),
+    invoke<{ papersDir: string; editorCommand: string; proxy?: string; proxyScope?: ProxyScope }>(
+      'settings:get',
+    ),
   setStorageDir: (dir: string) => invoke<{ success: boolean }>('settings:setStorageDir', dir),
+  setPapersDir: (dir: string) => invoke<{ success: boolean }>('settings:setPapersDir', dir),
   setEditor: (cmd: string) => invoke<{ success: boolean }>('settings:setEditor', cmd),
   setProxy: (proxy: string | undefined) => invoke<{ success: boolean }>('settings:setProxy', proxy),
   setProxyScope: (scope: ProxyScope) =>
@@ -800,6 +823,28 @@ export const ipc = {
     apiKey?: string;
     baseURL?: string;
   }) => invoke<{ success: boolean; error?: string }>('models:testConnection', params),
+
+  // Collections
+  listCollections: () => invoke<CollectionItem[]>('collections:list'),
+  createCollection: (data: { name: string; icon?: string; color?: string; description?: string }) =>
+    invoke<CollectionItem>('collections:create', data),
+  updateCollection: (
+    id: string,
+    data: { name?: string; icon?: string; color?: string; description?: string },
+  ) => invoke<CollectionItem>('collections:update', id, data),
+  deleteCollection: (id: string) => invoke<CollectionItem>('collections:delete', id),
+  addPaperToCollection: (collectionId: string, paperId: string) =>
+    invoke<unknown>('collections:addPaper', collectionId, paperId),
+  removePaperFromCollection: (collectionId: string, paperId: string) =>
+    invoke<unknown>('collections:removePaper', collectionId, paperId),
+  addPapersToCollection: (collectionId: string, paperIds: string[]) =>
+    invoke<{ success: boolean }>('collections:addPapers', collectionId, paperIds),
+  listCollectionPapers: (collectionId: string) =>
+    invoke<PaperItem[]>('collections:listPapers', collectionId),
+  getCollectionsForPaper: (paperId: string) =>
+    invoke<CollectionItem[]>('collections:getForPaper', paperId),
+  getResearchProfile: (collectionId: string) =>
+    invoke<ResearchProfile>('collections:researchProfile', collectionId),
 
   // Token Usage
   getTokenUsageSummary: () =>

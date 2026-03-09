@@ -14,6 +14,7 @@ import { setupTokenUsageIpc } from './ipc/token-usage.ipc';
 import { setupTaggingIpc } from './ipc/tagging.ipc';
 import { setupAgentTodoIpc, getAgentTodoService } from './ipc/agent-todo.ipc';
 import { stopAllRunners } from './services/agent-runner-registry';
+import { setupCollectionsIpc, ensureDefaultCollections } from './ipc/collections.ipc';
 import { ensureStorageDir, getDbPath } from './store/storage-path';
 import { PapersRepository } from '@db';
 import { resumeAutomaticPaperProcessing } from './services/paper-processing.service';
@@ -326,6 +327,9 @@ app.whenReady().then(async () => {
       console.error('[startup] Failed to load tagging service:', err);
     });
 
+  // Ensure default collections exist
+  ensureDefaultCollections();
+
   // Register all IPC handlers
   setupPapersIpc();
   setupReadingIpc();
@@ -340,6 +344,7 @@ app.whenReady().then(async () => {
   getAgentTodoService()
     .initialize()
     .catch((err) => console.error('[AgentTodo] Failed to initialize scheduler:', err));
+  setupCollectionsIpc();
   setupFileIpc();
 
   // Initialize vec index (background, non-blocking)
