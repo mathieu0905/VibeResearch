@@ -18,6 +18,7 @@ export interface SemanticSearchSettings {
   autoStartOllama: boolean;
   baseUrl: string;
   embeddingModel: string;
+  embeddingProvider: 'builtin' | 'ollama';
 }
 
 interface AppSettings {
@@ -41,6 +42,7 @@ const DEFAULT_SEMANTIC_SEARCH_SETTINGS: SemanticSearchSettings = {
   autoStartOllama: true,
   baseUrl: 'http://127.0.0.1:11434',
   embeddingModel: 'nomic-embed-text',
+  embeddingProvider: 'builtin',
 };
 
 function getSettingsPath(): string {
@@ -60,6 +62,16 @@ function load(): AppSettings {
         ...DEFAULT_SEMANTIC_SEARCH_SETTINGS,
         ...saved.semanticSearch,
       };
+      // Migration: if user had custom Ollama settings but no explicit embeddingProvider,
+      // default them to 'ollama' to preserve their existing setup
+      if (
+        saved.semanticSearch &&
+        !saved.semanticSearch.embeddingProvider &&
+        (saved.semanticSearch.baseUrl !== DEFAULT_SEMANTIC_SEARCH_SETTINGS.baseUrl ||
+          saved.semanticSearch.embeddingModel !== DEFAULT_SEMANTIC_SEARCH_SETTINGS.embeddingModel)
+      ) {
+        saved.semanticSearch.embeddingProvider = 'ollama';
+      }
       return saved;
     }
   } catch {

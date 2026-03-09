@@ -207,9 +207,13 @@ export function setupProvidersIpc() {
     async (_, settings: Partial<SemanticSearchSettings>): Promise<IpcResult<unknown>> => {
       try {
         const result = providersService.setSemanticSearchSettings(settings);
-        await warmupOllamaService('settings-save').catch((error) => {
-          console.warn('[settings:setSemanticSearch] Failed to warm up Ollama:', error);
-        });
+        // Only warm up Ollama if the provider is ollama
+        const currentSettings = providersService.getSemanticSearchSettings();
+        if ((currentSettings.embeddingProvider ?? 'builtin') === 'ollama') {
+          await warmupOllamaService('settings-save').catch((error) => {
+            console.warn('[settings:setSemanticSearch] Failed to warm up Ollama:', error);
+          });
+        }
         await resumeAutomaticPaperProcessing().catch((error) => {
           console.warn('[settings:setSemanticSearch] Failed to resume processing:', error);
         });
@@ -263,6 +267,17 @@ export function setupProvidersIpc() {
       }
     },
   );
+
+  ipcMain.handle('settings:getBuiltinModelStatus', async (): Promise<IpcResult<unknown>> => {
+    try {
+      const result = providersService.getBuiltinModelStatus();
+      return ok(result);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[settings:getBuiltinModelStatus] Error:', msg);
+      return err(msg);
+    }
+  });
 
   ipcMain.handle('settings:listSemanticModelPullJobs', async (): Promise<IpcResult<unknown>> => {
     try {
