@@ -217,12 +217,12 @@ export function ImportModal({
   }, []);
 
   // Search papers
-  const handleSearch = useCallback(async () => {
-    if (!searchQuery.trim()) return;
+  const handleSearch = useCallback(async (query: string) => {
+    if (!query.trim()) return;
     setIsSearching(true);
     setSearchError('');
     try {
-      const result = await ipc.searchPapers(searchQuery, 20);
+      const result = await ipc.searchPapers(query, 20);
       setSearchResults(result.results);
       setSelectedSearchIds(new Set());
     } catch (err) {
@@ -235,7 +235,7 @@ export function ImportModal({
     } finally {
       setIsSearching(false);
     }
-  }, [searchQuery]);
+  }, []);
 
   // Auto-search with debounce (500ms delay)
   useEffect(() => {
@@ -253,7 +253,7 @@ export function ImportModal({
 
     // Set new timeout for auto-search
     searchTimeoutRef.current = setTimeout(() => {
-      handleSearch();
+      handleSearch(searchQuery);
     }, 500);
 
     return () => {
