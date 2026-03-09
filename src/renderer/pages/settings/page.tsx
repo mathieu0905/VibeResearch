@@ -111,7 +111,7 @@ const EDITOR_OPTIONS = [
   { id: 'custom', name: 'Custom', command: '', Icon: Code2 },
 ] as const;
 
-type Tab = 'models' | 'storage' | 'editor' | 'proxy' | 'agents' | 'semantic';
+type Tab = 'models' | 'storage' | 'editor' | 'proxy' | 'agents';
 
 // ─── Provider selector ───────────────────────────────────────────────────────
 
@@ -1965,6 +1965,17 @@ function ModelsSettings() {
         />
       )}
 
+      {/* Semantic section */}
+      <div className="mt-8">
+        <div className="mb-4 border-t border-notion-border pt-6">
+          <h2 className="text-sm font-semibold text-notion-text">Semantic Search & Processing</h2>
+          <p className="mt-0.5 text-xs text-notion-text-tertiary">
+            Embedding-based search, auto-processing, and recommendation settings
+          </p>
+        </div>
+        <SemanticSettingsPanel />
+      </div>
+
       {/* Usage section */}
       <div className="mt-8">
         <div className="mb-4 border-t border-notion-border pt-6">
@@ -3466,7 +3477,6 @@ export function SettingsPage() {
   const tabs: Array<{ id: Tab; label: string; icon: React.ElementType }> = [
     { id: 'agents', label: 'Agents', icon: Bot },
     { id: 'models', label: 'Models', icon: Cpu },
-    { id: 'semantic', label: 'Semantic', icon: Sparkles },
     { id: 'editor', label: 'Editor', icon: Code2 },
     { id: 'storage', label: 'Storage', icon: HardDrive },
     { id: 'proxy', label: 'Proxy', icon: Globe },
@@ -3523,7 +3533,6 @@ export function SettingsPage() {
       {/* Tab Content */}
       <div>
         {activeTab === 'models' && <ModelsSettings />}
-        {activeTab === 'semantic' && <SemanticSettingsPanel />}
         {activeTab === 'editor' && <EditorSettings />}
         {activeTab === 'storage' && <StorageSettings />}
         {activeTab === 'proxy' && <ProxySettings />}
