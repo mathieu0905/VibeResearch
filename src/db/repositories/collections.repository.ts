@@ -160,9 +160,10 @@ export class CollectionsRepository {
         }
       }
 
-      // Year
-      if (paper.year) {
-        yearCounts.set(paper.year, (yearCounts.get(paper.year) ?? 0) + 1);
+      // Year (derived from submittedAt)
+      if (paper.submittedAt) {
+        const year = paper.submittedAt.getFullYear();
+        yearCounts.set(year, (yearCounts.get(year) ?? 0) + 1);
       }
 
       // Authors
