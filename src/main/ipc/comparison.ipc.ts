@@ -1,7 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { ComparisonService } from '../services/comparison.service';
 import { ComparisonsRepository, PapersRepository } from '@db';
-import type { ComparisonNoteItem } from '@shared';
+import type { ComparisonNoteItem, ComparisonChatMessage } from '@shared';
 
 type ComparisonJobStage = 'preparing' | 'streaming' | 'done' | 'error' | 'cancelled';
 
@@ -42,6 +42,24 @@ const MAX_COMPARISON_JOBS = 10;
 
 const activeTranslations = new Map<string, AbortController>();
 const translationJobs = new Map<string, TranslationJobStatus>();
+
+type ChatJobStage = 'streaming' | 'done' | 'error' | 'cancelled';
+
+interface ChatJobStatus {
+  jobId: string;
+  comparisonId: string;
+  active: boolean;
+  stage: ChatJobStage;
+  partialText: string;
+  message: string;
+  error: string | null;
+  startedAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+const activeChatJobs = new Map<string, AbortController>();
+const chatJobs = new Map<string, ChatJobStatus>();
 
 function getComparisonService() {
   if (!comparisonService) comparisonService = new ComparisonService();
@@ -165,7 +183,11 @@ export function setupComparisonIpc() {
           // Update DB with final content
           if (savedId && finalJob?.partialText) {
             await repo
-              .update(savedId, { contentMd: finalJob.partialText, translatedContentMd: null })
+              .update(savedId, {
+                contentMd: finalJob.partialText,
+                translatedContentMd: null,
+                chatMessagesJson: '[]',
+              })
               .catch(() => undefined);
           }
 
@@ -184,7 +206,11 @@ export function setupComparisonIpc() {
           const finalJob = comparisonJobs.get(jobId);
           if (savedId && finalJob?.partialText) {
             await repo
-              .update(savedId, { contentMd: finalJob.partialText, translatedContentMd: null })
+              .update(savedId, {
+                contentMd: finalJob.partialText,
+                translatedContentMd: null,
+                chatMessagesJson: '[]',
+              })
               .catch(() => undefined);
           }
           // Delete empty DB record if cancelled with no content
@@ -233,6 +259,7 @@ export function setupComparisonIpc() {
       titles: JSON.parse(row.titlesJson) as string[],
       contentMd: row.contentMd,
       translatedContentMd: row.translatedContentMd ?? null,
+      chatMessages: JSON.parse(row.chatMessagesJson) as ComparisonChatMessage[],
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     }));
@@ -357,6 +384,133 @@ export function setupComparisonIpc() {
 
   ipcMain.handle('comparison:killTranslation', async (_, jobId: string) => {
     const controller = activeTranslations.get(jobId);
+    if (controller) {
+      controller.abort();
+      return { killed: true };
+    }
+    return { killed: false };
+  });
+
+  // ── Chat handlers ────────────────────────────────────────────────────────
+
+  ipcMain.handle(
+    'comparison:chat',
+    async (
+      _,
+      input: { comparisonId: string; messages: ComparisonChatMessage[] },
+    ): Promise<{ jobId: string; started: boolean }> => {
+      const { comparisonId, messages } = input;
+
+      // Kill any existing chat job for this comparison
+      const existingController = activeChatJobs.get(comparisonId);
+      if (existingController) {
+        existingController.abort();
+        activeChatJobs.delete(comparisonId);
+      }
+
+      const row = await repo.getById(comparisonId);
+      if (!row || !row.contentMd) {
+        throw new Error('Comparison not found or has no content');
+      }
+
+      const titles: string[] = JSON.parse(row.titlesJson);
+      const jobId = `chat-${comparisonId}-${Date.now()}`;
+      const now = new Date().toISOString();
+      const controller = new AbortController();
+      activeChatJobs.set(comparisonId, controller);
+
+      const job: ChatJobStatus = {
+        jobId,
+        comparisonId,
+        active: true,
+        stage: 'streaming',
+        partialText: '',
+        message: 'Thinking…',
+        error: null,
+        startedAt: now,
+        updatedAt: now,
+        completedAt: null,
+      };
+      chatJobs.set(comparisonId, job);
+      broadcastToAll('comparison:chatStatus', job);
+
+      void (async () => {
+        try {
+          await getComparisonService().chatAboutComparison(
+            {
+              comparisonContentMd: row.contentMd,
+              paperTitles: titles,
+              messages,
+            },
+            (chunk) => {
+              const current = chatJobs.get(comparisonId);
+              if (!current) return;
+              const updated: ChatJobStatus = {
+                ...current,
+                partialText: current.partialText + chunk,
+                message: 'Responding…',
+                updatedAt: new Date().toISOString(),
+              };
+              chatJobs.set(comparisonId, updated);
+              broadcastToAll('comparison:chatStatus', updated);
+            },
+            controller.signal,
+          );
+
+          // Save messages + assistant response to DB
+          const finalJob = chatJobs.get(comparisonId);
+          if (finalJob?.partialText) {
+            const allMessages: ComparisonChatMessage[] = [
+              ...messages,
+              { role: 'assistant', content: finalJob.partialText },
+            ];
+            await repo
+              .update(comparisonId, { chatMessagesJson: JSON.stringify(allMessages) })
+              .catch(() => undefined);
+          }
+
+          const doneJob: ChatJobStatus = {
+            ...(chatJobs.get(comparisonId) ?? job),
+            active: false,
+            stage: 'done',
+            message: 'Done',
+            completedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          chatJobs.set(comparisonId, doneJob);
+          broadcastToAll('comparison:chatStatus', doneJob);
+        } catch (err) {
+          const aborted = isAbortError(err);
+          const message = err instanceof Error ? err.message : String(err);
+
+          const errJob: ChatJobStatus = {
+            ...(chatJobs.get(comparisonId) ?? job),
+            active: false,
+            stage: aborted ? 'cancelled' : 'error',
+            message: aborted ? 'Chat cancelled' : `Chat failed: ${message}`,
+            error: aborted ? null : message,
+            completedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+          chatJobs.set(comparisonId, errJob);
+          broadcastToAll('comparison:chatStatus', errJob);
+        } finally {
+          activeChatJobs.delete(comparisonId);
+        }
+      })();
+
+      return { jobId, started: true };
+    },
+  );
+
+  ipcMain.handle('comparison:chatJobs', async (): Promise<ChatJobStatus[]> => {
+    return Array.from(chatJobs.values()).sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    );
+  });
+
+  ipcMain.handle('comparison:chatKill', async (_, comparisonId: string) => {
+    const controller = activeChatJobs.get(comparisonId);
     if (controller) {
       controller.abort();
       return { killed: true };

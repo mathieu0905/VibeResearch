@@ -25,7 +25,10 @@ export class ComparisonsRepository {
     });
   }
 
-  async update(id: string, data: { contentMd?: string; translatedContentMd?: string | null }) {
+  async update(
+    id: string,
+    data: { contentMd?: string; translatedContentMd?: string | null; chatMessagesJson?: string },
+  ) {
     return this.prisma.comparisonNote.update({
       where: { id },
       data,

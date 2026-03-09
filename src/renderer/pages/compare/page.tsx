@@ -18,6 +18,10 @@ import {
   History,
   Trash2,
   X,
+  Send,
+  MessageCircle,
+  User,
+  Bot,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -70,6 +74,16 @@ export function ComparePage() {
   const [translating, setTranslating] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
 
+  // Chat state
+  const [chatMessages, setChatMessages] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatStreaming, setChatStreaming] = useState(false);
+  const [chatStreamingText, setChatStreamingText] = useState('');
+  const [chatError, setChatError] = useState<string | null>(null);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
   // Keep jobIdRef in sync
   useEffect(() => {
     jobIdRef.current = jobId;
@@ -87,6 +101,9 @@ export function ComparePage() {
         setCurrentSavedId(item.id);
         setPartialText(item.contentMd);
         setStage('done');
+        if (item.chatMessages && item.chatMessages.length > 0) {
+          setChatMessages(item.chatMessages);
+        }
         // Load paper details
         const results = await Promise.all(item.paperIds.map((id) => ipc.getPaper(id)));
         if (!cancelled) {
@@ -159,6 +176,34 @@ export function ComparePage() {
     });
     return unsub;
   }, [currentSavedId]);
+
+  // Subscribe to chat status
+  useEffect(() => {
+    const unsub = onIpc('comparison:chatStatus', (_event: unknown, payload: unknown) => {
+      const status = payload as {
+        comparisonId: string;
+        active: boolean;
+        stage: string;
+        partialText: string;
+        error: string | null;
+      };
+      if (!status?.comparisonId || status.comparisonId !== currentSavedId) return;
+      setChatStreamingText(status.partialText || '');
+      setChatStreaming(status.active);
+      if (status.error) setChatError(status.error);
+      if (status.stage === 'done' && status.partialText) {
+        setChatMessages((prev) => [...prev, { role: 'assistant', content: status.partialText }]);
+        setChatStreamingText('');
+        setChatStreaming(false);
+      }
+    });
+    return unsub;
+  }, [currentSavedId]);
+
+  // Scroll chat to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, chatStreamingText]);
 
   // Recover translation job on mount
   useEffect(() => {
@@ -258,6 +303,11 @@ export function ComparePage() {
     setTranslating(false);
     setTranslationError(null);
     setLang('en');
+    setChatMessages([]);
+    setChatInput('');
+    setChatStreaming(false);
+    setChatStreamingText('');
+    setChatError(null);
     void startComparison();
   }, [startComparison]);
 
@@ -294,6 +344,31 @@ export function ComparePage() {
     },
     [translatedText, translating, currentSavedId, handleTranslate],
   );
+
+  // Chat handlers
+  const handleChatSend = useCallback(async () => {
+    const text = chatInput.trim();
+    if (!text || !currentSavedId || chatStreaming) return;
+    setChatError(null);
+    const userMsg = { role: 'user' as const, content: text };
+    const newMessages = [...chatMessages, userMsg];
+    setChatMessages(newMessages);
+    setChatInput('');
+    setChatStreaming(true);
+    setChatStreamingText('');
+    try {
+      await ipc.startComparisonChat({ comparisonId: currentSavedId, messages: newMessages });
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : 'Chat failed');
+      setChatStreaming(false);
+    }
+  }, [chatInput, currentSavedId, chatStreaming, chatMessages]);
+
+  const handleChatStop = useCallback(async () => {
+    if (currentSavedId) {
+      await ipc.killComparisonChat(currentSavedId).catch(() => undefined);
+    }
+  }, [currentSavedId]);
 
   // Load saved translatedContentMd when loading a saved comparison
   useEffect(() => {
@@ -664,6 +739,132 @@ export function ComparePage() {
                     />
                   </motion.div>
                 )}
+              </div>
+            )}
+
+            {/* Chat section — visible after comparison is done */}
+            {isDone && currentSavedId && partialText && (
+              <div className="mt-8 space-y-4">
+                <div className="flex items-center gap-2 border-t border-notion-border pt-6">
+                  <MessageCircle size={16} className="text-notion-accent" />
+                  <h2 className="text-sm font-medium text-notion-text">Discuss this comparison</h2>
+                </div>
+
+                {/* Chat messages */}
+                {chatMessages.length > 0 && (
+                  <div className="space-y-3">
+                    {chatMessages.map((msg, i) => (
+                      <div
+                        key={i}
+                        className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}
+                      >
+                        {msg.role === 'assistant' && (
+                          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-notion-accent-light">
+                            <Bot size={14} className="text-notion-accent" />
+                          </div>
+                        )}
+                        <div
+                          className={`max-w-[80%] rounded-lg px-4 py-3 text-sm leading-relaxed ${
+                            msg.role === 'user'
+                              ? 'bg-notion-accent text-white'
+                              : 'border border-notion-border bg-white'
+                          }`}
+                        >
+                          {msg.role === 'assistant' ? (
+                            <MarkdownContent
+                              content={msg.content}
+                              className="chat-message"
+                              proseClassName="max-w-none text-sm"
+                            />
+                          ) : (
+                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                          )}
+                        </div>
+                        {msg.role === 'user' && (
+                          <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-notion-sidebar">
+                            <User size={14} className="text-notion-text-tertiary" />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Streaming assistant response */}
+                {chatStreaming && chatStreamingText && (
+                  <div className="flex gap-3">
+                    <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-notion-accent-light">
+                      <Bot size={14} className="text-notion-accent" />
+                    </div>
+                    <div className="max-w-[80%] rounded-lg border border-notion-accent/20 bg-white px-4 py-3 text-sm leading-relaxed">
+                      <MarkdownContent
+                        content={chatStreamingText}
+                        className="chat-message"
+                        proseClassName="max-w-none text-sm"
+                      />
+                      <div className="mt-1 flex items-center gap-1.5 text-xs text-notion-accent">
+                        <Loader2 size={10} className="animate-spin" />
+                        <span>Writing…</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Streaming indicator when no text yet */}
+                {chatStreaming && !chatStreamingText && (
+                  <div className="flex gap-3">
+                    <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg bg-notion-accent-light">
+                      <Bot size={14} className="text-notion-accent" />
+                    </div>
+                    <div className="flex items-center gap-2 rounded-lg border border-notion-accent/20 bg-white px-4 py-3 text-sm text-notion-text-secondary">
+                      <Loader2 size={12} className="animate-spin text-notion-accent" />
+                      Thinking…
+                    </div>
+                  </div>
+                )}
+
+                {/* Chat error */}
+                {chatError && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {chatError}
+                  </div>
+                )}
+
+                <div ref={chatEndRef} />
+
+                {/* Chat input */}
+                <div className="flex items-end gap-2">
+                  <textarea
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
+                      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        void handleChatSend();
+                      }
+                    }}
+                    placeholder="Ask about this comparison… (⌘+Enter to send)"
+                    rows={2}
+                    className="flex-1 resize-none rounded-lg border border-notion-border bg-white px-4 py-3 text-sm text-notion-text placeholder:text-notion-text-tertiary focus:border-notion-accent/50 focus:outline-none focus:ring-1 focus:ring-notion-accent/20 transition-colors"
+                  />
+                  {chatStreaming ? (
+                    <button
+                      onClick={handleChatStop}
+                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg border border-red-200 text-red-600 transition-colors hover:bg-red-50"
+                    >
+                      <Square size={16} />
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => void handleChatSend()}
+                      disabled={!chatInput.trim()}
+                      className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-notion-accent text-white transition-colors hover:bg-notion-accent/90 disabled:opacity-50"
+                    >
+                      <Send size={16} />
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

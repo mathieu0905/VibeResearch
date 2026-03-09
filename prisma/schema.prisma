@@ -406,6 +406,7 @@ model ComparisonNote {
   titlesJson          String   @default("[]")
   contentMd           String
   translatedContentMd String?
+  chatMessagesJson    String   @default("[]")
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }

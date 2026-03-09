@@ -3,6 +3,7 @@ import {
   COMPARISON_SYSTEM_PROMPT,
   buildComparisonUserPrompt,
   type ComparisonPaperInput,
+  type ComparisonChatMessage,
 } from '@shared';
 import { getLanguageModelFromConfig, streamText } from './ai-provider.service';
 import { getActiveModel, getModelWithKey } from '../store/model-config-store';
@@ -76,6 +77,52 @@ export class ComparisonService {
       model,
       system: COMPARISON_SYSTEM_PROMPT,
       prompt: userPrompt,
+      maxTokens: 4096,
+      abortSignal: signal,
+    });
+
+    let fullText = '';
+    for await (const chunk of textStream) {
+      fullText += chunk;
+      onChunk(chunk);
+    }
+
+    return fullText;
+  }
+
+  async chatAboutComparison(
+    input: {
+      comparisonContentMd: string;
+      paperTitles: string[];
+      messages: ComparisonChatMessage[];
+    },
+    onChunk: (chunk: string) => void,
+    signal?: AbortSignal,
+  ): Promise<string> {
+    const modelConfig = getActiveModel('chat');
+    if (!modelConfig) {
+      throw new Error('No chat model configured. Please set up a chat model in Settings.');
+    }
+
+    const configWithKey = getModelWithKey(modelConfig.id);
+    if (!configWithKey?.apiKey) {
+      throw new Error('No API key configured for the chat model.');
+    }
+
+    const model = getLanguageModelFromConfig(configWithKey);
+
+    const systemPrompt = `You are a research assistant. The user has a comparative analysis of academic papers. Help discuss, clarify, and explore further. Respond in the user's language.
+
+## Comparative Analysis
+${input.comparisonContentMd}
+
+## Papers Compared
+${input.paperTitles.map((t, i) => `${i + 1}. ${t}`).join('\n')}`;
+
+    const { textStream } = streamText({
+      model,
+      system: systemPrompt,
+      messages: input.messages.map((m) => ({ role: m.role, content: m.content })),
       maxTokens: 4096,
       abortSignal: signal,
     });

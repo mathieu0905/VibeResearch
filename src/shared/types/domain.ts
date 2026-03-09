@@ -220,12 +220,18 @@ export interface GraphData {
 
 // ── Comparison types ─────────────────────────────────────────────────────────
 
+export interface ComparisonChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 export interface ComparisonNoteItem {
   id: string;
   paperIds: string[];
   titles: string[];
   contentMd: string;
   translatedContentMd?: string | null;
+  chatMessages: ComparisonChatMessage[];
   createdAt: string;
   updatedAt: string;
 }

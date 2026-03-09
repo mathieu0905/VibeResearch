@@ -2,6 +2,15 @@
 
 ## 2026-03-09
 
+### feat: Comparison chat (continue conversation after comparison)
+
+- **Scope**: `prisma/schema.prisma`, `src/shared/types/domain.ts`, `src/db/repositories/comparisons.repository.ts`, `src/main/services/comparison.service.ts`, `src/main/ipc/comparison.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/compare/page.tsx`
+- **Chat feature**: After a comparison is complete, users can continue discussing the results with the AI model. The chat area appears below the comparison markdown with a message input (⌘+Enter to send).
+- **Multi-turn support**: Full conversation history is sent with each request, allowing contextual follow-up questions about the comparative analysis.
+- **Background job pattern**: Chat runs as a background job (`comparison:chat` IPC) with streaming response broadcast via `comparison:chatStatus`. Supports cancel via Stop button.
+- **Persistence**: Chat messages are stored in `chatMessagesJson` field on `ComparisonNote`. Messages persist across navigation and app restarts. Regenerating a comparison clears the chat history.
+- **Schema**: Added `chatMessagesJson String @default("[]")` to `ComparisonNote` model.
+
 ### feat: Comparison translation (EN/中文 toggle)
 
 - **Scope**: `prisma/schema.prisma`, `src/shared/types/domain.ts`, `src/db/repositories/comparisons.repository.ts`, `src/main/ipc/comparison.ipc.ts`, `src/main/services/comparison.service.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/compare/page.tsx`
