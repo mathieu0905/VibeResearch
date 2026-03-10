@@ -171,6 +171,15 @@ export function setupAgentTodoIpc() {
     }
   });
 
+  // Get active status (for recovery after navigation)
+  ipcMain.handle('agent-todo:get-active-status', async (_, todoId: string) => {
+    try {
+      return ok(getService().getActiveTodoStatus(todoId));
+    } catch (e: unknown) {
+      return err((e as Error).message);
+    }
+  });
+
   // ACP connectivity test — spawns the real CLI, runs initialize + session/new, then kills it
   ipcMain.handle('agent-todo:test-acp', async (_, agentId: string) => {
     let conn: AcpConnection | null = null;
@@ -202,8 +211,8 @@ export function setupAgentTodoIpc() {
       // Resolve config file args (e.g. --settings for Claude Code)
       const configInput = {
         agentTool,
-        configContent: agent.configContent,
-        authContent: agent.authContent,
+        configContent: agent.configContent ?? undefined,
+        authContent: agent.authContent ?? undefined,
       };
       const prependArgs = resolveAgentCliArgs(configInput);
       const homeFiles = resolveAgentHomeFiles(configInput);

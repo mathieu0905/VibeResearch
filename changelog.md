@@ -1,5 +1,107 @@
 # Changelog
 
+## 2026-03-10
+
+### fix: Text scrambling when navigating back during streaming (IPC race condition)
+
+- **Scope**: `src/renderer/hooks/use-agent-stream.ts`, `tests/integration/message-accumulation.test.ts`
+- **Changes**:
+  - Added buffering mechanism to handle IPC events arriving during state recovery
+  - `isRecoveringRef` flag to track recovery state
+  - `pendingEventsRef` to buffer IPC events during recovery
+  - Extracted `processStreamEvent` function for unified event handling
+  - Events arriving during recovery are buffered and processed AFTER recovery completes
+- **Rationale**: When user navigates away and back during streaming, there's a race condition:
+  1. Recovery starts fetching state from main process
+  2. New IPC events arrive before recovery completes
+  3. These events would overwrite/interleave with recovered state causing text scrambling like "Hello World World"
+  - The fix buffers events during recovery, ensuring correct order: recovery state → new events
+
+## 2026-03-10
+
+### feat: Inject paper file paths into agent chat prompt
+
+- **Scope**: `src/renderer/pages/papers/reader/page.tsx`
+- **Changes**:
+  - When starting a new chat with an agent, inject paper context with file paths directly into the prompt
+  - Includes: paper title, working directory, PDF path, and text.txt path
+  - Agent no longer needs to explore the directory (pwd, ls) to find files
+- **Rationale**: Previously agents had to discover file paths by running shell commands, wasting tokens and time. Now paths are provided upfront for direct access.
+
+## 2026-03-10
+
+### fix: Agent chat stream message ordering and state recovery
+
+- **Scope**: `src/renderer/hooks/use-agent-stream.ts`, `src/main/services/agent-todo.service.ts`, `src/main/services/agent-task-runner.ts`, `src/main/ipc/agent-todo.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/papers/reader/page.tsx`
+- **Changes**:
+  - Fixed race condition in `use-agent-stream.ts` where rapid text chunks could be processed out of order due to React's batched state updates
+  - Added ref-based message accumulation that synchronously appends text before flushing to state via `requestAnimationFrame`
+  - Added `getActiveTodoStatus()` method to query running task state from main process
+  - Added `getRunId()` and `getMergedMessages()` getters to `AgentTaskRunner`
+  - `AgentTaskRunner` now maintains `mergedMessages` map for proper text accumulation (same merge logic as renderer)
+  - Reader page now recovers live messages from main process when navigating back to a running chat session
+- **Rationale**: Text chunks were arriving faster than React could process them, causing jumbled output. Also, navigating away during streaming would lose messages since IPC listeners were removed. Now messages are accumulated synchronously via refs in renderer, and main process also maintains merged messages for state recovery.
+
+## 2026-03-10
+
+### feat: Library paper list — single-paper auto-tag and analyze actions
+
+- **Scope**: `src/renderer/components/papers-by-tag.tsx`
+- **Changes**:
+  - Added auto-tag button (Tag icon) to each paper card — always visible on hover
+  - Added analyze button (Sparkles icon) to each paper card — visible on hover when paper has PDF
+  - Both actions show loading spinner during operation
+  - Auto-tag refreshes paper list after completion; analyze shows toast without auto-navigation
+  - Proper error handling with toast notifications for missing model configuration
+  - Fixed button styling: unified colors, added `e.preventDefault()` to prevent navigation on click
+- **Rationale**: Users previously had to open each paper individually to trigger auto-tag or analyze; now these common actions are accessible directly from the library list
+
+### feat: Unified `pnpm run dev` — one command starts everything
+
+- **Scope**: `scripts/dev.mjs`, `package.json`
+- **Changes**:
+  - `pnpm run dev` now builds main process (esbuild), starts Vite, and launches Electron in one command
+  - Main process uses esbuild watch mode — editing `src/main/**` auto-rebuilds and restarts Electron
+  - Renderer still uses Vite HMR (instant updates)
+  - Old `vite`-only dev mode available as `dev:renderer-only`
+- **Rationale**: No more juggling multiple terminals; one command for the full dev loop
+
+### feat: Setup wizard supports model name and base URL configuration
+
+- **Scope**: `src/renderer/components/setup-wizard-modal.tsx`
+- **Changes**:
+  - Added model name input field in the API Key step, with provider-specific defaults shown as placeholder
+  - Added collapsible Base URL input for custom API endpoints (auto-expanded for Custom provider)
+  - Non-custom providers show "Leave empty to use the official endpoint" hint
+- **Rationale**: Users with custom deployments or proxy endpoints need to configure both model and base URL during initial setup
+
+### feat: Built-in model — auto download + manual path selection
+
+- **Scope**: `src/main/services/builtin-embedding-provider.ts`, `src/main/services/providers.service.ts`, `src/main/ipc/providers.ipc.ts`, `src/main/store/app-settings-store.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/page.tsx`
+- **Changes**:
+  - Two ways to get the model: **Auto Download** (from HuggingFace, background job) or **Set Path** (from GitHub Releases, user picks folder)
+  - Added `builtinModelPath` setting persisted in app-settings.json
+  - `getEffectiveModelDir()` checks user-configured path first, then falls back to default location
+  - Setting the model path triggers provider re-initialization
+  - Download is a background job: main process keeps state in memory, renderer recovers on remount
+  - Progress shows file count, downloaded bytes, and combined progress bar
+  - UI hints tell the user the expected folder structure (`Xenova/all-MiniLM-L6-v2/onnx/model.onnx`)
+- **Rationale**: Auto download for convenience; manual path for users with network issues who download from Releases
+- **Update**: Moved download progress toast to global AppShell level — now visible on ALL pages, not just Settings
+- **Fix**: Download progress `onIpc` listener was reading `args[0]` (IpcRendererEvent) instead of `args[1]` (actual data) — progress was never updating
+- **Fix**: HuggingFace returns relative-path redirects (`/api/resolve-cache/...`); `downloadFile` now resolves them to absolute URLs — this was causing 0-byte downloads
+
+## 2026-03-10
+
+### feat: First-run setup wizard for AI provider configuration
+
+- **Scope**: `src/renderer/components/setup-wizard-modal.tsx` (new), `src/renderer/components/app-shell.tsx`
+- **Changes**:
+  - Added a 3-step setup wizard modal (Welcome → Select Provider → Enter API Key) that appears on first launch when no AI provider has an API key configured
+  - Users can test & save their API key or skip the setup; dismissed state persists in localStorage
+  - Notion-style UI with framer-motion animations, consistent with existing design language
+- **Rationale**: New users had no guidance on configuring AI providers, leaving all AI features non-functional until they discovered the Settings page
+
 ## 2026-03-10 (session 82)
 
 ### fix: Reduce dev startup crashes
