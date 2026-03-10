@@ -6,6 +6,13 @@ import type { EmbeddingProvider } from '../../src/main/services/embedding-provid
 
 const PROJECT_ROOT = path.resolve(__dirname, '../..');
 
+// Check if local model exists (skip embedding tests in CI)
+const modelDir = path.join(PROJECT_ROOT, 'models');
+const modelExists = fs.existsSync(
+  path.join(modelDir, 'Xenova', 'all-MiniLM-L6-v2', 'onnx', 'model.onnx'),
+);
+const requiresModelIt = modelExists ? it : it.skip;
+
 // Mock electron app to return project root (models are bundled there)
 vi.mock('electron', () => ({
   app: {
@@ -44,51 +51,63 @@ describe('builtin embedding provider', () => {
     expect(status.ready).toBe(false);
   });
 
-  it('generates 384-dimensional normalized vectors', async () => {
-    const texts = ['Machine learning for scientific discovery'];
-    const embeddings = await provider.embedTexts(texts);
+  requiresModelIt(
+    'generates 384-dimensional normalized vectors',
+    async () => {
+      const texts = ['Machine learning for scientific discovery'];
+      const embeddings = await provider.embedTexts(texts);
 
-    expect(embeddings).toHaveLength(1);
-    expect(embeddings[0]).toHaveLength(384);
+      expect(embeddings).toHaveLength(1);
+      expect(embeddings[0]).toHaveLength(384);
 
-    // Verify normalization (L2 norm should be ~1.0)
-    const norm = Math.sqrt(embeddings[0].reduce((sum, v) => sum + v * v, 0));
-    expect(norm).toBeCloseTo(1.0, 1);
+      // Verify normalization (L2 norm should be ~1.0)
+      const norm = Math.sqrt(embeddings[0].reduce((sum, v) => sum + v * v, 0));
+      expect(norm).toBeCloseTo(1.0, 1);
 
-    // Status should be ready after first use
-    expect(provider.getStatus().ready).toBe(true);
-  }, 120_000);
+      // Status should be ready after first use
+      expect(provider.getStatus().ready).toBe(true);
+    },
+    120_000,
+  );
 
-  it('produces semantically similar vectors for related texts', async () => {
-    const embeddings = await provider.embedTexts([
-      'Neural networks for image classification',
-      'Deep learning models for visual recognition',
-      'Cooking recipes for Italian pasta dishes',
-    ]);
+  requiresModelIt(
+    'produces semantically similar vectors for related texts',
+    async () => {
+      const embeddings = await provider.embedTexts([
+        'Neural networks for image classification',
+        'Deep learning models for visual recognition',
+        'Cooking recipes for Italian pasta dishes',
+      ]);
 
-    expect(embeddings).toHaveLength(3);
+      expect(embeddings).toHaveLength(3);
 
-    // Cosine similarity helper
-    const cosine = (a: number[], b: number[]) => {
-      let dot = 0;
-      for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
-      return dot; // vectors are already normalized
-    };
+      // Cosine similarity helper
+      const cosine = (a: number[], b: number[]) => {
+        let dot = 0;
+        for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
+        return dot; // vectors are already normalized
+      };
 
-    const simRelated = cosine(embeddings[0], embeddings[1]);
-    const simUnrelated = cosine(embeddings[0], embeddings[2]);
+      const simRelated = cosine(embeddings[0], embeddings[1]);
+      const simUnrelated = cosine(embeddings[0], embeddings[2]);
 
-    // Related texts should have higher similarity than unrelated ones
-    expect(simRelated).toBeGreaterThan(simUnrelated);
-    expect(simRelated).toBeGreaterThan(0.5);
-  }, 120_000);
+      // Related texts should have higher similarity than unrelated ones
+      expect(simRelated).toBeGreaterThan(simUnrelated);
+      expect(simRelated).toBeGreaterThan(0.5);
+    },
+    120_000,
+  );
 
-  it('handles batch processing', async () => {
-    const texts = Array.from({ length: 5 }, (_, i) => `Test document number ${i + 1}`);
-    const embeddings = await provider.embedTexts(texts);
-    expect(embeddings).toHaveLength(5);
-    embeddings.forEach((emb) => expect(emb).toHaveLength(384));
-  }, 120_000);
+  requiresModelIt(
+    'handles batch processing',
+    async () => {
+      const texts = Array.from({ length: 5 }, (_, i) => `Test document number ${i + 1}`);
+      const embeddings = await provider.embedTexts(texts);
+      expect(embeddings).toHaveLength(5);
+      embeddings.forEach((emb) => expect(emb).toHaveLength(384));
+    },
+    120_000,
+  );
 
   it('returns empty array for empty input', async () => {
     // We need to test through LocalSemanticService since embedTexts requires initialized pipeline
