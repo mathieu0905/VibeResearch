@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Link, useLocation, useNavigate, useMatches } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
@@ -19,17 +19,12 @@ import {
   AlertCircle,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
-  ChevronDown,
-  ChevronRight,
   Sparkles,
-  GripVertical,
 } from 'lucide-react';
 import { useTabs } from '../hooks/use-tabs';
-import { ipc, PaperItem, ProjectItem, CollectionItem } from '../hooks/use-ipc';
+import { ipc, type PaperItem, type ProjectItem } from '../hooks/use-ipc';
 import { useAnalysis } from '../hooks/use-analysis';
 import { useMainReady } from '../hooks/use-main-ready';
-import { CollectionModal } from './collection-modal';
 
 // Detect if running on Windows
 const isWindows = navigator.userAgent.includes('Windows');
@@ -42,174 +37,12 @@ interface RecentItem {
   accessedAt: Date;
 }
 
-const libraryNavItem = { to: '/papers', label: 'Library', icon: FileText };
-
 const primaryNavItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/search', label: 'Search', icon: Search },
 ];
 
-const workspaceNavItems = [
-  { to: '/projects', label: 'Projects', icon: FolderKanban },
-  { to: '/agent-todos', label: 'Tasks', icon: Bot },
-];
-
 const SIDEBAR_COLLAPSED_KEY = 'researchclaw-sidebar-collapsed';
-const LIBRARY_EXPANDED_KEY = 'vibe-research-library-expanded';
-
-// ── Collection tree helpers ──────────────────────────────────────────────
-
-interface CollectionTreeNode extends CollectionItem {
-  children: CollectionTreeNode[];
-}
-
-function buildTree(collections: CollectionItem[]): CollectionTreeNode[] {
-  const map = new Map<string, CollectionTreeNode>();
-  for (const c of collections) {
-    map.set(c.id, { ...c, children: [] });
-  }
-  const roots: CollectionTreeNode[] = [];
-  for (const node of map.values()) {
-    if (node.parentId && map.has(node.parentId)) {
-      map.get(node.parentId)!.children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-  return roots;
-}
-
-function CollectionTreeItem({
-  node,
-  level,
-  pathname,
-  onMove,
-  dragId,
-  setDragId,
-  dropTargetId,
-  setDropTargetId,
-}: {
-  node: CollectionTreeNode;
-  level: number;
-  pathname: string;
-  onMove: (id: string, parentId: string | null) => void;
-  dragId: string | null;
-  setDragId: (id: string | null) => void;
-  dropTargetId: string | null;
-  setDropTargetId: (id: string | null) => void;
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const to = `/collections/${node.id}`;
-  const isActive = pathname === to;
-  const hasChildren = node.children.length > 0;
-  const isDragging = dragId === node.id;
-  const isDropTarget = dropTargetId === node.id && dragId !== node.id;
-
-  return (
-    <div>
-      <div
-        draggable={!node.isDefault}
-        onDragStart={(e) => {
-          if (node.isDefault) {
-            e.preventDefault();
-            return;
-          }
-          e.dataTransfer.setData('text/plain', node.id);
-          setDragId(node.id);
-        }}
-        onDragEnd={() => {
-          setDragId(null);
-          setDropTargetId(null);
-        }}
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (dragId && dragId !== node.id) {
-            setDropTargetId(node.id);
-          }
-        }}
-        onDragLeave={() => {
-          if (dropTargetId === node.id) setDropTargetId(null);
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          const sourceId = e.dataTransfer.getData('text/plain');
-          if (sourceId && sourceId !== node.id) {
-            onMove(sourceId, node.id);
-          }
-          setDropTargetId(null);
-          setDragId(null);
-        }}
-        className={`flex items-center ${isDragging ? 'opacity-40' : ''}`}
-        style={{ paddingLeft: `${level * 12 + 8}px` }}
-      >
-        {hasChildren ? (
-          <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              setExpanded(!expanded);
-            }}
-            className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-notion-text-tertiary hover:bg-notion-sidebar-hover"
-          >
-            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          </button>
-        ) : (
-          <div className="w-5 flex-shrink-0" />
-        )}
-        <Link
-          to={to}
-          className={`group relative flex flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/50 ${
-            isDropTarget ? 'ring-2 ring-notion-accent/50 bg-notion-accent-light' : ''
-          }`}
-          title={node.name}
-        >
-          {isActive && (
-            <motion.div
-              layoutId="sidebarNavIndicator"
-              className="absolute inset-0 rounded-md bg-notion-sidebar-hover"
-              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-            />
-          )}
-          <span className="relative z-10 flex-shrink-0 text-sm">{node.icon ?? '📁'}</span>
-          <span
-            className={`relative z-10 flex-1 truncate ${
-              isActive
-                ? 'font-medium text-notion-text'
-                : 'text-notion-text-secondary group-hover:text-notion-text'
-            }`}
-          >
-            {node.name}
-          </span>
-          <span className="relative z-10 text-xs text-notion-text-tertiary">{node.paperCount}</span>
-          {!node.isDefault && (
-            <GripVertical
-              size={12}
-              className="relative z-10 flex-shrink-0 text-notion-text-tertiary opacity-0 group-hover:opacity-100 transition-opacity cursor-grab"
-            />
-          )}
-        </Link>
-      </div>
-      {hasChildren && expanded && (
-        <div>
-          {node.children.map((child) => (
-            <CollectionTreeItem
-              key={child.id}
-              node={child}
-              level={level + 1}
-              pathname={pathname}
-              onMove={onMove}
-              dragId={dragId}
-              setDragId={setDragId}
-              dropTargetId={dropTargetId}
-              setDropTargetId={setDropTargetId}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // Windows window controls component
 function WindowsWindowControls() {
@@ -265,7 +98,6 @@ export function AppShell({
   fullWidth,
 }: {
   children: React.ReactNode;
-  breadcrumbs?: { label: string; to?: string }[]; // kept for compat, unused
   fullWidth?: boolean;
 }) {
   const location = useLocation();
@@ -279,14 +111,6 @@ export function AppShell({
     const stored = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
     return stored === 'true';
   });
-  const [collections, setCollections] = useState<CollectionItem[]>([]);
-  const [showNewCollection, setShowNewCollection] = useState(false);
-  const [dragId, setDragId] = useState<string | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const [isLibraryExpanded, setIsLibraryExpanded] = useState(() => {
-    const stored = localStorage.getItem(LIBRARY_EXPANDED_KEY);
-    return stored !== 'false';
-  });
 
   const sidebarRef = useRef<HTMLElement>(null);
 
@@ -296,34 +120,20 @@ export function AppShell({
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
   };
 
-  const toggleLibraryExpanded = () => {
-    const next = !isLibraryExpanded;
-    setIsLibraryExpanded(next);
-    localStorage.setItem(LIBRARY_EXPANDED_KEY, String(next));
-  };
+  const recentLoadedRef = useRef(false);
 
-  const collectionTree = useMemo(() => buildTree(collections), [collections]);
-
-  const handleMoveCollection = useCallback(async (id: string, parentId: string | null) => {
+  const loadData = useCallback(async () => {
     try {
-      await ipc.moveCollection(id, parentId);
-      const updated = await ipc.listCollections();
-      setCollections(updated);
-    } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to move collection');
-    }
-  }, []);
+      const [papers, projectList] = await Promise.all([ipc.listPapers(), ipc.listProjects()]);
 
-  useEffect(() => {
-    if (!isMainReady) return;
+      const paperIdSet = new Set(papers.map((p: PaperItem) => p.id));
+      const projectIdSet = new Set(projectList.map((p: ProjectItem) => p.id));
 
-    async function loadRecentItems() {
-      try {
-        const [papers, projects] = await Promise.all([ipc.listPapers(), ipc.listProjects()]);
-
+      if (!recentLoadedRef.current) {
+        // First load: build the initial recent items list
         const paperItems: RecentItem[] = papers
-          .filter((p) => p.lastReadAt)
-          .map((p) => ({
+          .filter((p: PaperItem) => p.lastReadAt)
+          .map((p: PaperItem) => ({
             id: p.id,
             shortId: p.shortId,
             type: 'paper' as const,
@@ -331,9 +141,9 @@ export function AppShell({
             accessedAt: new Date(p.lastReadAt!),
           }));
 
-        const projectItems: RecentItem[] = projects
-          .filter((p) => p.lastAccessedAt)
-          .map((p) => ({
+        const projectItems: RecentItem[] = projectList
+          .filter((p: ProjectItem) => p.lastAccessedAt)
+          .map((p: ProjectItem) => ({
             id: p.id,
             type: 'project' as const,
             title: p.name,
@@ -345,23 +155,28 @@ export function AppShell({
           .slice(0, 6);
 
         setRecentItems(allItems);
-      } catch (err) {
-        console.error('Failed to load recent items:', err);
+        recentLoadedRef.current = true;
+      } else {
+        // Subsequent loads: remove deleted items from the existing list
+        setRecentItems((prev) =>
+          prev.filter((item) =>
+            item.type === 'paper' ? paperIdSet.has(item.id) : projectIdSet.has(item.id),
+          ),
+        );
       }
+    } catch (err) {
+      console.error('Failed to load sidebar data:', err);
     }
+  }, []);
 
-    loadRecentItems();
-    ipc
-      .listCollections()
-      .then(setCollections)
-      .catch(() => {});
-  }, [pathname, isMainReady]); // Reload when route changes (handles deletions + new reads)
+  useEffect(() => {
+    if (!isMainReady) return;
+    loadData();
+  }, [pathname, isMainReady, loadData]);
 
-  const isLibraryRoute =
-    pathname === '/papers' ||
-    pathname.startsWith('/papers/') ||
-    pathname.startsWith('/collections/');
-  const collapsedNavItems = [libraryNavItem, ...workspaceNavItems];
+  const isLibraryRoute = pathname === '/papers' || pathname.startsWith('/papers/');
+  const isProjectsRoute = pathname === '/projects' || pathname.startsWith('/projects/');
+
   const matches = useMatches();
   const hideBackButton = matches.some(
     (m) => (m.handle as { hideBackButton?: boolean })?.hideBackButton,
@@ -376,21 +191,15 @@ export function AppShell({
     navigate('/dashboard');
   };
 
-  const activeAnalysisJobs = useMemo(
-    () => analysisJobs.filter((job) => job.active),
-    [analysisJobs],
-  );
+  const activeAnalysisJobs = analysisJobs.filter((job) => job.active);
   const [dismissedJobIds, setDismissedJobIds] = useState<Set<string>>(new Set());
-  const latestFinishedAnalysisJob = useMemo(
-    () =>
-      analysisJobs.find(
-        (job) =>
-          !job.active &&
-          !dismissedJobIds.has(job.jobId) &&
-          (job.stage === 'done' || job.stage === 'error' || job.stage === 'cancelled'),
-      ) ?? null,
-    [analysisJobs, dismissedJobIds],
-  );
+  const latestFinishedAnalysisJob =
+    analysisJobs.find(
+      (job) =>
+        !job.active &&
+        !dismissedJobIds.has(job.jobId) &&
+        (job.stage === 'done' || job.stage === 'error' || job.stage === 'cancelled'),
+    ) ?? null;
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden">
@@ -504,7 +313,7 @@ export function AppShell({
                   </svg>
                 </div>
                 <span className="text-sm font-semibold text-notion-text whitespace-nowrap">
-                  Vibe Research
+                  ResearchClaw
                 </span>
               </div>
             )}
@@ -522,8 +331,17 @@ export function AppShell({
           </div>
 
           {/* Primary navigation */}
-          <nav className={`mt-2 flex flex-col gap-0.5 ${isCollapsed ? 'px-2' : 'px-2'}`}>
-            {[...primaryNavItems, ...(isCollapsed ? collapsedNavItems : [])].map((item) => {
+          <nav className="mt-2 flex flex-col gap-0.5 px-2">
+            {[
+              ...primaryNavItems,
+              ...(isCollapsed
+                ? [
+                    { to: '/papers', label: 'Library', icon: FileText },
+                    { to: '/projects', label: 'Projects', icon: FolderKanban },
+                    { to: '/agent-todos', label: 'Tasks', icon: Bot },
+                  ]
+                : []),
+            ].map((item) => {
               const isActive = pathname === item.to || pathname.startsWith(item.to + '/');
               const Icon = item.icon;
               return (
@@ -567,178 +385,106 @@ export function AppShell({
             })}
           </nav>
 
+          {/* Library + Projects sections (expanded sidebar only) */}
           {!isCollapsed && (
-            <div className="mt-4 px-2">
-              <div className="mb-1.5 px-2 text-[11px] font-medium uppercase tracking-wide text-notion-text-tertiary">
-                Library
-              </div>
-              <div className="rounded-lg border border-notion-border bg-white/60 p-1">
-                <div className="flex items-center gap-1">
-                  <Link
-                    to="/papers"
-                    className="group relative flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/50"
-                  >
-                    {isLibraryRoute && (
-                      <motion.div
-                        layoutId="sidebarNavIndicator"
-                        className="absolute inset-0 rounded-md bg-notion-sidebar-hover"
-                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                      />
-                    )}
-                    <FileText
-                      size={14}
-                      strokeWidth={isLibraryRoute ? 2.2 : 1.8}
-                      className={`relative z-10 flex-shrink-0 ${
-                        isLibraryRoute
-                          ? 'text-notion-text'
-                          : 'text-notion-text-tertiary group-hover:text-notion-text-secondary'
-                      }`}
-                    />
-                    <span
-                      className={`relative z-10 flex-1 truncate ${
-                        isLibraryRoute
-                          ? 'font-medium text-notion-text'
-                          : 'text-notion-text-secondary group-hover:text-notion-text'
-                      }`}
-                    >
-                      Library
-                    </span>
-                  </Link>
-                  <button
-                    onClick={toggleLibraryExpanded}
-                    className="flex h-8 w-8 items-center justify-center rounded-md text-notion-text-tertiary transition-colors hover:bg-notion-sidebar-hover hover:text-notion-text-secondary"
-                    title={
-                      isLibraryExpanded ? 'Collapse Library section' : 'Expand Library section'
-                    }
-                  >
-                    {isLibraryExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  </button>
-                </div>
-
-                {isLibraryExpanded && (
-                  <div className="mt-1 flex flex-col gap-0.5 border-t border-notion-border/70 pt-1">
-                    <Link
-                      to="/papers"
-                      className="group relative ml-2 flex items-center gap-2 rounded-md px-2 py-1.5 text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/50"
-                    >
-                      {pathname === '/papers' && (
-                        <motion.div
-                          layoutId="sidebarNavIndicator"
-                          className="absolute inset-0 rounded-md bg-notion-sidebar-hover"
-                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                        />
-                      )}
-                      <File
-                        size={13}
-                        className="relative z-10 flex-shrink-0 text-notion-text-tertiary"
-                      />
-                      <span
-                        className={`relative z-10 flex-1 truncate ${
-                          pathname === '/papers'
-                            ? 'font-medium text-notion-text'
-                            : 'text-notion-text-secondary group-hover:text-notion-text'
-                        }`}
-                      >
-                        All Papers
-                      </span>
-                    </Link>
-                    <div className="mt-1 flex items-center justify-between px-2 pl-4">
-                      <span className="text-[11px] font-medium uppercase tracking-wide text-notion-text-tertiary">
-                        Collections
-                      </span>
-                      <button
-                        onClick={() => setShowNewCollection(true)}
-                        className="rounded p-0.5 text-notion-text-tertiary hover:bg-notion-sidebar-hover hover:text-notion-text-secondary"
-                      >
-                        <Plus size={12} />
-                      </button>
-                    </div>
-                    <div
-                      className="flex flex-col gap-0.5"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        // Allow drop on root area
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const sourceId = e.dataTransfer.getData('text/plain');
-                        if (sourceId) {
-                          handleMoveCollection(sourceId, null);
-                        }
-                        setDropTargetId(null);
-                        setDragId(null);
-                      }}
-                    >
-                      {collectionTree.length > 0 ? (
-                        collectionTree.map((node) => (
-                          <CollectionTreeItem
-                            key={node.id}
-                            node={node}
-                            level={0}
-                            pathname={pathname}
-                            onMove={handleMoveCollection}
-                            dragId={dragId}
-                            setDragId={setDragId}
-                            dropTargetId={dropTargetId}
-                            setDropTargetId={setDropTargetId}
-                          />
-                        ))
-                      ) : (
-                        <div className="ml-2 rounded-md px-2 py-1.5 text-sm text-notion-text-tertiary">
-                          No collections yet
-                        </div>
-                      )}
-                    </div>
-                  </div>
+            <div className="mt-3 flex flex-col gap-0.5 px-2">
+              {/* Library - flat link */}
+              <Link
+                to="/papers"
+                className="group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/50"
+              >
+                {isLibraryRoute && (
+                  <motion.div
+                    layoutId="sidebarNavIndicator"
+                    className="rounded-md bg-notion-sidebar-hover absolute inset-0"
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                  />
                 )}
-              </div>
-            </div>
-          )}
+                <FileText
+                  size={16}
+                  strokeWidth={isLibraryRoute ? 2.2 : 1.8}
+                  className={`relative z-10 flex-shrink-0 ${
+                    isLibraryRoute
+                      ? 'text-notion-text'
+                      : 'text-notion-text-tertiary group-hover:text-notion-text-secondary'
+                  }`}
+                />
+                <span
+                  className={`relative z-10 whitespace-nowrap ${
+                    isLibraryRoute
+                      ? 'font-medium text-notion-text'
+                      : 'text-notion-text-secondary group-hover:text-notion-text'
+                  }`}
+                >
+                  Library
+                </span>
+              </Link>
 
-          {!isCollapsed && (
-            <div className="mt-4 px-2">
-              <div className="mb-1.5 px-2 text-[11px] font-medium uppercase tracking-wide text-notion-text-tertiary">
-                Workspace
-              </div>
-              <div className="flex flex-col gap-0.5">
-                {workspaceNavItems.map((item) => {
-                  const isActive = pathname === item.to || pathname.startsWith(item.to + '/');
-                  const Icon = item.icon;
-                  return (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      className="group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/50"
-                    >
-                      {isActive && (
-                        <motion.div
-                          layoutId="sidebarNavIndicator"
-                          className="absolute inset-0 rounded-md bg-notion-sidebar-hover"
-                          transition={{ type: 'spring', stiffness: 500, damping: 30 }}
-                        />
-                      )}
-                      <Icon
-                        size={14}
-                        strokeWidth={isActive ? 2.2 : 1.8}
-                        className={`relative z-10 flex-shrink-0 ${
-                          isActive
-                            ? 'text-notion-text'
-                            : 'text-notion-text-tertiary group-hover:text-notion-text-secondary'
-                        }`}
-                      />
-                      <span
-                        className={`relative z-10 flex-1 truncate ${
-                          isActive
-                            ? 'font-medium text-notion-text'
-                            : 'text-notion-text-secondary group-hover:text-notion-text'
-                        }`}
-                      >
-                        {item.label}
-                      </span>
-                    </Link>
-                  );
-                })}
-              </div>
+              {/* Projects - flat link */}
+              <Link
+                to="/projects"
+                className="group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/50"
+              >
+                {isProjectsRoute && (
+                  <motion.div
+                    layoutId="sidebarNavIndicator"
+                    className="rounded-md bg-notion-sidebar-hover absolute inset-0"
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                  />
+                )}
+                <FolderKanban
+                  size={16}
+                  strokeWidth={isProjectsRoute ? 2.2 : 1.8}
+                  className={`relative z-10 flex-shrink-0 ${
+                    isProjectsRoute
+                      ? 'text-notion-text'
+                      : 'text-notion-text-tertiary group-hover:text-notion-text-secondary'
+                  }`}
+                />
+                <span
+                  className={`relative z-10 whitespace-nowrap ${
+                    isProjectsRoute
+                      ? 'font-medium text-notion-text'
+                      : 'text-notion-text-secondary group-hover:text-notion-text'
+                  }`}
+                >
+                  Projects
+                </span>
+              </Link>
+
+              {/* Tasks */}
+              <Link
+                to="/agent-todos"
+                className="group relative flex items-center gap-2 rounded-md px-2 py-1.5 text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/50"
+              >
+                {(pathname === '/agent-todos' || pathname.startsWith('/agent-todos/')) && (
+                  <motion.div
+                    layoutId="sidebarNavIndicator"
+                    className="rounded-md bg-notion-sidebar-hover absolute inset-0"
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                  />
+                )}
+                <Bot
+                  size={16}
+                  strokeWidth={
+                    pathname === '/agent-todos' || pathname.startsWith('/agent-todos/') ? 2.2 : 1.8
+                  }
+                  className={`relative z-10 flex-shrink-0 ${
+                    pathname === '/agent-todos' || pathname.startsWith('/agent-todos/')
+                      ? 'text-notion-text'
+                      : 'text-notion-text-tertiary group-hover:text-notion-text-secondary'
+                  }`}
+                />
+                <span
+                  className={`relative z-10 whitespace-nowrap ${
+                    pathname === '/agent-todos' || pathname.startsWith('/agent-todos/')
+                      ? 'font-medium text-notion-text'
+                      : 'text-notion-text-secondary group-hover:text-notion-text'
+                  }`}
+                >
+                  Tasks
+                </span>
+              </Link>
             </div>
           )}
 
@@ -845,7 +591,7 @@ export function AppShell({
             >
               {activeAnalysisJobs.length > 0 ? (
                 <>
-                  <Loader2 size={13} className="flex-shrink-0 animate-spin text-violet-600" />
+                  <Loader2 size={13} className="flex-shrink-0 animate-spin text-blue-600" />
                   <span className="truncate text-notion-text">
                     {activeAnalysisJobs.length === 1
                       ? `Analyzing: ${activeAnalysisJobs[0].paperTitle ?? 'paper'}`
@@ -854,7 +600,7 @@ export function AppShell({
                   {activeAnalysisJobs[0]?.paperShortId && (
                     <Link
                       to={`/papers/${activeAnalysisJobs[0].paperShortId}`}
-                      className="flex-shrink-0 text-violet-700 hover:text-violet-900"
+                      className="flex-shrink-0 text-blue-700 hover:text-blue-900"
                     >
                       <Sparkles size={12} />
                     </Link>
@@ -912,56 +658,36 @@ export function AppShell({
         {/* Page content */}
         <main className="notion-scrollbar flex-1 overflow-y-auto h-full">
           {fullWidth ? (
-            <div className="h-full">
+            <div className="relative h-full">
               {canGoBack && (
-                <div className="px-4 pt-4">
-                  <button
-                    onClick={handleGoBack}
-                    title="返回上一页"
-                    aria-label="返回上一页"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-notion-text-tertiary transition-colors hover:bg-notion-sidebar hover:text-notion-text"
-                  >
-                    <ArrowLeft size={15} />
-                  </button>
-                </div>
+                <button
+                  onClick={handleGoBack}
+                  title="返回上一页"
+                  aria-label="返回上一页"
+                  className="absolute left-4 top-4 z-10 inline-flex h-8 w-8 items-center justify-center rounded-lg text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
+                >
+                  <ArrowLeft size={16} />
+                </button>
               )}
               {children}
             </div>
           ) : (
-            <div className="mx-auto w-full max-w-4xl px-16 py-10">
+            <div className="relative mx-auto w-full max-w-4xl px-16 py-10">
               {canGoBack && (
-                <div className="mb-4">
-                  <button
-                    onClick={handleGoBack}
-                    title="返回上一页"
-                    aria-label="返回上一页"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full text-notion-text-tertiary transition-colors hover:bg-notion-sidebar hover:text-notion-text"
-                  >
-                    <ArrowLeft size={15} />
-                  </button>
-                </div>
+                <button
+                  onClick={handleGoBack}
+                  title="返回上一页"
+                  aria-label="返回上一页"
+                  className="absolute left-4 top-10 inline-flex h-8 w-8 items-center justify-center rounded-lg text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
+                >
+                  <ArrowLeft size={16} />
+                </button>
               )}
               {children}
             </div>
           )}
         </main>
       </div>
-
-      <CollectionModal
-        isOpen={showNewCollection}
-        onClose={() => setShowNewCollection(false)}
-        onSave={async (data) => {
-          try {
-            await ipc.createCollection(data);
-            setShowNewCollection(false);
-            const updated = await ipc.listCollections();
-            setCollections(updated);
-          } catch (err) {
-            alert(err instanceof Error ? err.message : 'Failed to create collection');
-          }
-        }}
-        collections={collections}
-      />
     </div>
   );
 }

@@ -19,7 +19,11 @@ import type {
   ComparisonNoteItem,
   UserProfileState,
   UserProfile,
+  TaskResultItem,
+  ExperimentReportItem,
 } from '@shared';
+
+export type { TaskResultItem, ExperimentReportItem };
 
 declare global {
   interface Window {
@@ -377,7 +381,7 @@ export interface CliTool {
 
 export type ProviderKind = 'anthropic' | 'openai' | 'gemini' | 'custom';
 
-export type ModelKind = 'agent' | 'lightweight' | 'chat';
+export type ModelKind = 'agent' | 'lightweight';
 export type ModelBackend = 'api' | 'cli';
 export type { AgentToolKind };
 
@@ -391,15 +395,31 @@ export interface SemanticSearchSettings {
   enabled: boolean;
   autoProcess: boolean;
   autoEnrich: boolean;
-  autoStartOllama: boolean;
-  baseUrl: string;
   embeddingModel: string;
-  embeddingProvider: 'builtin' | 'ollama';
+  embeddingProvider: 'builtin' | 'openai-compatible';
+  embeddingApiBase?: string;
+  embeddingApiKey?: string;
   recommendationExploration: number;
+}
+
+export interface EmbeddingConfig {
+  id: string;
+  name: string;
+  provider: 'builtin' | 'openai-compatible';
+  embeddingModel: string;
+  embeddingApiBase?: string;
+  embeddingApiKey?: string;
 }
 
 export interface BuiltinModelStatus {
   ready: boolean;
+  error?: string;
+}
+
+export interface BuiltinModelDownloadProgress {
+  phase: 'downloading' | 'completed' | 'error';
+  file?: string;
+  percent?: number;
   error?: string;
 }
 
@@ -409,7 +429,6 @@ export interface SemanticEmbeddingTestResult {
   baseUrl: string;
   dimensions: number;
   elapsedMs: number;
-  startedOllama: boolean;
   preview: number[];
 }
 
@@ -452,16 +471,6 @@ export interface SemanticDebugResult {
   enabled: boolean;
   autoProcess: boolean;
   autoEnrich: boolean;
-  autoStartOllama: boolean;
-  startedOllama: boolean;
-  health: SemanticDebugProbeResult;
-  endpoints: {
-    tags: SemanticDebugProbeResult;
-    embed: SemanticDebugProbeResult;
-    embeddings: SemanticDebugProbeResult;
-  };
-  availableModels: string[];
-  embeddingModelInstalled: boolean;
   indexSummary: SemanticIndexDebugSummary;
   lightweightModel: LightweightModelDebugInfo;
   notes: string[];
@@ -559,18 +568,10 @@ export interface ModelConfig {
   hasApiKey?: boolean;
 }
 
-export interface CollectionItem {
-  id: string;
-  name: string;
-  icon?: string | null;
-  color?: string | null;
-  description?: string | null;
-  isDefault: boolean;
-  sortOrder: number;
-  parentId?: string | null;
-  paperCount: number;
-  createdAt: string;
-  updatedAt: string;
+export interface ProjectPaperItem extends PaperItem {
+  addedAt: string;
+  note?: string | null;
+  projectPaperId: string;
 }
 
 export interface RecommendationRefreshResult {
@@ -579,12 +580,6 @@ export interface RecommendationRefreshResult {
 }
 
 export type { UserProfileState, UserProfile };
-export interface ResearchProfile {
-  tagDistribution: Array<{ name: string; category: string; count: number }>;
-  yearDistribution: Array<{ year: number; count: number }>;
-  topAuthors: Array<{ name: string; count: number }>;
-  totalPapers: number;
-}
 
 export interface CliConfig {
   id: string;
@@ -686,6 +681,8 @@ export const ipc = {
     invoke<{ results: SearchResultItem[]; total: number }>('papers:search', query, limit),
   getSourceEvents: (paperId: string) => invoke<SourceEvent[]>('papers:getSourceEvents', paperId),
   exportBibtex: (paperIds: string[]) => invoke<string>('papers:exportBibtex', paperIds),
+  extractGithubUrl: (input: { title: string; abstract?: string }) =>
+    invoke<string | null>('papers:extractGithubUrl', input),
 
   // Tagging
   tagPaper: (paperId: string) =>
@@ -741,10 +738,23 @@ export const ipc = {
 
   // Projects
   listProjects: () => invoke<ProjectItem[]>('projects:list'),
-  createProject: (input: { name: string; description?: string; workdir?: string }) =>
-    invoke<ProjectItem>('projects:create', input),
-  updateProject: (id: string, data: { name?: string; description?: string; workdir?: string }) =>
-    invoke<ProjectItem>('projects:update', id, data),
+  createProject: (input: {
+    name: string;
+    description?: string;
+    workdir?: string;
+    sshServerId?: string;
+    remoteWorkdir?: string;
+  }) => invoke<ProjectItem>('projects:create', input),
+  updateProject: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      workdir?: string;
+      sshServerId?: string;
+      remoteWorkdir?: string;
+    },
+  ) => invoke<ProjectItem>('projects:update', id, data),
   deleteProject: (id: string) => invoke<ProjectItem>('projects:delete', id),
   touchProject: (id: string) => invoke<void>('projects:touch', id),
 
@@ -842,6 +852,17 @@ export const ipc = {
   listSemanticModelPullJobs: () =>
     invoke<SemanticModelPullJob[]>('settings:listSemanticModelPullJobs'),
   getBuiltinModelStatus: () => invoke<BuiltinModelStatus>('settings:getBuiltinModelStatus'),
+  checkBuiltinModelExists: () =>
+    invoke<{ exists: boolean; modelPath: string }>('settings:checkBuiltinModelExists'),
+  downloadBuiltinModel: () => invoke<{ started: boolean }>('settings:downloadBuiltinModel'),
+
+  // Embedding configs (multi-card UI)
+  listEmbeddingConfigs: () =>
+    invoke<{ configs: EmbeddingConfig[]; activeId: string | null }>('embedding:list'),
+  saveEmbeddingConfig: (config: EmbeddingConfig) =>
+    invoke<{ success: boolean }>('embedding:save', config),
+  deleteEmbeddingConfig: (id: string) => invoke<{ success: boolean }>('embedding:delete', id),
+  setActiveEmbeddingConfig: (id: string) => invoke<{ success: boolean }>('embedding:setActive', id),
 
   // Shell
   openInEditor: (dirPath: string) =>
@@ -923,34 +944,15 @@ export const ipc = {
     baseURL?: string;
   }) => invoke<{ success: boolean; error?: string }>('models:testConnection', params),
 
-  // Collections
-  listCollections: () => invoke<CollectionItem[]>('collections:list'),
-  createCollection: (data: {
-    name: string;
-    icon?: string;
-    color?: string;
-    description?: string;
-    parentId?: string | null;
-  }) => invoke<CollectionItem>('collections:create', data),
-  moveCollection: (id: string, parentId: string | null, sortOrder?: number) =>
-    invoke<CollectionItem>('collections:move', { id, parentId, sortOrder }),
-  updateCollection: (
-    id: string,
-    data: { name?: string; icon?: string; color?: string; description?: string },
-  ) => invoke<CollectionItem>('collections:update', id, data),
-  deleteCollection: (id: string) => invoke<CollectionItem>('collections:delete', id),
-  addPaperToCollection: (collectionId: string, paperId: string) =>
-    invoke<unknown>('collections:addPaper', collectionId, paperId),
-  removePaperFromCollection: (collectionId: string, paperId: string) =>
-    invoke<unknown>('collections:removePaper', collectionId, paperId),
-  addPapersToCollection: (collectionId: string, paperIds: string[]) =>
-    invoke<{ success: boolean }>('collections:addPapers', collectionId, paperIds),
-  listCollectionPapers: (collectionId: string) =>
-    invoke<PaperItem[]>('collections:listPapers', collectionId),
-  getCollectionsForPaper: (paperId: string) =>
-    invoke<CollectionItem[]>('collections:getForPaper', paperId),
-  getResearchProfile: (collectionId: string) =>
-    invoke<ResearchProfile>('collections:researchProfile', collectionId),
+  // Project Papers
+  listProjectPapers: (projectId: string) =>
+    invoke<ProjectPaperItem[]>('projects:papers:list', projectId),
+  addPaperToProject: (projectId: string, paperId: string, note?: string) =>
+    invoke<unknown>('projects:papers:add', projectId, paperId, note),
+  removePaperFromProject: (projectId: string, paperId: string) =>
+    invoke<unknown>('projects:papers:remove', projectId, paperId),
+  getProjectsForPaper: (paperId: string) =>
+    invoke<ProjectItem[]>('projects:papers:get-by-paper', paperId),
 
   // User profile
   getUserProfile: () => invoke<UserProfileState>('userProfile:get'),
@@ -1180,6 +1182,18 @@ export const ipc = {
     invoke<{ canceled: boolean; path?: string | null }>('ssh:select-key-file'),
   scanSshConfig: () => invoke<SshConfigEntry[]>('ssh:scan-config'),
   parseConfigFile: () => invoke<SshConfigEntry[]>('ssh:parse-config-file'),
+
+  // Reports
+  listReports: (projectId: string) => invoke<ExperimentReportItem[]>('reports:list', projectId),
+  deleteReport: (reportId: string) => invoke<void>('reports:delete', reportId),
+  generateReport: (params: {
+    projectId: string;
+    title: string;
+    todoIds: string[];
+    resultIds?: string[];
+  }) => invoke<void>('reports:generate', params),
+  listTaskResults: (params: { projectId: string }) =>
+    invoke<TaskResultItem[]>('reports:listTaskResults', params.projectId),
 
   // Window controls (for Windows title bar)
   windowClose: () => {

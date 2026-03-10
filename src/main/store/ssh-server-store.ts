@@ -1,4 +1,5 @@
 import fs from 'fs';
+import os from 'os';
 import { randomUUID } from 'crypto';
 import { ensureStorageDir, getSshServersPath } from './storage-path';
 import { encryptString, decryptString, isEncryptionAvailable } from '../utils/encryption';
@@ -168,7 +169,7 @@ export function getSshConnectConfig(id: string): {
       config.password = password;
     }
   } else if (server.authMethod === 'privateKey') {
-    config.privateKeyPath = server.privateKeyPath;
+    config.privateKeyPath = server.privateKeyPath?.replace(/^~/, os.homedir());
     const passphrase = getDecryptedSshPassphrase(id);
     if (passphrase) {
       config.passphrase = passphrase;

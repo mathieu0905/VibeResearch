@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { PapersRepository } from '@db';
 import {
   COMPARISON_SYSTEM_PROMPT,
@@ -7,10 +8,12 @@ import {
 } from '@shared';
 import { getLanguageModelFromConfig, streamText } from './ai-provider.service';
 import { getActiveModel, getModelWithKey } from '../store/model-config-store';
-import { getPaperExcerptCached } from './paper-text.service';
+import { getPaperText } from './paper-text.service';
+import { getPapersDir } from '../store/app-settings-store';
 
 export class ComparisonService {
   private papersRepository = new PapersRepository();
+  private static readonly PDF_EXCERPT_MAX_CHARS = 1200;
 
   async comparePapers(
     input: { paperIds: string[] },
@@ -22,14 +25,14 @@ export class ComparisonService {
       throw new Error('Comparison requires 2 or 3 papers');
     }
 
-    const modelConfig = getActiveModel('chat');
+    const modelConfig = getActiveModel('lightweight');
     if (!modelConfig) {
-      throw new Error('No chat model configured. Please set up a chat model in Settings.');
+      throw new Error('No lightweight model configured. Please set up a model in Settings.');
     }
 
     const configWithKey = getModelWithKey(modelConfig.id);
     if (!configWithKey?.apiKey) {
-      throw new Error('No API key configured for the chat model.');
+      throw new Error('No API key configured for the lightweight model.');
     }
 
     const model = getLanguageModelFromConfig(configWithKey);
@@ -40,21 +43,32 @@ export class ComparisonService {
       input.paperIds.map((id) => this.papersRepository.findById(id)),
     );
 
-    // Build comparison input with optional PDF excerpts (sequentially for progress)
+    // Build comparison input with paper directory paths (sequentially for progress)
     const comparisonInputs: ComparisonPaperInput[] = [];
     for (let i = 0; i < papers.length; i++) {
       const paper = papers[i];
       onProgress?.(`Reading paper ${i + 1}/${papers.length}: ${paper.title.slice(0, 60)}…`);
-      let pdfExcerpt = '';
+      let paperDir: string | undefined;
+      let pdfExcerpt: string | undefined;
       if (paper.shortId && (paper.pdfUrl || paper.pdfPath)) {
         try {
-          pdfExcerpt = await getPaperExcerptCached(
+          // Ensure text.txt is extracted and cached
+          const text = await getPaperText(
             paper.id,
             paper.shortId,
             paper.pdfUrl ?? undefined,
             paper.pdfPath ?? undefined,
-            3000,
           );
+          paperDir = path.join(getPapersDir(), paper.shortId);
+          if (text) {
+            const trimmed = text.trim();
+            if (trimmed) {
+              pdfExcerpt =
+                trimmed.length > ComparisonService.PDF_EXCERPT_MAX_CHARS
+                  ? `${trimmed.slice(0, ComparisonService.PDF_EXCERPT_MAX_CHARS)}…`
+                  : trimmed;
+            }
+          }
         } catch {
           // PDF extraction failed, continue without it
         }
@@ -65,7 +79,8 @@ export class ComparisonService {
         authors: (paper.authors as string[]) ?? [],
         year: paper.submittedAt ? new Date(paper.submittedAt).getFullYear() : null,
         abstract: paper.abstract ?? undefined,
-        pdfExcerpt: pdfExcerpt || undefined,
+        pdfExcerpt,
+        paperDir,
       });
     }
 
@@ -99,14 +114,14 @@ export class ComparisonService {
     onChunk: (chunk: string) => void,
     signal?: AbortSignal,
   ): Promise<string> {
-    const modelConfig = getActiveModel('chat');
+    const modelConfig = getActiveModel('lightweight');
     if (!modelConfig) {
-      throw new Error('No chat model configured. Please set up a chat model in Settings.');
+      throw new Error('No lightweight model configured. Please set up a model in Settings.');
     }
 
     const configWithKey = getModelWithKey(modelConfig.id);
     if (!configWithKey?.apiKey) {
-      throw new Error('No API key configured for the chat model.');
+      throw new Error('No API key configured for the lightweight model.');
     }
 
     const model = getLanguageModelFromConfig(configWithKey);

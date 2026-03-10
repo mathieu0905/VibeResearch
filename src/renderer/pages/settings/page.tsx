@@ -38,7 +38,6 @@ import {
   Code2,
   Cpu,
   Zap,
-  MessageSquare,
   Globe,
   BarChart3,
   Trash,
@@ -54,7 +53,6 @@ import {
 import { ResponsiveLine } from '@nivo/line';
 import { ModelCombobox } from '../../components/model-combobox';
 import { AgentSettings } from '../../components/settings/AgentSettings';
-import { SshServerSettings } from '../../components/settings/SshServerSettings';
 import {
   type SectionId,
   NAV_GROUPS,
@@ -717,7 +715,7 @@ function StorageSettings() {
           <input
             value={storageDir}
             onChange={(e) => setStorageDir(e.target.value)}
-            placeholder="e.g. /home/you/.local/share/vibe-research"
+            placeholder="e.g. /home/you/.local/share/researchclaw"
             className="flex-1 rounded-lg border border-notion-border bg-notion-sidebar px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
           />
           <button
@@ -810,18 +808,12 @@ const MODEL_KIND_META: Record<
     description: 'Fast, low-cost model for tagging, summaries, and classification.',
     Icon: Zap,
   },
-  chat: {
-    label: 'Chat',
-    description: 'Conversational model for the paper reader chat interface.',
-    Icon: MessageSquare,
-  },
 };
 
-// lightweight and chat are always API; agent uses CLI (managed in AgentSettings)
+// lightweight is always API; agent uses CLI (managed in AgentSettings)
 const KIND_BACKEND: Record<ModelKind, ModelBackend> = {
   agent: 'cli',
   lightweight: 'api',
-  chat: 'api',
 };
 
 const API_PROVIDER_OPTIONS: Array<{
@@ -942,6 +934,7 @@ function AddModelModal({
     diagnostics?: CliTestDiagnostics;
     logFile?: string;
   } | null>(null);
+  const testDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // ESC to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1005,6 +998,10 @@ function AddModelModal({
               envVars: envVars.trim() || undefined,
             });
       setTestResult(result);
+      if (result.success) {
+        if (testDismissTimer.current) clearTimeout(testDismissTimer.current);
+        testDismissTimer.current = setTimeout(() => setTestResult(null), 3000);
+      }
     } catch (err) {
       setTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -1033,9 +1030,7 @@ function AddModelModal({
               Add {MODEL_KIND_META[defaultKind].label} Model
             </h2>
             <p className="mb-4 text-xs text-notion-text-tertiary">
-              {backend === 'cli'
-                ? 'CLI subprocess'
-                : 'API direct · saved once, reusable across Lightweight and Chat'}
+              {backend === 'cli' ? 'CLI subprocess' : 'API direct · saved once, reusable'}
             </p>
           </div>
 
@@ -1296,6 +1291,7 @@ function EditModelModal({
     diagnostics?: CliTestDiagnostics;
     logFile?: string;
   } | null>(null);
+  const testDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Load API key on mount
@@ -1370,6 +1366,10 @@ function EditModelModal({
               envVars: envVars.trim() || undefined,
             });
       setTestResult(result);
+      if (result.success) {
+        if (testDismissTimer.current) clearTimeout(testDismissTimer.current);
+        testDismissTimer.current = setTimeout(() => setTestResult(null), 3000);
+      }
     } catch (err) {
       setTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -1675,6 +1675,7 @@ function ModelCard({
     diagnostics?: CliTestDiagnostics;
     logFile?: string;
   } | null>(null);
+  const testDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const subtitle =
     model.backend === 'api'
@@ -1688,6 +1689,10 @@ function ModelCard({
       const result = await ipc.testSavedModelConnection(model.id);
       console.log('[agent-test-result]', model.id, result);
       setTestResult(result);
+      if (result.success) {
+        if (testDismissTimer.current) clearTimeout(testDismissTimer.current);
+        testDismissTimer.current = setTimeout(() => setTestResult(null), 3000);
+      }
     } catch (err) {
       setTestResult({ success: false, error: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -1784,16 +1789,6 @@ function ModelCard({
             </motion.div>
           </AnimatePresence>
           <CliDiagnosticsPanel diagnostics={testResult.diagnostics} logFile={testResult.logFile} />
-          <details className="mt-2 rounded-lg border border-notion-border bg-white/70">
-            <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-notion-text-secondary">
-              Show raw test result
-            </summary>
-            <div className="border-t border-notion-border px-3 py-3">
-              <pre className="max-h-56 overflow-auto rounded-md bg-notion-sidebar px-3 py-2 text-[11px] leading-5 text-notion-text whitespace-pre-wrap break-words">
-                {JSON.stringify(testResult, null, 2)}
-              </pre>
-            </div>
-          </details>
         </div>
       )}
     </div>
@@ -1874,7 +1869,6 @@ function ModelsSettings() {
   const [activeIds, setActiveIds] = useState<Record<ModelKind, string | null>>({
     agent: null,
     lightweight: null,
-    chat: null,
   });
   const [loading, setLoading] = useState(true);
   const [addingKind, setAddingKind] = useState<ModelKind | null>(null);
@@ -1936,15 +1930,14 @@ function ModelsSettings() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-notion-text-secondary">
-        Configure models for each role. API models are saved once and can be reused by both
-        Lightweight and Chat.
+        Configure models for each role. API models are saved once and can be reused.
       </p>
       {saveError && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-mono text-xs text-red-700">
           Error: {saveError}
         </div>
       )}
-      {(['lightweight', 'chat'] as ModelKind[]).map((kind) => (
+      {(['lightweight'] as ModelKind[]).map((kind) => (
         <ModelKindSection
           key={kind}
           kind={kind}
@@ -2129,7 +2122,7 @@ function UsageSettings() {
             {
               label: 'Completion',
               value: formatNumber(summary.totalCompletionTokens),
-              accent: 'text-purple-600',
+              accent: 'text-blue-600',
             },
           ].map(({ label, value, accent }) => (
             <div key={label} className="rounded-xl border border-notion-border bg-white px-4 py-3">
@@ -2849,7 +2842,7 @@ function AddEmbeddingModal({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Built-in Local, OpenAI Embeddings"
-              className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 text-sm text-notion-text outline-none transition-colors focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
           </div>
 
@@ -2862,10 +2855,10 @@ function AddEmbeddingModal({
               <button
                 type="button"
                 onClick={() => setProvider('builtin')}
-                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${provider === 'builtin' ? 'border-violet-300 bg-violet-50' : 'border-notion-border bg-white hover:bg-notion-sidebar'}`}
+                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${provider === 'builtin' ? 'border-blue-300 bg-blue-50' : 'border-notion-border bg-white hover:bg-notion-sidebar'}`}
               >
                 <div className="flex items-center gap-1.5">
-                  <Cpu size={13} className="text-violet-500" />
+                  <Cpu size={13} className="text-blue-500" />
                   <p className="text-xs font-medium text-notion-text">Built-in</p>
                 </div>
                 <p className="mt-0.5 text-[11px] text-notion-text-tertiary">
@@ -2875,7 +2868,7 @@ function AddEmbeddingModal({
               <button
                 type="button"
                 onClick={() => setProvider('openai-compatible')}
-                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${provider === 'openai-compatible' ? 'border-violet-300 bg-violet-50' : 'border-notion-border bg-white hover:bg-notion-sidebar'}`}
+                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${provider === 'openai-compatible' ? 'border-blue-300 bg-blue-50' : 'border-notion-border bg-white hover:bg-notion-sidebar'}`}
               >
                 <div className="flex items-center gap-1.5">
                   <Globe size={13} className="text-notion-text-secondary" />
@@ -2967,7 +2960,7 @@ function AddEmbeddingModal({
                   value={apiBase}
                   onChange={(e) => setApiBase(e.target.value)}
                   placeholder="https://api.openai.com/v1"
-                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
               <div>
@@ -2979,7 +2972,7 @@ function AddEmbeddingModal({
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
                   placeholder="sk-..."
-                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
               <div>
@@ -2990,7 +2983,7 @@ function AddEmbeddingModal({
                   value={embeddingModel}
                   onChange={(e) => setEmbeddingModel(e.target.value)}
                   placeholder="text-embedding-3-small"
-                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
             </>
@@ -3042,6 +3035,7 @@ function EmbeddingCard({
   const [downloadProgress, setDownloadProgress] = useState<BuiltinModelDownloadProgress | null>(
     null,
   );
+  const testSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (config.provider !== 'builtin') return;
@@ -3089,6 +3083,7 @@ function EmbeddingCard({
     setTesting(true);
     setTestResult(null);
     setTestError(null);
+    if (testSuccessTimerRef.current) clearTimeout(testSuccessTimerRef.current);
     try {
       const result = await ipc.testSemanticEmbedding({
         embeddingProvider: config.provider,
@@ -3097,6 +3092,7 @@ function EmbeddingCard({
         embeddingApiKey: config.embeddingApiKey,
       });
       setTestResult(result);
+      testSuccessTimerRef.current = setTimeout(() => setTestResult(null), 3000);
     } catch (err) {
       setTestError(err instanceof Error ? err.message : 'Embedding test failed');
     } finally {
@@ -3107,7 +3103,7 @@ function EmbeddingCard({
   return (
     <div
       className={`rounded-xl border p-4 transition-all ${
-        isActive ? 'border-violet-200 bg-violet-50/40 shadow-sm' : 'border-notion-border bg-white'
+        isActive ? 'border-blue-200 bg-blue-50/40 shadow-sm' : 'border-notion-border bg-white'
       }`}
     >
       <div className="flex items-center gap-4">
@@ -3115,7 +3111,7 @@ function EmbeddingCard({
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-notion-text truncate">{config.name}</span>
             {isActive && (
-              <span className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700">
+              <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">
                 Active
               </span>
             )}
@@ -3138,6 +3134,35 @@ function EmbeddingCard({
               'Test'
             )}
           </button>
+          {/* Download button inline with Test — only for builtin, only when not yet downloaded */}
+          {config.provider === 'builtin' && modelExists === false && !downloading && (
+            <button
+              type="button"
+              onClick={handleCardDownload}
+              className="flex items-center gap-1 rounded-lg bg-notion-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80"
+            >
+              <Download size={12} />
+              Download
+            </button>
+          )}
+          {config.provider === 'builtin' && downloading && (
+            <div className="flex items-center gap-1.5 text-xs text-notion-text-secondary">
+              <Loader2 size={12} className="animate-spin shrink-0" />
+              <span>
+                {downloadProgress?.percent != null && downloadProgress.percent > 0
+                  ? `${downloadProgress.percent}%`
+                  : 'Downloading…'}
+              </span>
+              {downloadProgress?.percent != null && downloadProgress.percent > 0 && (
+                <div className="h-1 w-16 rounded-full bg-notion-border overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-notion-accent transition-all duration-200"
+                    style={{ width: `${downloadProgress.percent}%` }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
           {!isActive && (
             <button
               onClick={onSetActive}
@@ -3166,67 +3191,6 @@ function EmbeddingCard({
           )}
         </div>
       </div>
-
-      {/* Builtin model status indicator */}
-      {config.provider === 'builtin' && modelExists !== null && (
-        <div
-          className={`mt-3 rounded-lg border px-3 py-2 text-xs ${modelExists ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}
-        >
-          {modelExists ? (
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-green-700">
-                <Check size={12} className="shrink-0" strokeWidth={2.5} />
-                <span>Model ready</span>
-              </div>
-              <button
-                type="button"
-                disabled
-                className="flex items-center gap-1 rounded-lg border border-notion-border bg-notion-sidebar px-2 py-1 text-[11px] font-medium text-notion-text-tertiary cursor-not-allowed opacity-60"
-              >
-                <Download size={11} />
-                Downloaded
-              </button>
-            </div>
-          ) : downloading ? (
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-notion-text-secondary">
-                <Loader2 size={12} className="animate-spin shrink-0" />
-                <span>
-                  {downloadProgress?.file
-                    ? `Downloading ${downloadProgress.file}…`
-                    : 'Starting download…'}
-                  {downloadProgress?.percent != null && downloadProgress.percent > 0
-                    ? ` ${downloadProgress.percent}%`
-                    : ''}
-                </span>
-              </div>
-              {downloadProgress?.percent != null && downloadProgress.percent > 0 && (
-                <div className="h-1 w-full rounded-full bg-notion-border overflow-hidden">
-                  <div
-                    className="h-full rounded-full bg-notion-accent transition-all duration-200"
-                    style={{ width: `${downloadProgress.percent}%` }}
-                  />
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-amber-700">
-                <AlertTriangle size={12} className="shrink-0" />
-                <span>Model not downloaded</span>
-              </div>
-              <button
-                type="button"
-                onClick={handleCardDownload}
-                className="flex items-center gap-1 rounded-lg bg-notion-accent px-2 py-1 text-[11px] font-medium text-white transition-opacity hover:opacity-80"
-              >
-                <Download size={11} />
-                Download
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Test result */}
       {(testResult || testError) && (
@@ -3509,8 +3473,6 @@ function renderSection(id: SectionId) {
       return <ProxySettings />;
     case 'general.editor':
       return <EditorSettings />;
-    case 'general.ssh':
-      return <SshServerSettings />;
     case 'general.semantic':
       return <SemanticSection />;
     case 'models':

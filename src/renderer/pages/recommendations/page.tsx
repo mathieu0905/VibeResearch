@@ -342,8 +342,8 @@ export function RecommendationsPage() {
             const canMarkLessLikeThis = item.status !== 'saved' && !hasFewerLikeThis;
             const recommendationSignals = [
               item.triggerPaperTitle ? 'Matched one of your seed papers' : null,
-              item.semanticScore >= 0.7 ? 'Strong semantic match' : null,
-              item.semanticScore >= 0.35 && item.semanticScore < 0.7
+              (item.semanticScore ?? 0) >= 0.7 ? 'Strong semantic match' : null,
+              (item.semanticScore ?? 0) >= 0.35 && (item.semanticScore ?? 0) < 0.7
                 ? 'Moderate semantic match'
                 : null,
               item.explorationNote ? 'Boosted for exploration' : null,

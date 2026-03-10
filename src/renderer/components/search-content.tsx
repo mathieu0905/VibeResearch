@@ -444,7 +444,7 @@ export function SearchContent() {
     <div className="flex h-full flex-col">
       <motion.div
         className={`flex flex-col items-center ${
-          hasSearched ? 'pt-8 pb-4' : 'flex-1 justify-center'
+          hasSearched ? 'pt-8 pb-4' : 'flex-1 justify-center pb-24'
         }`}
         variants={searchBoxVariants}
         animate={hasSearched ? 'top' : 'center'}

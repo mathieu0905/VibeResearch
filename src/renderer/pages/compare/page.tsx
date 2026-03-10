@@ -6,6 +6,7 @@ import { cleanArxivTitle } from '@shared';
 import type { ComparisonNoteItem } from '@shared';
 import {
   ArrowLeft,
+  ArrowRight,
   Loader2,
   Square,
   Copy,
@@ -432,9 +433,13 @@ export function ComparePage() {
         <div className="text-center">
           <GitCompareArrows size={40} className="mx-auto mb-3 text-notion-text-tertiary" />
           <p className="text-sm font-medium text-notion-text">No papers selected for comparison</p>
-          <p className="mt-1 text-xs text-notion-text-tertiary">
-            Select 2-3 papers from the Library to compare.
-          </p>
+          <button
+            onClick={() => navigate('/papers')}
+            className="mt-1 inline-flex items-center gap-1 text-xs text-notion-text hover:underline"
+          >
+            Select 2-3 papers from the Library to compare
+            <ArrowRight size={12} />
+          </button>
           <button
             onClick={() => navigate(-1)}
             className="mt-4 rounded-lg bg-notion-accent px-4 py-2 text-sm font-medium text-white"
@@ -522,10 +527,9 @@ export function ComparePage() {
         <div className="flex flex-shrink-0 items-center gap-3 border-b border-notion-border px-8 py-5">
           <button
             onClick={() => navigate(-1)}
-            className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-sm text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
           >
             <ArrowLeft size={16} />
-            Back
           </button>
           <div className="flex items-center gap-2">
             <GitCompareArrows size={20} className="text-notion-accent" />

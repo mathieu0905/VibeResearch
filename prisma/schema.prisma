@@ -37,7 +37,7 @@ model Paper {
   searchUnits   PaperSearchUnit[]
   readingNotes  ReadingNote[]
   links         PaperCodeLink[]
-  collections   PaperCollection[]
+  projects      ProjectPaper[]
   citationsFrom PaperCitation[]   @relation("CitesFrom")
   citedBy       PaperCitation[]   @relation("CitedBy")
 
@@ -156,9 +156,10 @@ model Project {
   updatedAt       DateTime  @updatedAt
   lastAccessedAt  DateTime?
 
-  repos ProjectRepo[]
-  ideas ProjectIdea[]
-  todos AgentTodo[]
+  repos   ProjectRepo[]
+  ideas   ProjectIdea[]
+  todos   AgentTodo[]
+  papers  ProjectPaper[]
 
   @@index([name])
   @@index([lastAccessedAt])
@@ -209,35 +210,18 @@ model PaperCodeLink {
   @@index([repoUrl])
 }
 
-model Collection {
-  id          String            @id @default(cuid())
-  name        String            @unique
-  icon        String?
-  color       String?
-  description String?
-  isDefault   Boolean           @default(false)
-  sortOrder   Int               @default(0)
-  parentId    String?
-  parent      Collection?       @relation("CollectionHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
-  children    Collection[]      @relation("CollectionHierarchy")
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  papers      PaperCollection[]
+model ProjectPaper {
+  id        String   @id @default(cuid())
+  projectId String
+  paperId   String
+  addedAt   DateTime @default(now())
+  note      String?
 
-  @@index([sortOrder])
-  @@index([parentId])
-}
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  paper   Paper   @relation(fields: [paperId], references: [id], onDelete: Cascade)
 
-model PaperCollection {
-  paperId      String
-  collectionId String
-  addedAt      DateTime @default(now())
-
-  paper      Paper      @relation(fields: [paperId], references: [id], onDelete: Cascade)
-  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-
-  @@id([paperId, collectionId])
-  @@index([collectionId])
+  @@unique([projectId, paperId])
+  @@index([projectId])
 }
 
 enum SourceType {
@@ -272,6 +256,16 @@ model AgentConfig {
   isCustom      Boolean  @default(false)
   enabled       Boolean  @default(true)
   extraEnv      String   @default("{}")
+  // Remote SSH execution fields
+  isRemote               Boolean  @default(false)
+  sshHost                String?
+  sshPort                Int?
+  sshUsername            String?
+  sshAuthMethod          String?  // 'password' | 'privateKey'
+  sshPrivateKeyPath      String?
+  sshPassphraseEncrypted String?  // encrypted via safeStorage
+  remoteCliPath          String?  // full path to CLI on remote server
+  remoteExtraEnv         String   @default("{}") // extra env for remote (e.g. PATH overrides)
   defaultModel  String?
   callCount     Int      @default(0)
   createdAt     DateTime @default(now())

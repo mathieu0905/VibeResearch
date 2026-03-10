@@ -38,6 +38,7 @@ export interface ComparisonPaperInput {
   year?: number | null;
   abstract?: string;
   pdfExcerpt?: string;
+  paperDir?: string;
 }
 
 export function buildComparisonUserPrompt(papers: ComparisonPaperInput[]): string {
@@ -56,7 +57,12 @@ export function buildComparisonUserPrompt(papers: ComparisonPaperInput[]): strin
       lines.push(`Abstract: ${p.abstract}`);
     }
     if (p.pdfExcerpt) {
-      lines.push(`Excerpt:\n${p.pdfExcerpt}`);
+      lines.push(`Excerpt: ${p.pdfExcerpt}`);
+    }
+    if (p.paperDir) {
+      lines.push(
+        `Paper directory: ${p.paperDir}\n(You can read \`text.txt\` in this directory for the full paper text)`,
+      );
     }
     parts.push(lines.join('\n'));
   }

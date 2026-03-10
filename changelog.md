@@ -1,5 +1,53 @@
 # Changelog
 
+## 2026-03-10 (session 82)
+
+### fix: Reduce dev startup crashes
+
+- **Scope**: `src/main/index.ts`
+- **Changes**:
+  - Treat presence of `VITE_DEV_SERVER_URL` as dev mode to avoid loading the production renderer in `npm run dev`
+  - Guard `startAgentLocalService` startup errors so the Electron process stays alive when the sidecar fails to boot
+- **Rationale**: Dev startup should not exit just because the agent sidecar is unavailable or `NODE_ENV` is unset by the Vite launcher
+
+## 2026-03-10 (session 83)
+
+### fix: Stabilize tests and comparison prompt context
+
+- **Scope**: `src/main/services/comparison.service.ts`, `src/shared/prompts/comparison.prompt.ts`, `tests/integration/pdf-extractor.test.ts`, `package.json`
+- **Changes**:
+  - Include a short PDF excerpt in comparison prompts when available
+  - Align arXiv PDF URL test expectation with the canonical no-`.pdf` format
+  - Rebuild `better-sqlite3` for the local Node runtime before tests to prevent ABI mismatch crashes
+- **Rationale**: Comparison prompts should reflect provided excerpts, and test setup must not reuse Electron-built native binaries
+
+## 2026-03-10 (session 84)
+
+### fix: Prevent dev startup crash and enable sqlite-vec tests
+
+- **Scope**: `src/main/index.ts`, `src/db/repositories/papers.repository.ts`, `tests/support/electron-mock.ts`
+- **Changes**:
+  - Use lightweight chunk/search-unit counts instead of loading all embeddings through Prisma on startup
+  - Allow sqlite-vec to load normally in Vitest so vec-index and semantic-search tests can exercise the real extension
+  - Rebuild `better-sqlite3` for Node tests via a small script to avoid ABI mismatches without npm CLI warnings
+- **Rationale**: Fetching all embeddings through Prisma can crash the runtime, and the global sqlite-vec mock masked extension-backed tests
+
+## 2026-03-10 (session 81)
+
+### fix: Electron crash after agent run completes
+
+- **Scope**: `src/main/services/agent-todo.service.ts`
+- **Root cause**: `isRemote` variable used at line 401 inside the `.then()` callback was undefined — it should have been `(agentConfig as any).isRemote`. This caused a `ReferenceError` in the main process whenever a run finished, crashing the app.
+- **Fix**: Changed `!isRemote` → `!(agentConfig as any).isRemote`.
+
+## 2026-03-10 (session 80)
+
+### fix: Electron crash when switching to chat tab in paper reader
+
+- **Scope**: `src/db/repositories/agent-todo.repository.ts`
+- **Root cause**: `findRunsByTodoId` was including all messages in the result (`include: { messages }`), causing Prisma's tokio runtime to load large amounts of data and trigger a heap corruption (`EXC_BREAKPOINT / SIGTRAP`) in the native `libquery_engine-darwin-arm64.dylib.node`.
+- **Fix**: Removed `include: { messages }` from `findRunsByTodoId`. The reader page already fetches messages separately via `getAgentTodoRunMessages`, so messages were being loaded twice unnecessarily.
+
 ## 2026-03-10 (session 79)
 
 ### fix: Agent chat UI — tool call display and user message persistence
