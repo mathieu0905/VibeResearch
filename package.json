@@ -6,7 +6,7 @@
   "main": "dist/main/index.js",
   "description": "ResearchClaw — standalone Electron desktop app",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/dev.mjs",
     "dev:renderer-only": "vite",
     "dev:main": "tsc -p tsconfig.main.json --watch",
     "dev:renderer": "vite",
