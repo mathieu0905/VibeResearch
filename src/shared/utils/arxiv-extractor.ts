@@ -33,8 +33,8 @@ export function extractArxivId(url: string): string | null {
 export function extractArxivIdFromTitle(title: string): string | null {
   const match = title.match(/arxiv\.org\/(?:abs|pdf)\/([^/\s]+)/i);
   if (match) {
-    // Remove version suffix if present
-    return match[1].replace(/v\d+$/, '').replace(/\.pdf$/i, '');
+    // Strip .pdf suffix first, then version suffix
+    return match[1].replace(/\.pdf$/i, '').replace(/v\d+$/, '');
   }
   return null;
 }
