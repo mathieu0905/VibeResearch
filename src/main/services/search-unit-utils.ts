@@ -84,5 +84,21 @@ export function buildSearchUnits(input: {
 
   pushUnit('title', input.title, { sourceChunkIndex: null, unitIndex: 0 });
 
+  if (input.abstract) {
+    pushUnit('abstract', input.abstract, { sourceChunkIndex: null, unitIndex: 0, dedupe: true });
+  }
+
+  let sentenceIndex = 0;
+  for (const chunk of input.chunks) {
+    const sentences = mergeShortSentences(splitIntoSentences(chunk.content));
+    for (const sentence of sentences) {
+      pushUnit('sentence', sentence, {
+        sourceChunkIndex: chunk.chunkIndex,
+        unitIndex: sentenceIndex++,
+        dedupe: true,
+      });
+    }
+  }
+
   return units;
 }
