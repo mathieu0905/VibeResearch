@@ -1,5 +1,38 @@
 # Changelog
 
+## 2026-03-12 (33)
+
+### feat: full i18n internationalization — Chinese/English seamless switching
+
+- **Overview**: Complete internationalization system using `react-i18next`. Supports English and Chinese (Simplified) with seamless switching. Default language auto-detected from OS locale on first launch. Language preference persisted across sessions.
+- **Infrastructure**:
+  - Installed `i18next` + `react-i18next` (devDependencies)
+  - Created `src/renderer/locales/en.json` and `zh.json` (translation files, ~80 keys each)
+  - Created `src/renderer/locales/i18next.d.ts` (TypeScript type safety for `t()` calls)
+  - Initialized i18next in `src/renderer/main.tsx` (synchronous, no first-frame flicker)
+  - OS locale auto-detection in `src/main/index.ts` via `app.getLocale()` (first launch only)
+- **Persistence**:
+  - Added `language?: 'en' | 'zh'` field to `AppSettings` interface
+  - Added `getLanguage()`, `setLanguage()`, `hasLanguagePreference()` to `app-settings-store.ts`
+  - Added `settings:getLanguage` / `settings:setLanguage` IPC handlers in `providers.ipc.ts`
+  - Added `getLanguage` / `setLanguage` to `use-ipc.ts`
+- **Settings UI**:
+  - Added `general.language` section to `settings-nav.ts`
+  - Added `LanguageSettings` component in `settings/page.tsx` (EN/中文 toggle button)
+- **UI Translation (Phase 1)**:
+  - `app-shell.tsx`: sidebar nav labels, window controls, analysis toasts, back button (fixed hardcoded Chinese `返回上一页`)
+  - `settings/page.tsx`: EditorSettings (fixed 3 hardcoded Chinese test result strings), DeveloperSettings
+  - `model-combobox.tsx`: fixed hardcoded Chinese placeholder and no-match message
+  - `papers/overview/page.tsx`: fixed hardcoded `'zh-CN'` date locale (now follows app language)
+- **AI Prompt i18n** (fixes mixed Chinese/English prompt issue):
+  - `comparison.prompt.ts`: added `getComparisonSystemPrompt(language)` — full Chinese prompt when `zh`
+  - `idea-generation.prompt.ts`: added `getIdeaGenerationPrompt(language)` — Chinese version
+  - `paper-reading.template.ts`: added `getPaperReadingTemplate(language)` and `getCodeReadingTemplate(language)`
+  - `comparison.service.ts` + `comparison.ipc.ts`: pass `language` through to prompt selection
+  - `compare/page.tsx`: passes `i18n.language` to comparison start IPC call
+- **Tests**: Updated `settings-nav.test.ts` to reflect new section count (7→8) and new first section (`general.language`)
+- **Scope**: `package.json`, `src/renderer/locales/`, `src/renderer/main.tsx`, `src/main/index.ts`, `src/main/store/app-settings-store.ts`, `src/main/services/providers.service.ts`, `src/main/ipc/providers.ipc.ts`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/pages/settings/settings-nav.ts`, `src/renderer/pages/settings/page.tsx`, `src/renderer/components/app-shell.tsx`, `src/renderer/components/model-combobox.tsx`, `src/renderer/pages/papers/overview/page.tsx`, `src/shared/prompts/comparison.prompt.ts`, `src/shared/prompts/idea-generation.prompt.ts`, `src/shared/templates/paper-reading.template.ts`, `src/main/services/comparison.service.ts`, `src/main/ipc/comparison.ipc.ts`, `src/renderer/pages/compare/page.tsx`, `tests/integration/settings-nav.test.ts`
+
 ## 2026-03-11 (32)
 
 ### fix: sort chat messages by createdAt in Paper detail page

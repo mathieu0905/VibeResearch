@@ -122,7 +122,7 @@ export function setupComparisonIpc() {
 
   ipcMain.handle(
     'comparison:start',
-    async (_, input: { sessionId: string; paperIds: string[] }) => {
+    async (_, input: { sessionId: string; paperIds: string[]; language?: 'en' | 'zh' }) => {
       const jobId = input.sessionId ?? `comparison-${Date.now()}`;
       const now = new Date().toISOString();
       const controller = new AbortController();
@@ -163,7 +163,7 @@ export function setupComparisonIpc() {
       void (async () => {
         try {
           await getComparisonService().comparePapers(
-            { paperIds: input.paperIds },
+            { paperIds: input.paperIds, language: input.language },
             (chunk) => {
               const current = comparisonJobs.get(jobId);
               updateComparisonJob(jobId, {

@@ -24,6 +24,7 @@ import { setupComparisonIpc } from './ipc/comparison.ipc';
 import { setupUserProfileIpc } from './ipc/user-profile.ipc';
 import { setupChatIpc } from './ipc/chat.ipc';
 import { ensureStorageDir, getDbPath, getStorageDir } from './store/storage-path';
+import { hasLanguagePreference, setLanguage } from './store/app-settings-store';
 import { PapersRepository } from '@db';
 import { resumeAutomaticPaperProcessing } from './services/paper-processing.service';
 import { resumeAutomaticCitationExtraction } from './services/citation-processing.service';
@@ -50,6 +51,16 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Set DATABASE_URL before any DB imports (use ~/.researchclaw/)
 ensureStorageDir();
+
+// Auto-detect OS language on first launch (only if user has never set a preference)
+try {
+  if (!hasLanguagePreference()) {
+    const locale = app.getLocale(); // e.g. 'zh-CN', 'zh-TW', 'en-US'
+    setLanguage(locale.startsWith('zh') ? 'zh' : 'en');
+  }
+} catch {
+  // Non-critical — ignore if settings file isn't accessible yet
+}
 const dbPath = getDbPath();
 process.env.DATABASE_URL = `file:${dbPath}`;
 

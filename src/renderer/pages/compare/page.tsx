@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import i18n from 'i18next';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { ipc, type PaperItem, onIpc } from '../../hooks/use-ipc';
 import { MarkdownContent } from '../../components/markdown-content';
@@ -281,7 +282,8 @@ export function ComparePage() {
     setCurrentSavedId(null);
     try {
       const sessionId = `comparison-${Date.now()}`;
-      const result = await ipc.startComparison({ sessionId, paperIds });
+      const appLang = (i18n.language as 'en' | 'zh') === 'zh' ? 'zh' : 'en';
+      const result = await ipc.startComparison({ sessionId, paperIds, language: appLang });
       setJobId(result.jobId);
       if (result.savedId) setCurrentSavedId(result.savedId);
     } catch (err) {

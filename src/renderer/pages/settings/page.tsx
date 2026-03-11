@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from 'i18next';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import Fuse from 'fuse.js';
@@ -514,9 +516,75 @@ function CliToolCard({
   );
 }
 
+// ─── Language Settings ────────────────────────────────────────────────────────
+
+function LanguageSettings() {
+  const { t } = useTranslation();
+  const [saving, setSaving] = useState(false);
+  const [currentLang, setCurrentLang] = useState<'en' | 'zh'>(
+    () => (i18n.language as 'en' | 'zh') ?? 'en',
+  );
+
+  const handleChange = async (lang: 'en' | 'zh') => {
+    if (lang === currentLang) return;
+    setSaving(true);
+    try {
+      await ipc.setLanguage(lang);
+      localStorage.setItem('researchclaw-language', lang);
+      await i18n.changeLanguage(lang);
+      setCurrentLang(lang);
+    } catch {
+      // silent
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <p className="mb-5 text-sm text-notion-text-secondary">
+        {t('settings.language.description')}
+      </p>
+
+      <div className="rounded-lg border border-notion-border bg-white p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-medium text-notion-text">{t('settings.language.title')}</h3>
+          </div>
+          <div className="flex items-center rounded-lg border border-notion-border bg-notion-sidebar p-0.5">
+            <button
+              onClick={() => handleChange('en')}
+              disabled={saving}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                currentLang === 'en'
+                  ? 'bg-white text-notion-text shadow-sm'
+                  : 'text-notion-text-tertiary hover:text-notion-text-secondary'
+              }`}
+            >
+              {t('settings.language.en')}
+            </button>
+            <button
+              onClick={() => handleChange('zh')}
+              disabled={saving}
+              className={`rounded-md px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                currentLang === 'zh'
+                  ? 'bg-white text-notion-text shadow-sm'
+                  : 'text-notion-text-tertiary hover:text-notion-text-secondary'
+              }`}
+            >
+              {t('settings.language.zh')}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Developer Settings ─────────────────────────────────────────────────────────
 
 function DeveloperSettings() {
+  const { t } = useTranslation();
   const [devMode, setDevMode] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -542,16 +610,14 @@ function DeveloperSettings() {
 
   return (
     <div>
-      <p className="mb-5 text-sm text-notion-text-secondary">
-        Enable developer mode to show welcome modal on every startup.
-      </p>
+      <p className="mb-5 text-sm text-notion-text-secondary">{t('settings.dev.description')}</p>
 
       <div className="rounded-lg border border-notion-border bg-white p-4">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-sm font-medium text-notion-text">Developer Mode</h3>
+            <h3 className="text-sm font-medium text-notion-text">{t('settings.dev.title')}</h3>
             <p className="mt-0.5 text-xs text-notion-text-tertiary">
-              Show welcome modal on every startup
+              {t('settings.dev.toggleLabel')}
             </p>
           </div>
           <button
@@ -576,6 +642,7 @@ function DeveloperSettings() {
 // ─── Editor Settings ─────────────────────────────────────────────────────────
 
 function EditorSettings() {
+  const { t } = useTranslation();
   const [selectedEditor, setSelectedEditor] = useState<string>('code');
   const [customCommand, setCustomCommand] = useState('');
   const [saving, setSaving] = useState(false);
@@ -634,12 +701,12 @@ function EditorSettings() {
       const root = await ipc.getStorageRoot();
       const result = await ipc.openInEditor(root);
       if (result.success) {
-        setTestResult({ ok: true, msg: '测试成功' });
+        setTestResult({ ok: true, msg: t('settings.editor.testSuccess') });
       } else {
-        setTestResult({ ok: false, msg: '测试失败，请检查命令是否可用' });
+        setTestResult({ ok: false, msg: t('settings.editor.testFailed') });
       }
     } catch {
-      setTestResult({ ok: false, msg: '测试失败，请检查命令是否可用' });
+      setTestResult({ ok: false, msg: t('settings.editor.testFailed') });
     } finally {
       setTesting(false);
       setTimeout(() => setTestResult(null), 3000);
@@ -648,9 +715,7 @@ function EditorSettings() {
 
   return (
     <div>
-      <p className="mb-5 text-sm text-notion-text-secondary">
-        Choose your preferred code editor for opening paper folders.
-      </p>
+      <p className="mb-5 text-sm text-notion-text-secondary">{t('settings.editor.description')}</p>
 
       <div className="grid grid-cols-3 gap-2">
         {EDITOR_OPTIONS.map((editor) => {
@@ -685,13 +750,13 @@ function EditorSettings() {
       {selectedEditor === 'custom' && (
         <div className="mt-4 rounded-xl border border-notion-border bg-white p-5">
           <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
-            Custom Editor Command
+            {t('settings.editor.customCommand')}
           </label>
           <div className="flex items-center gap-2">
             <input
               value={customCommand}
               onChange={(e) => setCustomCommand(e.target.value)}
-              placeholder="e.g. subl, idea, vim"
+              placeholder={t('settings.editor.customPlaceholder')}
               className="flex-1 rounded-lg border border-notion-border bg-notion-sidebar px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
             <button
@@ -704,11 +769,11 @@ function EditorSettings() {
               ) : saved ? (
                 <Check size={14} />
               ) : null}
-              {saved ? 'Saved' : saving ? 'Saving…' : 'Save'}
+              {saved ? t('common.saved') : saving ? t('common.saving') : t('common.save')}
             </button>
           </div>
           <p className="mt-2 text-xs text-notion-text-tertiary">
-            Enter the command-line tool name for your preferred editor.
+            {t('settings.editor.description')}
           </p>
         </div>
       )}
@@ -721,7 +786,7 @@ function EditorSettings() {
           className="inline-flex items-center gap-2 rounded-lg border border-notion-border bg-white px-4 py-2 text-sm font-medium text-notion-text hover:border-notion-text-tertiary hover:shadow-sm disabled:opacity-50 transition-all"
         >
           {testing ? <Loader2 size={14} className="animate-spin" /> : <Code2 size={14} />}
-          {testing ? 'Testing…' : 'Test Editor'}
+          {testing ? t('common.testing') : t('common.test')}
         </button>
         {testResult && (
           <span className={`text-sm ${testResult.ok ? 'text-green-600' : 'text-red-500'}`}>
@@ -3301,6 +3366,8 @@ const fuse = new Fuse(SEARCH_INDEX, {
 
 function renderSection(id: SectionId) {
   switch (id) {
+    case 'general.language':
+      return <LanguageSettings />;
     case 'general.proxy':
       return <ProxySettings />;
     case 'general.editor':

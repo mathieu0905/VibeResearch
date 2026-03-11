@@ -1,0 +1,217 @@
+{
+  "common": {
+    "save": "保存",
+    "saved": "已保存",
+    "saving": "保存中…",
+    "cancel": "取消",
+    "delete": "删除",
+    "edit": "编辑",
+    "add": "添加",
+    "close": "关闭",
+    "test": "测试",
+    "testing": "测试中…",
+    "stop": "停止",
+    "copy": "复制",
+    "copied": "已复制！",
+    "browse": "浏览",
+    "loading": "加载中…",
+    "back": "返回上一页",
+    "settings": "设置",
+    "search": "搜索",
+    "active": "当前激活",
+    "setActive": "设为激活",
+    "restart": "重启"
+  },
+  "sidebar": {
+    "dashboard": "主页",
+    "search": "搜索",
+    "library": "文献库",
+    "projects": "项目",
+    "tasks": "任务",
+    "settings": "设置",
+    "recent": "最近访问",
+    "expandSidebar": "展开侧边栏",
+    "collapseSidebar": "收起侧边栏"
+  },
+  "windowControls": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
+  },
+  "analysis": {
+    "analyzing": "分析中：{{title}}",
+    "analyzingMultiple": "{{count}} 个分析进行中",
+    "analysisReady": "分析完成：{{title}}",
+    "downloadingModel": "正在下载内置模型"
+  },
+  "settings": {
+    "title": "设置",
+    "searchPlaceholder": "搜索设置…",
+    "noResults": "未找到与「{{query}}」相关的设置",
+    "nav": {
+      "general": "通用",
+      "models": "模型",
+      "agents": "代理",
+      "storage": "存储"
+    },
+    "language": {
+      "title": "Language / 语言",
+      "description": "选择应用程序的显示语言。",
+      "en": "English",
+      "zh": "中文"
+    },
+    "proxy": {
+      "title": "代理",
+      "description": "为网络请求配置 HTTP/HTTPS/SOCKS 代理。",
+      "label": "代理地址",
+      "placeholder": "例如 http://127.0.0.1:7890 或 socks5://127.0.0.1:1080",
+      "enable": "启用代理",
+      "scope": {
+        "label": "代理应用范围",
+        "pdfDownload": "PDF 下载",
+        "aiApi": "AI API 调用",
+        "cliTools": "CLI 工具"
+      },
+      "testConnection": "测试连接",
+      "testing": "测试中…",
+      "success": "连接成功",
+      "failed": "连接失败"
+    },
+    "editor": {
+      "title": "编辑器",
+      "description": "选择用于打开论文文件夹的代码编辑器。",
+      "label": "编辑器",
+      "customCommand": "自定义编辑器命令",
+      "customPlaceholder": "例如 subl、idea、vim",
+      "testSuccess": "测试成功",
+      "testFailed": "测试失败，请检查命令是否可用"
+    },
+    "semantic": {
+      "title": "语义搜索",
+      "description": "配置基于 Embedding 的搜索和论文推荐。"
+    },
+    "dev": {
+      "title": "开发者模式",
+      "description": "启用开发者模式，每次启动时显示欢迎弹窗。",
+      "toggleLabel": "每次启动时显示欢迎弹窗"
+    },
+    "models": {
+      "title": "模型与用量",
+      "description": "配置用于轻量任务和 Embedding 的 AI 模型。",
+      "addModel": "添加模型",
+      "editModel": "编辑模型",
+      "saveChanges": "保存更改",
+      "addConfig": "添加配置",
+      "testConnection": "测试连接",
+      "provider": "服务商",
+      "name": "名称",
+      "namePlaceholder": "例如 Claude Code",
+      "command": "命令",
+      "commandPlaceholder": "例如 claude --dangerously-skip-permissions",
+      "apiKey": "API 密钥",
+      "model": "模型",
+      "baseUrl": "Base URL",
+      "envVars": "环境变量（可选）",
+      "optional": "（可选）",
+      "optionalIfEnv": "（如已通过环境变量设置则可选）",
+      "kinds": {
+        "agent": "代理模型",
+        "agentDesc": "用于代理任务的 CLI 模型，在代理设置中配置。",
+        "lightweight": "轻量模型",
+        "lightweightDesc": "用于打标签、摘要和分类的快速低成本模型。"
+      },
+      "providers": {
+        "anthropic": "Anthropic（Claude）",
+        "openai": "OpenAI（GPT）",
+        "gemini": "Google Gemini",
+        "custom": "自定义（OpenAI 兼容）"
+      },
+      "diagnostics": {
+        "show": "显示 CLI 诊断信息",
+        "structuredOutput": "结构化输出",
+        "rawStdout": "原始 stdout / JSONL",
+        "rawStderr": "原始 stderr",
+        "warning": "前端诊断预览功能仍在开发中…"
+      }
+    },
+    "agents": {
+      "title": "CLI 代理",
+      "description": "管理用于研究自动化的 CLI 代理工具。",
+      "addTool": "添加 CLI 工具",
+      "addToolTitle": "添加 CLI 工具",
+      "provider": "服务商",
+      "name": "名称（可选）",
+      "namePlaceholder": "例如 Claude Code",
+      "command": "命令",
+      "commandPlaceholder": "例如 claude --dangerously-skip-permissions",
+      "commandHelp": "完整命令，包含静默/非交互模式所需的参数",
+      "envVars": "环境变量（可选）"
+    },
+    "storage": {
+      "title": "数据目录",
+      "description": "配置所有应用数据（数据库、论文、配置）的存储位置。",
+      "currentDir": "当前目录",
+      "newDir": "新目录",
+      "browseHelp": "所有应用数据（论文、笔记、数据库、配置文件）将存储在此处。迁移后应用将重启。",
+      "migrateTitle": "迁移存储？",
+      "migrateConfirm": "所有数据（数据库、论文、配置文件）将被复制到：",
+      "migrateButton": "迁移并重启",
+      "migrating": "迁移中…",
+      "saveRestart": "保存并重启"
+    }
+  },
+  "dashboard": {
+    "title": "主页",
+    "recentPapers": "最近论文",
+    "import": "导入",
+    "noPapers": "暂无论文",
+    "noPapersHint": "从 Chrome 历史记录导入论文或上传 PDF 开始使用。"
+  },
+  "search": {
+    "placeholder": "搜索论文…",
+    "noResults": "未找到「{{query}}」相关结果",
+    "title": "搜索"
+  },
+  "papers": {
+    "library": "文献库",
+    "addedOn": "添加于 {{date}}",
+    "submittedOn": "提交于 {{date}}",
+    "noPapers": "暂无论文",
+    "tags": "标签",
+    "notes": "笔记",
+    "reader": "阅读器"
+  },
+  "importModal": {
+    "title": "导入论文",
+    "scanning": "扫描中…",
+    "importing": "导入中…",
+    "completed": "导入完成",
+    "cancelled": "导入已取消",
+    "failed": "导入失败"
+  },
+  "setupWizard": {
+    "title": "欢迎使用 ResearchClaw",
+    "skip": "暂时跳过"
+  },
+  "compare": {
+    "title": "论文对比",
+    "addPaper": "添加论文",
+    "startComparison": "开始对比",
+    "comparing": "对比中…"
+  },
+  "projects": {
+    "title": "项目",
+    "newProject": "新建项目",
+    "noProjects": "暂无项目"
+  },
+  "modelCombobox": {
+    "placeholder": "选择或输入模型ID",
+    "noMatch": "未找到匹配模型，按回车使用自定义ID"
+  },
+  "agentTodos": {
+    "title": "任务",
+    "noTasks": "暂无任务",
+    "newTask": "新建任务"
+  }
+}

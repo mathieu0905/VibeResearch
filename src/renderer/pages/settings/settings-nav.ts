@@ -3,6 +3,7 @@
 // No React, no Electron, no IPC — safe to import in unit/integration tests.
 
 export type SectionId =
+  | 'general.language'
   | 'general.proxy'
   | 'general.editor'
   | 'general.semantic'
@@ -19,6 +20,11 @@ export const NAV_GROUPS: NavGroup[] = [
     id: 'general',
     label: 'General',
     items: [
+      {
+        id: 'general.language',
+        label: 'Language',
+        keywords: ['language', 'locale', 'chinese', 'english', '语言', '中文'],
+      },
       { id: 'general.proxy', label: 'Proxy', keywords: ['proxy', 'http', 'network', 'socks'] },
       {
         id: 'general.editor',
@@ -73,6 +79,10 @@ export const NAV_GROUPS: NavGroup[] = [
 ];
 
 export const SECTION_META: Record<SectionId, { title: string; description: string }> = {
+  'general.language': {
+    title: 'Language / 语言',
+    description: 'Choose the display language for the application.',
+  },
   'general.proxy': {
     title: 'Proxy',
     description: 'Configure HTTP/HTTPS/SOCKS proxy for network requests.',

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
+import i18n from 'i18next';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTabs } from '../../../hooks/use-tabs';
 import {
@@ -184,7 +185,8 @@ function ChatBubble({ msg }: { msg: ChatMessage }) {
 // ─── formatDate ───────────────────────────────────────────────────────────────
 
 function formatDate(ts: string | number): string {
-  return new Date(ts).toLocaleDateString('zh-CN', {
+  const locale = i18n.language === 'zh' ? 'zh-CN' : 'en-US';
+  return new Date(ts).toLocaleDateString(locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',

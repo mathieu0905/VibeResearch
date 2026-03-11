@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import appIcon from '../../../assets/icon.png';
 import { Link, useLocation, useNavigate, useMatches } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -51,15 +52,17 @@ interface RecentItem {
   accessedAt: Date;
 }
 
-const primaryNavItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { to: '/search', label: 'Search', icon: Search },
+// Nav item labels are resolved dynamically via t() in the render function
+const primaryNavRoutes = [
+  { to: '/dashboard', labelKey: 'sidebar.dashboard' as const, icon: LayoutDashboard },
+  { to: '/search', labelKey: 'sidebar.search' as const, icon: Search },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = 'researchclaw-sidebar-collapsed';
 
 // Windows window controls component
 function WindowsWindowControls() {
+  const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(false);
   const isMainReady = useMainReady();
 
@@ -85,21 +88,21 @@ function WindowsWindowControls() {
       <button
         onClick={() => ipc.windowMinimize()}
         className="flex h-10 w-12 items-center justify-center text-notion-text-tertiary hover:bg-notion-sidebar-hover hover:text-notion-text transition-colors"
-        title="Minimize"
+        title={t('windowControls.minimize')}
       >
         <Minus size={16} strokeWidth={1.5} />
       </button>
       <button
         onClick={handleMaximize}
         className="flex h-10 w-12 items-center justify-center text-notion-text-tertiary hover:bg-notion-sidebar-hover hover:text-notion-text transition-colors"
-        title={isMaximized ? 'Restore' : 'Maximize'}
+        title={isMaximized ? t('windowControls.restore') : t('windowControls.maximize')}
       >
         <Square size={14} strokeWidth={1.5} />
       </button>
       <button
         onClick={() => ipc.windowClose()}
         className="flex h-10 w-12 items-center justify-center text-notion-text-tertiary hover:bg-red-500 hover:text-white transition-colors"
-        title="Close"
+        title={t('windowControls.close')}
       >
         <X size={16} strokeWidth={1.5} />
       </button>
@@ -114,6 +117,7 @@ function formatBytes(bytes: number): string {
 }
 
 function BuiltinModelDownloadToast() {
+  const { t } = useTranslation();
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState<BuiltinModelDownloadProgress | null>(null);
 
@@ -164,7 +168,7 @@ function BuiltinModelDownloadToast() {
           <Loader2 size={13} className="flex-shrink-0 animate-spin text-notion-accent" />
           <div className="flex flex-col gap-1">
             <span className="text-notion-text font-medium">
-              Downloading built-in model
+              {t('analysis.downloadingModel')}
               {progress.fileIndex && progress.totalFiles
                 ? ` (${progress.fileIndex}/${progress.totalFiles})`
                 : ''}
@@ -198,6 +202,7 @@ export function AppShell({
   children: React.ReactNode;
   fullWidth?: boolean;
 }) {
+  const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
   const pathname = location.pathname;
@@ -428,7 +433,7 @@ export function AppShell({
             <button
               onClick={toggleSidebar}
               className="flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-tertiary hover:bg-notion-sidebar-hover hover:text-notion-text-secondary transition-colors"
-              title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              title={isCollapsed ? t('sidebar.expandSidebar') : t('sidebar.collapseSidebar')}
             >
               {isCollapsed ? (
                 <PanelLeftOpen size={18} strokeWidth={1.8} />
@@ -441,12 +446,12 @@ export function AppShell({
           {/* Primary navigation */}
           <nav className="mt-2 flex flex-col gap-0.5 px-2">
             {[
-              ...primaryNavItems,
+              ...primaryNavRoutes,
               ...(isCollapsed
                 ? [
-                    { to: '/papers', label: 'Library', icon: FileText },
-                    { to: '/projects', label: 'Projects', icon: FolderKanban },
-                    { to: '/agent-todos', label: 'Tasks', icon: Bot },
+                    { to: '/papers', labelKey: 'sidebar.library' as const, icon: FileText },
+                    { to: '/projects', labelKey: 'sidebar.projects' as const, icon: FolderKanban },
+                    { to: '/agent-todos', labelKey: 'sidebar.tasks' as const, icon: Bot },
                   ]
                 : []),
             ].map((item) => {
@@ -459,7 +464,7 @@ export function AppShell({
                   className={`group relative flex items-center rounded-md text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/50 ${
                     isCollapsed ? 'justify-center h-9' : 'gap-2 px-2 py-1.5'
                   }`}
-                  title={isCollapsed ? item.label : undefined}
+                  title={isCollapsed ? t(item.labelKey) : undefined}
                 >
                   {isActive && (
                     <motion.div
@@ -485,7 +490,7 @@ export function AppShell({
                           : 'text-notion-text-secondary group-hover:text-notion-text'
                       }`}
                     >
-                      {item.label}
+                      {t(item.labelKey)}
                     </span>
                   )}
                 </Link>
@@ -524,7 +529,7 @@ export function AppShell({
                       : 'text-notion-text-secondary group-hover:text-notion-text'
                   }`}
                 >
-                  Library
+                  {t('sidebar.library')}
                 </span>
               </Link>
 
@@ -556,7 +561,7 @@ export function AppShell({
                       : 'text-notion-text-secondary group-hover:text-notion-text'
                   }`}
                 >
-                  Projects
+                  {t('sidebar.projects')}
                 </span>
               </Link>
 
@@ -590,7 +595,7 @@ export function AppShell({
                       : 'text-notion-text-secondary group-hover:text-notion-text'
                   }`}
                 >
-                  Tasks
+                  {t('sidebar.tasks')}
                 </span>
               </Link>
             </div>
@@ -600,7 +605,7 @@ export function AppShell({
           {!isCollapsed && recentItems.length > 0 && (
             <div className="mt-4 px-2">
               <div className="mb-1.5 px-2 text-[11px] font-medium uppercase tracking-wide text-notion-text-tertiary">
-                Recent
+                {t('sidebar.recent')}
               </div>
               <div className="flex flex-col gap-0.5">
                 {recentItems.map((item) => {
@@ -654,7 +659,7 @@ export function AppShell({
               className={`group relative flex w-full items-center rounded-md text-sm no-underline transition-colors hover:bg-notion-sidebar-hover/50 ${
                 isCollapsed ? 'justify-center h-9' : 'gap-2 px-2 py-1.5'
               }`}
-              title={isCollapsed ? 'Settings' : undefined}
+              title={isCollapsed ? t('sidebar.settings') : undefined}
             >
               {pathname === '/settings' && (
                 <motion.div
@@ -680,7 +685,7 @@ export function AppShell({
                       : 'text-notion-text-secondary group-hover:text-notion-text'
                   }`}
                 >
-                  Settings
+                  {t('sidebar.settings')}
                 </span>
               )}
             </Link>
@@ -702,8 +707,10 @@ export function AppShell({
                   <Loader2 size={13} className="flex-shrink-0 animate-spin text-blue-600" />
                   <span className="truncate text-notion-text">
                     {activeAnalysisJobs.length === 1
-                      ? `Analyzing: ${activeAnalysisJobs[0].paperTitle ?? 'paper'}`
-                      : `${activeAnalysisJobs.length} analyses running`}
+                      ? t('analysis.analyzing', {
+                          title: activeAnalysisJobs[0].paperTitle ?? 'paper',
+                        })
+                      : t('analysis.analyzingMultiple', { count: activeAnalysisJobs.length })}
                   </span>
                   {activeAnalysisJobs[0]?.paperShortId && (
                     <Link
@@ -731,7 +738,9 @@ export function AppShell({
                       }`}
                     >
                       {latestFinishedAnalysisJob.stage === 'done'
-                        ? `Analysis ready: ${latestFinishedAnalysisJob.paperTitle ?? 'paper'}`
+                        ? t('analysis.analysisReady', {
+                            title: latestFinishedAnalysisJob.paperTitle ?? 'paper',
+                          })
                         : latestFinishedAnalysisJob.message}
                     </Link>
                   ) : (
@@ -743,7 +752,9 @@ export function AppShell({
                       }`}
                     >
                       {latestFinishedAnalysisJob.stage === 'done'
-                        ? `Analysis ready: ${latestFinishedAnalysisJob.paperTitle ?? 'paper'}`
+                        ? t('analysis.analysisReady', {
+                            title: latestFinishedAnalysisJob.paperTitle ?? 'paper',
+                          })
                         : latestFinishedAnalysisJob.message}
                     </span>
                   )}
@@ -784,8 +795,8 @@ export function AppShell({
               {canGoBack && (
                 <button
                   onClick={handleGoBack}
-                  title="返回上一页"
-                  aria-label="返回上一页"
+                  title={t('common.back')}
+                  aria-label={t('common.back')}
                   className="absolute left-4 top-4 z-10 inline-flex h-8 w-8 items-center justify-center rounded-lg text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
                 >
                   <ArrowLeft size={16} />
@@ -798,8 +809,8 @@ export function AppShell({
               {canGoBack && (
                 <button
                   onClick={handleGoBack}
-                  title="返回上一页"
-                  aria-label="返回上一页"
+                  title={t('common.back')}
+                  aria-label={t('common.back')}
                   className="absolute left-4 top-10 inline-flex h-8 w-8 items-center justify-center rounded-lg text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
                 >
                   <ArrowLeft size={16} />

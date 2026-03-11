@@ -1,0 +1,217 @@
+{
+  "common": {
+    "save": "Save",
+    "saved": "Saved",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "close": "Close",
+    "test": "Test",
+    "testing": "Testing…",
+    "stop": "Stop",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "browse": "Browse",
+    "loading": "Loading…",
+    "back": "Go back",
+    "settings": "Settings",
+    "search": "Search",
+    "active": "Active",
+    "setActive": "Set Active",
+    "restart": "Restart"
+  },
+  "sidebar": {
+    "dashboard": "Dashboard",
+    "search": "Search",
+    "library": "Library",
+    "projects": "Projects",
+    "tasks": "Tasks",
+    "settings": "Settings",
+    "recent": "Recent",
+    "expandSidebar": "Expand sidebar",
+    "collapseSidebar": "Collapse sidebar"
+  },
+  "windowControls": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
+  },
+  "analysis": {
+    "analyzing": "Analyzing: {{title}}",
+    "analyzingMultiple": "{{count}} analyses running",
+    "analysisReady": "Analysis ready: {{title}}",
+    "downloadingModel": "Downloading built-in model"
+  },
+  "settings": {
+    "title": "Settings",
+    "searchPlaceholder": "Search settings…",
+    "noResults": "No settings found for \"{{query}}\"",
+    "nav": {
+      "general": "General",
+      "models": "Models",
+      "agents": "Agents",
+      "storage": "Storage"
+    },
+    "language": {
+      "title": "Language / 语言",
+      "description": "Choose the display language for the application.",
+      "en": "English",
+      "zh": "中文"
+    },
+    "proxy": {
+      "title": "Proxy",
+      "description": "Configure HTTP/HTTPS/SOCKS proxy for network requests.",
+      "label": "Proxy URL",
+      "placeholder": "e.g. http://127.0.0.1:7890 or socks5://127.0.0.1:1080",
+      "enable": "Enable proxy",
+      "scope": {
+        "label": "Apply proxy to",
+        "pdfDownload": "PDF downloads",
+        "aiApi": "AI API calls",
+        "cliTools": "CLI tools"
+      },
+      "testConnection": "Test Connection",
+      "testing": "Testing…",
+      "success": "Connection successful",
+      "failed": "Connection failed"
+    },
+    "editor": {
+      "title": "Editor",
+      "description": "Choose your preferred code editor for opening paper folders.",
+      "label": "Editor",
+      "customCommand": "Custom Editor Command",
+      "customPlaceholder": "e.g. subl, idea, vim",
+      "testSuccess": "Test successful",
+      "testFailed": "Test failed, please check if the command is available"
+    },
+    "semantic": {
+      "title": "Semantic Search",
+      "description": "Configure embedding-based search and paper recommendations."
+    },
+    "dev": {
+      "title": "Developer Mode",
+      "description": "Enable developer mode to show welcome modal on every startup.",
+      "toggleLabel": "Show welcome modal on every startup"
+    },
+    "models": {
+      "title": "Models & Usage",
+      "description": "Configure AI models for lightweight tasks and embeddings.",
+      "addModel": "Add Model",
+      "editModel": "Edit Model",
+      "saveChanges": "Save Changes",
+      "addConfig": "Add Config",
+      "testConnection": "Test Connection",
+      "provider": "Provider",
+      "name": "Name",
+      "namePlaceholder": "e.g. Claude Code",
+      "command": "Command",
+      "commandPlaceholder": "e.g. claude --dangerously-skip-permissions",
+      "apiKey": "API Key",
+      "model": "Model",
+      "baseUrl": "Base URL",
+      "envVars": "Environment Variables (optional)",
+      "optional": "(optional)",
+      "optionalIfEnv": "(optional if set via env)",
+      "kinds": {
+        "agent": "Agent",
+        "agentDesc": "CLI-based model for agent tasks. Configured in Agent Settings.",
+        "lightweight": "Lightweight",
+        "lightweightDesc": "Fast, low-cost model for tagging, summaries, and classification."
+      },
+      "providers": {
+        "anthropic": "Anthropic (Claude)",
+        "openai": "OpenAI (GPT)",
+        "gemini": "Google Gemini",
+        "custom": "Custom (OpenAI-compatible)"
+      },
+      "diagnostics": {
+        "show": "Show CLI diagnostics",
+        "structuredOutput": "Structured output",
+        "rawStdout": "Raw stdout / JSONL",
+        "rawStderr": "Raw stderr",
+        "warning": "Diagnostics preview in the frontend is still under development…"
+      }
+    },
+    "agents": {
+      "title": "CLI Agents",
+      "description": "Manage CLI-based agent tools for research automation.",
+      "addTool": "Add CLI Tool",
+      "addToolTitle": "Add CLI Tool",
+      "provider": "Provider",
+      "name": "Name (optional)",
+      "namePlaceholder": "e.g. Claude Code",
+      "command": "Command",
+      "commandPlaceholder": "e.g. claude --dangerously-skip-permissions",
+      "commandHelp": "Full command including any flags for silent / non-interactive mode",
+      "envVars": "Environment Variables (optional)"
+    },
+    "storage": {
+      "title": "Data Directory",
+      "description": "Configure where all app data (database, papers, config) is stored.",
+      "currentDir": "Current Directory",
+      "newDir": "New Directory",
+      "browseHelp": "All app data (papers, notes, database, config files) will be stored here. The app will restart after migration.",
+      "migrateTitle": "Migrate storage?",
+      "migrateConfirm": "All data (database, papers, config files) will be copied to:",
+      "migrateButton": "Migrate & Restart",
+      "migrating": "Migrating…",
+      "saveRestart": "Save & Restart"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "recentPapers": "Recent Papers",
+    "import": "Import",
+    "noPapers": "No papers yet",
+    "noPapersHint": "Import papers from your Chrome history or upload PDFs to get started."
+  },
+  "search": {
+    "placeholder": "Search papers…",
+    "noResults": "No results for \"{{query}}\"",
+    "title": "Search"
+  },
+  "papers": {
+    "library": "Library",
+    "addedOn": "Added {{date}}",
+    "submittedOn": "Submitted {{date}}",
+    "noPapers": "No papers",
+    "tags": "Tags",
+    "notes": "Notes",
+    "reader": "Reader"
+  },
+  "importModal": {
+    "title": "Import Papers",
+    "scanning": "Scanning…",
+    "importing": "Importing…",
+    "completed": "Import complete",
+    "cancelled": "Import cancelled",
+    "failed": "Import failed"
+  },
+  "setupWizard": {
+    "title": "Welcome to ResearchClaw",
+    "skip": "Skip for now"
+  },
+  "compare": {
+    "title": "Compare Papers",
+    "addPaper": "Add paper",
+    "startComparison": "Start Comparison",
+    "comparing": "Comparing…"
+  },
+  "projects": {
+    "title": "Projects",
+    "newProject": "New Project",
+    "noProjects": "No projects yet"
+  },
+  "modelCombobox": {
+    "placeholder": "Select or enter model ID",
+    "noMatch": "No matching model found, press Enter to use custom ID"
+  },
+  "agentTodos": {
+    "title": "Tasks",
+    "noTasks": "No tasks yet",
+    "newTask": "New Task"
+  }
+}

@@ -939,6 +939,8 @@ export const ipc = {
     invoke<SemanticModelPullJob[]>('settings:listSemanticModelPullJobs'),
   getDevMode: () => invoke<{ enabled: boolean }>('settings:getDevMode'),
   setDevMode: (enabled: boolean) => invoke<{ success: boolean }>('settings:setDevMode', enabled),
+  getLanguage: () => invoke<{ language: 'en' | 'zh' }>('settings:getLanguage'),
+  setLanguage: (lang: 'en' | 'zh') => invoke<{ success: boolean }>('settings:setLanguage', lang),
 
   // Embedding configs (multi-card UI)
   listEmbeddingConfigs: () =>
@@ -1061,7 +1063,7 @@ export const ipc = {
     invoke<{ success: boolean }>('recommendations:lessLikeThis', candidateId),
 
   // Comparison
-  startComparison: (input: { sessionId: string; paperIds: string[] }) =>
+  startComparison: (input: { sessionId: string; paperIds: string[]; language?: 'en' | 'zh' }) =>
     invoke<{ jobId: string; savedId: string | null; started: boolean }>('comparison:start', input),
   getActiveComparisonJobs: () =>
     invoke<

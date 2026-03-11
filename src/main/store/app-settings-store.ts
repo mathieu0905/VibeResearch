@@ -49,6 +49,7 @@ interface AppSettings {
   userProfile?: UserProfile;
   builtinModelPath?: string; // deprecated: kept for migration only
   devMode?: boolean; // Developer mode: show welcome modal on every startup
+  language?: 'en' | 'zh'; // Display language; undefined = auto-detected from OS on first launch
 }
 
 const DEFAULT_PROXY_SCOPE: ProxyScope = {
@@ -305,4 +306,19 @@ export function setDevMode(enabled: boolean): void {
   const settings = load();
   settings.devMode = enabled;
   save(settings);
+}
+
+export function getLanguage(): 'en' | 'zh' {
+  return load().language ?? 'en';
+}
+
+export function setLanguage(lang: 'en' | 'zh'): void {
+  const settings = load();
+  settings.language = lang;
+  save(settings);
+}
+
+/** Returns true if the user has explicitly set a language preference. */
+export function hasLanguagePreference(): boolean {
+  return load().language !== undefined;
 }

@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { PapersRepository } from '@db';
 import {
-  COMPARISON_SYSTEM_PROMPT,
+  getComparisonSystemPrompt,
   buildComparisonUserPrompt,
   type ComparisonPaperInput,
   type ComparisonChatMessage,
@@ -16,7 +16,7 @@ export class ComparisonService {
   private static readonly PDF_EXCERPT_MAX_CHARS = 1200;
 
   async comparePapers(
-    input: { paperIds: string[] },
+    input: { paperIds: string[]; language?: 'en' | 'zh' },
     onChunk: (chunk: string) => void,
     signal?: AbortSignal,
     onProgress?: (message: string) => void,
@@ -91,7 +91,7 @@ export class ComparisonService {
 
     const { textStream } = streamText({
       model,
-      system: COMPARISON_SYSTEM_PROMPT,
+      system: getComparisonSystemPrompt(input.language ?? 'en'),
       prompt: userPrompt,
       maxOutputTokens: 4096,
       abortSignal: signal,

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, Search, X } from 'lucide-react';
 
 export interface ModelOption {
@@ -149,7 +150,7 @@ const PROVIDER_LABELS: Record<string, string> = {
 export function ModelCombobox({
   value,
   onChange,
-  placeholder = '选择或输入模型ID',
+  placeholder,
   className = '',
 }: {
   value: string;
@@ -157,6 +158,8 @@ export function ModelCombobox({
   placeholder?: string;
   className?: string;
 }) {
+  const { t } = useTranslation();
+  const resolvedPlaceholder = placeholder ?? t('modelCombobox.placeholder');
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
@@ -247,7 +250,7 @@ export function ModelCombobox({
           onChange={handleInputChange}
           onFocus={() => setIsOpen(true)}
           onKeyDown={handleKeyDown}
-          placeholder={placeholder}
+          placeholder={resolvedPlaceholder}
           className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 pr-10 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-notion-accent focus:ring-2 focus:ring-notion-accent/20"
         />
         <div className="absolute right-2 flex items-center gap-1">
@@ -304,7 +307,7 @@ export function ModelCombobox({
             ))}
             {filteredModels.length === 0 && (
               <div className="px-3 py-4 text-center text-sm text-notion-text-tertiary">
-                未找到匹配模型，按回车使用自定义ID
+                {t('modelCombobox.noMatch')}
               </div>
             )}
           </div>

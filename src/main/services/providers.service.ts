@@ -26,6 +26,9 @@ import {
   setActiveEmbeddingConfigId,
   getDevMode,
   setDevMode,
+  getLanguage,
+  setLanguage,
+  hasLanguagePreference,
   type ProxyScope,
   type SemanticSearchSettings,
   type EmbeddingConfig,
@@ -342,6 +345,19 @@ export class ProvidersService {
   setDevMode(enabled: boolean): { success: boolean } {
     setDevMode(enabled);
     return { success: true };
+  }
+
+  getLanguage(): 'en' | 'zh' {
+    return getLanguage();
+  }
+
+  setLanguage(lang: 'en' | 'zh'): { success: boolean } {
+    setLanguage(lang);
+    return { success: true };
+  }
+
+  hasLanguagePreference(): boolean {
+    return hasLanguagePreference();
   }
 
   async getSemanticDebugInfo(

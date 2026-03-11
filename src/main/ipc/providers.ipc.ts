@@ -399,6 +399,31 @@ export function setupProvidersIpc() {
     },
   );
 
+  ipcMain.handle('settings:getLanguage', async (): Promise<IpcResult<unknown>> => {
+    try {
+      const lang = providersService.getLanguage();
+      return ok({ language: lang });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[settings:getLanguage] Error:', msg);
+      return err(msg);
+    }
+  });
+
+  ipcMain.handle(
+    'settings:setLanguage',
+    async (_, lang: 'en' | 'zh'): Promise<IpcResult<unknown>> => {
+      try {
+        const result = providersService.setLanguage(lang);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[settings:setLanguage] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
   ipcMain.handle(
     'shell:openInEditor',
     async (_, dirPath: string): Promise<IpcResult<{ success: boolean; error?: string }>> => {
