@@ -1,5 +1,46 @@
 # Changelog
 
+## 2026-03-11 (8)
+
+### feat: separate Chat and Task into independent systems with chat history
+
+- **Problem**: Chat and Task were mixed together - chat was temporary with no persistence, while task creation happened through chat extraction. Users wanted chat to have its own history independent of tasks.
+- **Solution**:
+  - Database: Added `ChatSession` and `ChatMessage` tables to store chat history separately from tasks
+  - Backend: Created `ChatRepository` and `ChatService` for chat CRUD operations, independent of `AgentTodo` system
+  - IPC: Added new channels (`chat:session:*`, `chat:message:*`, `chat:stream`, `chat:kill`, `chat:generateTitle`)
+  - Frontend: Updated `IdeaChatModal` with sidebar showing chat history, ability to create new chats, load/delete historical sessions
+  - Auto-title generation: First user message triggers LLM to generate a concise title for the chat
+- **Scope**:
+  - `prisma/schema.prisma` - new `ChatSession` and `ChatMessage` models
+  - `src/db/repositories/chat.repository.ts` (new)
+  - `src/main/services/chat.service.ts` (new)
+  - `src/main/ipc/chat.ipc.ts` (new)
+  - `src/main/index.ts` - register chat IPC
+  - `src/renderer/hooks/use-ipc.ts` - chat IPC methods
+  - `src/renderer/components/ideas/IdeaChatModal.tsx` - major refactor with history sidebar
+  - `src/db/index.ts` - export chat repository
+
+## 2026-03-11 (7)
+
+### fix: resolve "spawn npx ENOENT" error when running agent tasks (AionUi approach)
+
+- **Problem**: When clicking "Run" on a task, the app showed `spawn npx ENOENT` error. This happened because Electron apps on macOS don't inherit the shell's PATH environment variable when launched from Finder/launchd, so `npx` could not be found.
+- **Solution**: Aligned with AionUi's approach by implementing `getEnhancedEnv()` utility (`src/main/utils/shell-env.ts`) that loads the full shell environment (including PATH) using `execFileSync(shell, ['-i', '-l', '-c', 'env'])`. This captures environment variables from `.zshrc`, `.bashrc`, `.bash_profile`, etc. The enhanced environment is merged with `process.env` before spawning child processes.
+- **Key Changes**:
+  - New `src/main/utils/shell-env.ts`: Implements `getEnhancedEnv()`, `mergePaths()`, and `loadShellEnvironment()` following AionUi's pattern
+  - Modified `src/main/agent/acp-connection.ts`: Updated `spawn()` to use `getEnhancedEnv()` instead of `process.env`, removed the now-unnecessary `resolveCommandPath()` logic
+  - Added tests in `tests/unit/shell-env.test.ts` for the new utilities
+- **Why this works**: Instead of resolving individual command paths, we provide the child process with the same PATH that would be available in a terminal. This is more robust and handles all CLI tools (npx, node, npm, etc.) without special-casing each one.
+
+## 2026-03-11 (6)
+
+### fix: Fix npm run dev failing due to cpu-features C++20 incompatibility
+
+- **Problem**: `npm run dev` failed because `predev` runs `electron-rebuild -f -w better-sqlite3`, which also tried to rebuild `cpu-features` (an optional dependency of `ssh2`). `cpu-features` v0.0.10 is incompatible with Electron 35's C++20 requirement.
+- **Solution**: Removed `cpu-features` module from `node_modules/`; it is optional for `ssh2` and not needed for ResearchClaw's functionality.
+- **Note**: Also removed `-f` flag from `rebuild:native` script to prevent unnecessary rebuilding of all native modules.
+
 ## 2026-03-11 (5)
 
 ### refactor: unify agent run message state into useRunMessages hook

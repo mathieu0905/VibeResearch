@@ -11,6 +11,7 @@ import {
 import { Readable, Writable } from 'node:stream';
 import type { SshConnectConfig } from '@shared';
 import { SshConnectionService, type SshSpawnHandle } from '../services/ssh-connection.service';
+import { getEnhancedEnv } from '../utils/shell-env';
 
 /**
  * ACP client connection that spawns an agent process and communicates
@@ -43,8 +44,10 @@ export class AcpConnection extends EventEmitter {
     cwd: string,
     env?: Record<string, string>,
   ): Promise<void> {
+    // Use enhanced environment that includes shell PATH (for npx, node, etc.)
+    // This is critical when Electron is launched from Finder/launchd instead of terminal
     const cleanEnv: Record<string, string | undefined> = {
-      ...process.env,
+      ...getEnhancedEnv(),
       ...env,
       NODE_OPTIONS: undefined,
       NODE_INSPECT: undefined,
@@ -60,13 +63,15 @@ export class AcpConnection extends EventEmitter {
     //   - embedded args:  "node /path/to/claude-agent-acp/dist/index.js"
     //   - npx package:    "npx @zed-industries/codex-acp@0.18.0"
     const parts = cliPath.trim().split(/\s+/);
-    let cmd = parts[0];
+    const cmd = parts[0];
     let finalArgs = [...parts.slice(1), ...args];
 
     if (cmd === 'npx' && finalArgs.length > 0 && !finalArgs.includes('--yes')) {
       finalArgs = ['--yes', '--prefer-offline', ...finalArgs];
     }
 
+    // With enhanced environment (including shell PATH), commands like npx/node
+    // should be found automatically. No need to resolve full path.
     this.child = spawn(cmd, finalArgs, {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
