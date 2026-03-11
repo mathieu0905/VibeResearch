@@ -33,7 +33,7 @@ import {
 } from '../hooks/use-ipc';
 import { useAnalysis } from '../hooks/use-analysis';
 import { useMainReady } from '../hooks/use-main-ready';
-import { SetupWizardModal, isSetupDismissed } from './setup-wizard-modal';
+import { SetupWizardModal, isSetupDismissed, markSetupDismissed } from './setup-wizard-modal';
 
 // Detect if running on Windows
 const isWindows = navigator.userAgent.includes('Windows');
@@ -215,6 +215,7 @@ export function AppShell({
       .then((providers) => {
         const hasConfigured = providers.some((p) => p.hasApiKey);
         if (!hasConfigured) {
+          markSetupDismissed();
           setSetupProviders(providers);
           setShowSetupWizard(true);
         }

@@ -35,7 +35,7 @@
     "format": "prettier . --write",
     "format:check": "prettier . --check",
     "prepare": "husky",
-    "predev": "npm run rebuild:native && npm run ensure:native",
+    "predev": "npm run ensure:native",
     "pretest": "npm run rebuild:native:node",
     "ensure:native": "node scripts/ensure-native-modules.mjs"
   },
