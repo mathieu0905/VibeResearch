@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-11 (3)
+
+### feat: Replace app icon with new ResearchClaw bird logo
+
+- **Scope**: `assets/icon.png`, `assets/icon.icns`, `assets/icon.ico`, `assets/icon.iconset/`, `docs/icon.png`, `src/renderer/public/icon.png`
+- **Changes**:
+  - Replaced all icon files with new hand-drawn bird logo (`Gemini_Generated_Image_7bo6377bo6377bo6.png`)
+  - Regenerated `icon.iconset/` (10 sizes: 16×16 through 1024×1024)
+  - Rebuilt `icon.icns` via `iconutil` and `icon.ico` via Python Pillow
+  - Updated `docs/icon.png` and `src/renderer/public/icon.png` to match
+  - Deleted `assets/logo.svg` and `docs/logo.svg` (no longer needed)
+- **Result**: All icon appearances now show the new bird logo consistently
+
 ## 2026-03-11 (2)
 
 ### feat: Align all logo/icon references with actual app icon; polish setup wizard UI
