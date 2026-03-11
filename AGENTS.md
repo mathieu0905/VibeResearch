@@ -1,18 +1,12 @@
-# AGENTS.md
+# Repository Rules for Claude Code
 
-This file defines repository-wide instructions for Codex when working in this project.
-
-## Scope
-
-- Applies to the entire repository rooted here.
-- These rules are the default unless the user gives a task-specific override.
-- Direct system, developer, and user instructions take precedence over this file.
+This file defines default engineering constraints for all changes in this repository.
 
 ## Project Overview
 
-**Vibe Research** is a standalone Electron desktop app for researchers. It is **not** a Codex plugin.
+**ResearchClaw** is a standalone Electron desktop app for researchers. It is NOT a Claude Code plugin.
 
-```text
+```
 src/
   main/       # Electron main process (IPC handlers, services, stores)
   renderer/   # Vite + React UI
@@ -23,152 +17,147 @@ tests/        # Integration tests (service layer, no Electron needed)
 scripts/      # build-main.mjs, build-release.sh
 ```
 
-## Path Aliases
+**Path aliases** (tsconfig + esbuild + vite + vitest):
 
 - `@shared` → `src/shared/index.ts`
 - `@db` → `src/db/index.ts`
 - `@/*` → `src/renderer/*`
 
-## Working Principles
+## Process Management
 
-- Keep changes focused and minimal; fix root causes instead of layering surface patches.
-- Follow the existing code style and architecture in the touched area.
-- Do not change unrelated files or fix unrelated issues unless the user asks.
-- Update documentation when behavior, usage, or developer workflow changes.
+- **Never run `pkill -f electron` or `killall electron`** — this will kill ALL Electron-based apps on the system (VS Code, Cursor, etc.), not just ResearchClaw.
+- To stop ResearchClaw specifically, always use: `pkill -f ResearchClaw`
 
-## Required Workflow
+## Scope and Priority
 
-1. Review the relevant code path before editing.
-2. Implement the feature or fix with the smallest clean change.
-3. Add or update tests when the change affects behavior.
-4. Update `changelog.md` for every coding session.
-5. Run the most relevant validation commands available.
-6. If the user explicitly asks for a commit, stage only the files you changed.
+- Scope: Entire repository (`researchclaw`).
+- Priority: These rules are the default for every implementation unless the user gives explicit one-off overrides in a task.
 
-## Testing Expectations
+## Mandatory standards
 
-- Tests should cover real business behavior, not only shallow health checks.
-- Prefer realistic workflows, including sample import flow with Chrome history sample data when relevant.
-- Cover the paper → reading card workflow when the affected feature touches that path.
-- When possible, validate the smallest relevant scope first, then broader checks if needed.
+1. **Tests must cover real business chain**
+   - Must include realistic sample import flow (Chrome history sample data).
+   - Must cover paper -> reading card workflow.
+   - Health/help-only tests are insufficient for feature acceptance.
 
-## Changelog Rule
+2. **Every coding session must update `changelog.md`**
+   - Append a concise entry under the relevant version/date section in `changelog.md` (root of repo).
+   - Entry must summarize what changed and affected scope. No separate per-file entries needed.
 
-- Every coding session should append a concise entry to `changelog.md`.
-- The entry should summarize what changed and the affected scope.
-- No per-file breakdown is required.
+3. **Formatting + lint/review checks must pass before commit**
+   - Pre-commit checks are required.
+   - **Always run `npm run lint` before every commit** to ensure code formatting is correct.
+   - If lint fails, run `npx prettier . --write` to auto-fix formatting issues.
+   - **Always run `npm run test` before every commit** to ensure all tests pass.
+   - Tests that require API keys should use `requiresModelIt` helper to skip in CI environments.
 
-## Validation Expectations
+4. **Database schema changes require migration**
+   - When adding new features that modify `prisma/schema.prisma`, always run `npx prisma db push` to sync the database.
+   - Remind user to run migration if schema changes are detected.
+   - **Note**: Database path is `{RESEARCH_CLAW_STORAGE_DIR}/researchclaw.db` (defaults to `~/.researchclaw/researchclaw.db`). Update `.env` DATABASE_URL accordingly before running CLI commands.
 
-- Run applicable formatting, lint, type-check, and test commands when practical.
-- Prefer targeted validation first.
-- If validation cannot be run, say so clearly in the final handoff.
+5. **Commit working code immediately**
+   - When a feature is functionally complete and passes type checks, commit it right away.
+   - Use `git add` and `git commit` promptly to preserve work.
+   - This prevents accidental loss of code from git operations (checkout, reset, etc.).
+   - Commit message format: `feat/fix/refactor: brief description`
 
-## Database Rules
+6. **Only commit and push files you modified**
+   - Always use `git add <specific files>` — never `git add .` or `git add -A`.
+   - Do not stage or push files you did not touch, even if they appear in `git status`.
 
-- If you modify `prisma/schema.prisma`, keep schema sync in mind.
-- Recommended command: `npx prisma db push`
-- Remind the user to sync the database after schema changes.
-- Database path is `{VIBE_RESEARCH_STORAGE_DIR}/vibe-research.db`
-- Default database path is `~/.vibe-research/vibe-research.db`
-- Ensure `.env` `DATABASE_URL` matches before running Prisma CLI commands.
+7. **README must be updated in both Chinese and English**
+   - `README.md` (English) and `README_CN.md` (Chinese) are separate files.
+   - When updating README, always update both files to keep them synchronized.
 
-## Git and Commit Rules
+8. **Branch and PR workflow**
+   - **Main branch (`main`) is protected and must only be updated via Pull Requests.**
+   - Never push directly to `main` branch.
+   - All feature development must be done in feature branches (e.g., `feat/feature-name`, `fix/bug-name`).
+   - When feature work is complete, create a PR to merge into `main`.
+   - Feature branches can be pushed directly for collaboration and backup.
 
-- Do not stage unrelated files.
-- When staging is requested, use explicit file paths.
-- Never use blanket staging like `git add .` or `git add -A`.
-- Only commit when the user explicitly asks for it or the active higher-priority instruction requires it.
-- Suggested commit message style: `feat: ...`, `fix: ...`, `refactor: ...`
+9. **Long-running operations must use background jobs**
+   - Any IPC operation that may take more than a few seconds (LLM streaming, comparison, recommendation generation, etc.) must run as a background job in the main process.
+   - The main process keeps job state in memory and broadcasts progress via `BrowserWindow.webContents.send`.
+   - The renderer must **never** auto-kill a background job on component unmount — users should be able to navigate away and return to see results.
+   - Provide a `getActiveJobs` / status query handler so the renderer can recover in-progress or completed job state when the page remounts.
+   - Users may manually cancel a job via an explicit Stop/Cancel button.
 
-## Branch and PR Workflow
+## Expected coding sequence
 
-- **Main branch (`main`) is protected and must only be updated via Pull Requests.**
-- Never push directly to `main` branch.
-- All feature work should be done in feature branches (e.g., `feat/paper-ingest-and-search`).
-- When feature work is complete, create a PR to merge into `main`.
-- Feature branches can be pushed directly for collaboration and backup.
+1. Create changelog entry for the coding session.
+2. Implement feature and tests.
+3. Fill changelog test design + validation results.
+4. Run formatting/lint/test checks.
+5. Commit only when checks pass.
 
-## README Rules
+## UI Design Language
 
-- `README.md` contains both English and Chinese sections.
-- If you update `README.md`, keep both language sections synchronized.
+Notion-inspired design: clean whites, soft grays, light blue accents, smooth micro-interactions.
 
-## UI Design Standards
+### 1. Color System
 
-### Card Components
+All colors use `notion-*` Tailwind tokens:
 
-Use a light blue + white visual system for card-style components such as paper cards, reading cards, and list items.
+- **Backgrounds**: `bg-white` (cards) · `bg-notion-sidebar` #f7f7f5 (sidebar) · `bg-notion-accent-light` #e8f4f8 (hover/selected)
+- **Text**: `text-notion-text` #37352f · `text-notion-text-secondary` #6b6b6b · `text-notion-text-tertiary` #9b9a97
+- **Accent**: `text-notion-accent` / `bg-notion-accent` #2eaadc (links, active states, buttons)
+- **Border**: `border-notion-border` #e8e8e5 (default) → `border-notion-accent/30` (hover) → `border-notion-accent/50` (selected)
+- **Semantic**: red `#eb5757` (errors/delete) · green `#0f7b0f` (success) · orange `#fa8c16` (warnings) · yellow `#dfab01` · purple `#9065b0` · pink `#e255a1`
+- **Tag backgrounds**: `bg-notion-tag-blue/green/orange/purple/pink/yellow/red` (pastel variants for taxonomy labels)
 
-- Base: `bg-white border border-notion-border rounded-lg`
-- Hover: `hover:bg-notion-accent-light hover:border-notion-accent/30`
-- Active: `bg-notion-accent-light border-notion-accent/50`
-
-Color intent:
-
-- Card background: `bg-white` (`#ffffff`)
-- Hover background: `bg-notion-accent-light` (`#e8f4f8`)
-- Default border: `border-notion-border` (`#e8e8e5`)
-- Accent border: `border-notion-accent/30`
-- Accent text: `text-notion-accent` (`#2eaadc`)
-
-Card design principles:
-
-- Default to white backgrounds.
-- Use light blue hover and selected states.
-- Keep borders subtle by default and more prominent on interaction.
-- Use `shadow-notion` for default elevation and `shadow-notion-hover` on hover when appropriate.
-
-Example pattern:
+### 2. Card Pattern
 
 ```tsx
-<div className="group bg-white border border-notion-border rounded-lg p-4 hover:bg-notion-accent-light hover:border-notion-accent/30 transition-colors duration-150 cursor-pointer">
-  {/* Card content */}
-</div>
+<div className="group bg-white border border-notion-border rounded-lg p-4
+  hover:bg-notion-accent-light hover:border-notion-accent/30
+  transition-colors duration-150 cursor-pointer">
 ```
 
-## UI Animation Standards
+- Default: white + gray border
+- Hover: light blue bg + blue border
+- Selected: `bg-notion-accent-light border-notion-accent/50`
+- Shadows: `shadow-notion` (default) · `shadow-notion-hover` (hover)
 
-For modals and popups, prefer `framer-motion` with a 150ms fade + scale/slide pattern.
+### 3. Layout & Spacing
 
-```tsx
-import { motion, AnimatePresence } from 'framer-motion';
+- Sidebar: collapsible `w-60` / `w-[72px]` with `bg-notion-sidebar`
+- Content: `max-w-3xl` or `max-w-4xl` centered containers
+- Padding: `p-4` (cards) · `p-6` (modals/sections)
+- Gaps: `gap-1.5` (tight lists) · `gap-2`–`gap-3` (standard) · `gap-4`+ (sections)
 
-<AnimatePresence>
-  {isOpen && (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.15 }}
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
-    >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95, y: 10 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.95, y: 10 }}
-        transition={{ duration: 0.15 }}
-        className="rounded-xl bg-white p-6 shadow-xl"
-      >
-        {/* Modal content */}
-      </motion.div>
-    </motion.div>
-  )}
-</AnimatePresence>;
-```
+### 4. Typography
 
-Animation rules:
+- Page title: `text-2xl font-bold tracking-tight text-notion-text`
+- Section header: `text-sm font-medium text-notion-text`
+- Metadata / labels: `text-xs text-notion-text-tertiary`
+- Long text: `truncate` (single line) · `line-clamp-2` (two lines)
 
-- Background uses fade in/out.
-- Modal card uses fade + scale + upward motion.
-- Standard duration is `0.15` seconds.
-- Always support closing modals with the `Escape` key.
+### 5. Buttons & Interactive States
 
-## Final Handoff Expectations
+- Primary action: `bg-notion-accent text-white rounded-lg px-3 py-1.5 text-sm`
+- Filter/toggle: `rounded-lg px-3 py-1.5 text-sm` + `bg-notion-sidebar-hover` when active
+- Icon button: `flex h-7 w-7 items-center justify-center rounded-lg hover:bg-notion-sidebar-hover`
+- Destructive: `hover:bg-red-50 hover:text-red-500`
+- Hover reveals: `opacity-0 group-hover:opacity-100 transition-opacity`
+- Disabled: `disabled:opacity-50`
 
-When finishing a task, Codex should clearly state:
+### 6. Animations (framer-motion)
 
-- what changed,
-- which files were touched,
-- what validation was run,
-- any follow-up the user should do (especially Prisma sync after schema changes).
+- **Modal**: backdrop fade + card scale+slide — always 150ms
+  ```tsx
+  // Backdrop
+  initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}
+  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+  // Card
+  initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+  className="rounded-xl bg-white p-6 shadow-xl"
+  ```
+- **List items**: `AnimatePresence` with staggered `y` slide-in
+- **Nav indicator**: spring animation with `layoutId` (`stiffness: 500, damping: 30`)
+- Always support **ESC** to close modals
+
+### 7. IME Input Handling
+
+All `onKeyDown` Enter handlers must guard: `if (e.nativeEvent.isComposing) return`

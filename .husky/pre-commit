@@ -1,2 +1,3 @@
 npx lint-staged
 npm run precommit:check
+cp CLAUDE.md AGENTS.md
