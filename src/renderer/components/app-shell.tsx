@@ -471,7 +471,7 @@ export function AppShell({
 
           {/* Library + Projects sections (expanded sidebar only) */}
           {!isCollapsed && (
-            <div className="mt-3 flex flex-col gap-0.5 px-2">
+            <div className="mt-0.5 flex flex-col gap-0.5 px-2">
               {/* Library - flat link */}
               <Link
                 to="/papers"

@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-03-11 (9)
+
+### fix: improve npx resolution + separate chat from agent tasks
+
+- **npx resolution**: Added `resolveNpxPath()` to `shell-env.ts` that finds npx by first locating the active `node` binary via `which`, then resolving npx from the same directory. Used in `acp-connection.ts` for npx commands specifically, replacing the generic `resolveCommandPath` which relied on hardcoded path lists.
+- **Chat/Task separation**: Removed "Generate Task" button and task form from both `IdeaChatModal` (drawer) and the inline `IdeasTab` chat. Chat is now purely conversational with its own storage (`ChatSession`/`ChatMessage`), fully separate from the agent task system (`AgentTodo`/`AgentTodoRun`/`AgentTodoMessage`). Tasks are created manually from the Tasks tab only.
+- **Scope**:
+  - `src/main/utils/shell-env.ts` — new `resolveNpxPath()` function
+  - `src/main/agent/acp-connection.ts` — use `resolveNpxPath` for npx commands
+  - `src/renderer/components/ideas/IdeaChatModal.tsx` — removed task form, `onTaskCreated` prop, and task-related state
+  - `src/renderer/pages/projects/page.tsx` — removed task extraction/creation from IdeasTab inline chat
+  - `tests/frontend/components/IdeaChatModal.test.tsx` — removed task-related test sections
+
 ## 2026-03-11 (8)
 
 ### feat: separate Chat and Task into independent systems with chat history

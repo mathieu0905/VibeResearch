@@ -22,6 +22,7 @@ import { setupCitationsIpc } from './ipc/citations.ipc';
 import { setupRecommendationsIpc } from './ipc/recommendations.ipc';
 import { setupComparisonIpc } from './ipc/comparison.ipc';
 import { setupUserProfileIpc } from './ipc/user-profile.ipc';
+import { setupChatIpc } from './ipc/chat.ipc';
 import { ensureStorageDir, getDbPath } from './store/storage-path';
 import { PapersRepository } from '@db';
 import { resumeAutomaticPaperProcessing } from './services/paper-processing.service';
@@ -439,6 +440,7 @@ app.whenReady().then(async () => {
   setupRecommendationsIpc();
   setupComparisonIpc();
   setupUserProfileIpc();
+  setupChatIpc();
   setupFileIpc();
 
   // Initialize vec index (background, non-blocking)

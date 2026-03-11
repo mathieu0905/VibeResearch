@@ -625,17 +625,6 @@ function IdeasTab({ project, onChange }: { project: ProjectItem; onChange: () =>
   const [streaming, setStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
 
-  // Generate Task state
-  const [extracting, setExtracting] = useState(false);
-  const [extractError, setExtractError] = useState<string | null>(null);
-  const [showTaskForm, setShowTaskForm] = useState(false);
-  const [taskTitle, setTaskTitle] = useState('');
-  const [taskPrompt, setTaskPrompt] = useState('');
-  const [taskAgentId, setTaskAgentId] = useState('');
-  const [taskCwd, setTaskCwd] = useState<string>(project.workdir ?? '');
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState<string | null>(null);
-
   const sessionId = useRef(`idea-chat-${Date.now()}`);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -740,49 +729,6 @@ function IdeasTab({ project, onChange }: { project: ProjectItem; onChange: () =>
       ]);
     }
   }, [input, streaming, messages, project.id, selectedPaperIds, selectedRepoIds]);
-
-  const generateTask = async () => {
-    if (messages.length === 0 || streaming || extracting) return;
-    setExtracting(true);
-    setExtractError(null);
-    try {
-      const result = await ipc.extractTaskFromChat({ projectId: project.id, messages });
-      setTaskTitle(result.title);
-      setTaskPrompt(result.prompt);
-      setTaskCwd(project.workdir ?? '');
-      setTaskAgentId('');
-      setCreateError(null);
-      setShowTaskForm(true);
-    } catch (err) {
-      setExtractError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setExtracting(false);
-    }
-  };
-
-  const createTask = async () => {
-    if (!taskTitle.trim() || !taskPrompt.trim() || !taskAgentId) {
-      setCreateError('Please fill in title, prompt, and select an agent.');
-      return;
-    }
-    setCreating(true);
-    setCreateError(null);
-    try {
-      await ipc.createAgentTodo({
-        title: taskTitle.trim(),
-        prompt: taskPrompt.trim(),
-        cwd: taskCwd.trim(),
-        agentId: taskAgentId,
-        projectId: project.id,
-      });
-      setShowTaskForm(false);
-      onChange();
-    } catch (err) {
-      setCreateError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setCreating(false);
-    }
-  };
 
   const selectedPapers = papers.filter((p) => selectedPaperIds.includes(p.id));
   const selectedRepos = clonedRepos.filter((r) => selectedRepoIds.includes(r.id));
@@ -962,31 +908,7 @@ function IdeasTab({ project, onChange }: { project: ProjectItem; onChange: () =>
             )}
           </AnimatePresence>
         </div>
-
-        {/* Generate Task button */}
-        <button
-          onClick={() => void generateTask()}
-          disabled={messages.length === 0 || streaming || extracting}
-          className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-3 py-2 text-sm font-medium text-white hover:opacity-80 disabled:opacity-40"
-        >
-          {extracting ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-          Generate Task
-        </button>
       </motion.div>
-
-      {/* Extract error */}
-      <AnimatePresence>
-        {extractError && (
-          <motion.p
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600"
-          >
-            {extractError}
-          </motion.p>
-        )}
-      </AnimatePresence>
 
       {/* Selected chips */}
       <AnimatePresence>
@@ -1138,102 +1060,6 @@ function IdeasTab({ project, onChange }: { project: ProjectItem; onChange: () =>
           </div>
         </div>
       </motion.div>
-
-      {/* ── Generate Task Form (inline modal) ── */}
-      <AnimatePresence>
-        {showTaskForm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 10 }}
-              transition={{ duration: 0.15 }}
-              className="w-full max-w-lg rounded-xl bg-white shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between border-b border-notion-border px-5 py-3.5">
-                <h3 className="text-sm font-semibold text-notion-text">Create Agent Task</h3>
-                <button
-                  onClick={() => setShowTaskForm(false)}
-                  className="text-notion-text-tertiary hover:text-notion-text"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="notion-scrollbar max-h-[70vh] overflow-y-auto px-5 py-5 space-y-4">
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-medium text-notion-text-secondary">
-                    Title
-                  </label>
-                  <input
-                    type="text"
-                    value={taskTitle}
-                    onChange={(e) => setTaskTitle(e.target.value)}
-                    className="w-full rounded-lg border border-notion-border bg-transparent px-3 py-2 text-sm text-notion-text focus:outline-none focus:ring-1 focus:ring-notion-text/20"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-medium text-notion-text-secondary">
-                    Prompt
-                  </label>
-                  <textarea
-                    value={taskPrompt}
-                    onChange={(e) => setTaskPrompt(e.target.value)}
-                    rows={7}
-                    className="w-full resize-none rounded-lg border border-notion-border bg-transparent px-3 py-2 text-sm text-notion-text focus:outline-none focus:ring-1 focus:ring-notion-text/20"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-medium text-notion-text-secondary">
-                    Agent
-                  </label>
-                  <AgentSelector value={taskAgentId} onChange={setTaskAgentId} />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-medium text-notion-text-secondary">
-                    Working Directory
-                  </label>
-                  <CwdPicker value={taskCwd} onChange={setTaskCwd} />
-                </div>
-                <AnimatePresence>
-                  {createError && (
-                    <motion.p
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      exit={{ opacity: 0, height: 0 }}
-                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600"
-                    >
-                      {createError}
-                    </motion.p>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              <div className="border-t border-notion-border px-5 py-4">
-                <button
-                  onClick={() => void createTask()}
-                  disabled={creating || !taskTitle.trim() || !taskPrompt.trim() || !taskAgentId}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-notion-text px-4 py-2.5 text-sm font-medium text-white hover:opacity-80 disabled:opacity-40"
-                >
-                  {creating ? (
-                    <Loader2 size={14} className="animate-spin" />
-                  ) : (
-                    <Sparkles size={14} />
-                  )}
-                  {creating ? 'Creating…' : 'Create Task'}
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

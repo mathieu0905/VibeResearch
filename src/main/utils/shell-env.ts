@@ -154,6 +154,53 @@ export function clearShellEnvCache(): void {
   cachedShellEnv = null;
 }
 
+// ── npx resolution ───────────────────────────────────────────────────────────
+
+/**
+ * Resolve the full path to `npx` by first locating the active `node` binary.
+ * This is more reliable than hardcoded path lists because it follows the user's
+ * actual Node.js installation (nvm, fnm, volta, Homebrew, etc.).
+ *
+ * @param env Environment to use for the `which` lookup.
+ * @returns Absolute path to npx, or just 'npx' as a fallback.
+ */
+export function resolveNpxPath(env: Record<string, string | undefined>): string {
+  const npxName = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+  try {
+    const whichCmd = process.platform === 'win32' ? 'where' : 'which';
+    const nodePath = execFileSync(whichCmd, ['node'], {
+      env: env as NodeJS.ProcessEnv,
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    })
+      .trim()
+      .split('\n')[0];
+
+    const npxCandidate = path.join(path.dirname(nodePath), npxName);
+    if (!existsSync(npxCandidate)) {
+      console.warn(`[ShellEnv] npx not found next to node at ${npxCandidate}`);
+      return npxName;
+    }
+
+    // Verify it's npm >= 7 (npx from npm 7+ supports --yes)
+    const version = execFileSync(npxCandidate, ['--version'], {
+      env: env as NodeJS.ProcessEnv,
+      encoding: 'utf-8',
+      timeout: 5000,
+      stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim();
+
+    if (parseInt(version.split('.')[0], 10) >= 7) {
+      console.log(`[ShellEnv] Resolved npx via node → ${npxCandidate} (v${version})`);
+      return npxCandidate;
+    }
+  } catch {
+    // Fall through to bare name
+  }
+  return npxName;
+}
+
 // ── Command resolution helpers ───────────────────────────────────────────────
 
 /** Common paths where Node.js tools like npx are typically installed */

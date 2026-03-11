@@ -2,6 +2,7 @@ import { useEffect, useRef, useMemo, memo } from 'react';
 import { Loader2 } from 'lucide-react';
 import { TextMessage } from './TextMessage';
 import { ToolCallCard } from './ToolCallCard';
+import { ToolCallGroup } from './ToolCallGroup';
 import { PlanCard } from './PlanCard';
 import { PermissionCard } from './PermissionCard';
 
@@ -29,161 +30,142 @@ interface MessageStreamProps {
   onPermissionResolved: () => void;
 }
 
-interface MessageGroup {
-  role: 'user' | 'assistant' | 'system';
-  messages: Message[];
-}
-
-function groupMessages(messages: Message[]): MessageGroup[] {
-  const groups: MessageGroup[] = [];
+// Deduplicate messages by msgId, keeping the last occurrence (most up-to-date).
+// tool_calls are keyed by msgId (= toolCallId) and merged so status updates win.
+function dedupeMessages(messages: Message[]): Message[] {
+  const seen = new Map<string, number>(); // msgId -> index in result
+  const result: Message[] = [];
 
   for (const msg of messages) {
-    if (msg.type === 'system' || msg.type === 'error') {
-      groups.push({ role: 'system', messages: [msg] });
+    const existing = seen.get(msg.msgId);
+    if (existing !== undefined) {
+      if (msg.type === 'tool_call') {
+        // Deep-merge tool_call: later fields (status, etc.) override earlier ones
+        const prev = result[existing];
+        const prevContent = prev.content as Record<string, unknown>;
+        const newContent = msg.content as Record<string, unknown>;
+        const merged: Record<string, unknown> = { ...prevContent };
+        for (const [k, v] of Object.entries(newContent)) {
+          if (v !== undefined && v !== null && v !== '') merged[k] = v;
+        }
+        result[existing] = { ...prev, ...msg, content: merged };
+      } else if (msg.type === 'text' || msg.type === 'thought') {
+        // text chunks are already accumulated upstream; just keep latest
+        result[existing] = msg;
+      } else {
+        result[existing] = msg;
+      }
+    } else {
+      seen.set(msg.msgId, result.length);
+      result.push(msg);
+    }
+  }
+
+  return result;
+}
+
+// Build render items from a flat, deduped message list.
+// Consecutive tool_calls are grouped into ToolCallGroup; everything else renders inline.
+function buildRenderItems(messages: Message[], lastTextMsgId: string | null): React.ReactNode[] {
+  const items: React.ReactNode[] = [];
+  let toolBuffer: Message[] = [];
+
+  function flushToolBuffer() {
+    if (toolBuffer.length === 0) return;
+    const buf = toolBuffer;
+    toolBuffer = [];
+    if (buf.length === 1) {
+      items.push(
+        <div key={buf[0].id} className="my-1">
+          <ToolCallCard content={buf[0].content as any} status={buf[0].status ?? undefined} />
+        </div>,
+      );
+    } else {
+      items.push(<ToolCallGroup key={buf[0].id} tools={buf} />);
+    }
+  }
+
+  for (const msg of messages) {
+    if (msg.type === 'tool_call') {
+      toolBuffer.push(msg);
       continue;
     }
 
-    const role = msg.role === 'user' ? 'user' : 'assistant';
-    const last = groups[groups.length - 1];
-
-    if (last && last.role === role) {
-      last.messages.push(msg);
-    } else {
-      groups.push({ role, messages: [msg] });
-    }
-  }
-
-  return groups;
-}
-
-const MessageGroupView = memo(function MessageGroupView({
-  group,
-  lastTextMsgId,
-  isStreaming,
-}: {
-  group: MessageGroup;
-  lastTextMsgId: string | null;
-  isStreaming: boolean;
-}) {
-  if (group.role === 'system') {
-    const msg = group.messages[0];
-    const content = msg.content as { text: string };
-    if (msg.type === 'error') {
-      return (
-        <div className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 my-2">
-          {content.text}
-        </div>
-      );
-    }
-    return (
-      <p className="text-xs text-center text-notion-text-tertiary py-1 my-1">{content.text}</p>
-    );
-  }
-
-  if (group.role === 'user') {
-    return (
-      <div className="flex justify-end my-4">
-        <div className="bg-[#f0f0ef] rounded-2xl px-4 py-2.5 max-w-[80%]">
-          {group.messages.map((msg) => {
-            const content = msg.content as { text: string };
-            return (
-              <p key={msg.id} className="text-sm text-notion-text leading-relaxed m-0">
-                {content.text}
-              </p>
-            );
-          })}
-        </div>
-      </div>
-    );
-  }
-
-  // assistant group
-  // Sort messages: tool_calls first (by creation order), then text messages
-  const sortedMessages = [...group.messages].sort((a, b) => {
-    // tool_calls should come before text
-    const typeOrder = (t: string) => {
-      if (t === 'tool_call') return 0;
-      if (t === 'thought') return 1;
-      if (t === 'plan') return 2;
-      if (t === 'text') return 3;
-      return 4;
-    };
-    return typeOrder(a.type) - typeOrder(b.type);
-  });
-
-  const mergedElements: React.ReactNode[] = [];
-  let consecutiveToolCalls: {
-    id: string;
-    msgId: string;
-    content: Record<string, unknown>;
-    status?: string | null;
-  }[] = [];
-
-  // Track if this group has any thought messages (to show spinner while streaming)
-  let hasThoughts = false;
-
-  function flushToolCalls() {
-    if (consecutiveToolCalls.length > 0) {
-      const calls = consecutiveToolCalls;
-      consecutiveToolCalls = [];
-      return (
-        <div key={calls[0].id} className="my-1 space-y-0.5">
-          {calls.map((tc) => (
-            <ToolCallCard
-              key={tc.msgId}
-              content={tc.content as any}
-              status={tc.status ?? undefined}
-            />
-          ))}
-        </div>
-      );
-    }
-    return null;
-  }
-
-  for (const msg of sortedMessages) {
-    const content = msg.content as Record<string, unknown>;
+    flushToolBuffer();
 
     if (msg.type === 'thought') {
-      // Flush pending tool calls, then skip thought content
-      const toolsEl = flushToolCalls();
-      if (toolsEl) mergedElements.push(toolsEl);
-      hasThoughts = true;
-    } else if (msg.type === 'tool_call') {
-      consecutiveToolCalls.push({ id: msg.id, msgId: msg.msgId, content, status: msg.status });
-    } else {
-      const toolsEl = flushToolCalls();
-      if (toolsEl) mergedElements.push(toolsEl);
+      // thoughts are not displayed
+      continue;
+    }
 
-      switch (msg.type) {
-        case 'text':
-          mergedElements.push(
-            <TextMessage
-              key={msg.id}
-              content={content as { text: string }}
-              streaming={msg.msgId === lastTextMsgId}
-            />,
-          );
-          break;
-        case 'plan':
-          mergedElements.push(<PlanCard key={msg.id} content={content as any} />);
-          break;
-      }
+    if (msg.type === 'text' && msg.role === 'user') {
+      const content = msg.content as { text: string };
+      items.push(
+        <div key={msg.id} className="flex justify-end my-4">
+          <div className="bg-[#f0f0ef] rounded-2xl px-4 py-2.5 max-w-[80%]">
+            <p className="text-sm text-notion-text leading-relaxed m-0">{content.text}</p>
+          </div>
+        </div>,
+      );
+      continue;
+    }
+
+    if (msg.type === 'text' && msg.role === 'assistant') {
+      const content = msg.content as { text: string };
+      items.push(
+        <div key={msg.id} className="my-4">
+          <TextMessage content={content} streaming={msg.msgId === lastTextMsgId} />
+        </div>,
+      );
+      continue;
+    }
+
+    if (msg.type === 'plan') {
+      items.push(
+        <div key={msg.id} className="my-2">
+          <PlanCard content={msg.content as any} />
+        </div>,
+      );
+      continue;
+    }
+
+    if (msg.type === 'system') {
+      const content = msg.content as { text: string };
+      items.push(
+        <p key={msg.id} className="text-xs text-center text-notion-text-tertiary py-1 my-1">
+          {content.text}
+        </p>,
+      );
+      continue;
+    }
+
+    if (msg.type === 'error') {
+      const content = msg.content as { text: string };
+      items.push(
+        <div
+          key={msg.id}
+          className="rounded-md bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700 my-2"
+        >
+          {content.text}
+        </div>,
+      );
+      continue;
     }
   }
-  const remainingTools = flushToolCalls();
-  if (remainingTools) mergedElements.push(remainingTools);
 
-  // Show spinner after tool calls / thoughts only while streaming and no text yet
-  const hasText = sortedMessages.some((m) => m.type === 'text');
-  const showSpinner = isStreaming && (hasThoughts || consecutiveToolCalls.length > 0) && !hasText;
+  flushToolBuffer();
+  return items;
+}
 
-  return (
-    <div className="my-4">
-      {mergedElements}
-      {showSpinner && <Loader2 size={14} className="animate-spin text-notion-text-tertiary mt-1" />}
-    </div>
-  );
+const MessageStreamBody = memo(function MessageStreamBody({
+  messages,
+  lastTextMsgId,
+}: {
+  messages: Message[];
+  lastTextMsgId: string | null;
+}) {
+  const items = useMemo(() => buildRenderItems(messages, lastTextMsgId), [messages, lastTextMsgId]);
+  return <>{items}</>;
 });
 
 export function MessageStream({
@@ -212,7 +194,6 @@ export function MessageStream({
     const onScroll = () => {
       if (!scrollContainerRef.current) return;
       const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
-      // Consider "scrolled up" if more than 100px from bottom
       userScrolledUpRef.current = scrollHeight - scrollTop - clientHeight > 100;
     };
     el.addEventListener('scroll', onScroll, { passive: true });
@@ -221,25 +202,18 @@ export function MessageStream({
 
   useEffect(() => {
     if (!bottomRef.current) return;
-    // Don't auto-scroll if user has scrolled up to read history
     if (userScrolledUpRef.current) return;
     if (isStreaming) {
-      // During streaming, use instant scroll to avoid jank from repeated smooth animations
       bottomRef.current.scrollIntoView({ behavior: 'instant' });
     } else {
       bottomRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages.length, isStreaming]);
 
-  // All hooks must be called before any conditional returns
-  const hasTextOutput = useMemo(
-    () => messages.some((m) => m.type === 'text' && m.role === 'assistant'),
-    [messages],
-  );
-  const showThinking = isStreaming && !hasTextOutput && !permissionRequest;
-  const groups = useMemo(() => groupMessages(messages), [messages]);
+  const deduped = useMemo(() => dedupeMessages(messages), [messages]);
+  const showSpinner = isStreaming && !permissionRequest;
 
-  if (messages.length === 0 && !permissionRequest && !showThinking) {
+  if (messages.length === 0 && !permissionRequest && !showSpinner) {
     const isEmpty = status === 'idle' || !status;
     const isFailed = status === 'failed' || status === 'cancelled';
     return (
@@ -257,16 +231,9 @@ export function MessageStream({
 
   return (
     <div className="px-5 py-4">
-      {groups.map((group, i) => (
-        <MessageGroupView
-          key={i}
-          group={group}
-          lastTextMsgId={lastTextMsgId}
-          isStreaming={isStreaming}
-        />
-      ))}
+      <MessageStreamBody messages={deduped} lastTextMsgId={lastTextMsgId} />
 
-      {showThinking && (
+      {showSpinner && (
         <div className="my-3">
           <Loader2 size={14} className="animate-spin text-notion-text-tertiary" />
         </div>

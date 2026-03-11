@@ -11,7 +11,7 @@ import {
 import { Readable, Writable } from 'node:stream';
 import type { SshConnectConfig } from '@shared';
 import { SshConnectionService, type SshSpawnHandle } from '../services/ssh-connection.service';
-import { getEnhancedEnv, resolveCommandPath } from '../utils/shell-env';
+import { getEnhancedEnv, resolveCommandPath, resolveNpxPath } from '../utils/shell-env';
 
 /**
  * ACP client connection that spawns an agent process and communicates
@@ -71,9 +71,11 @@ export class AcpConnection extends EventEmitter {
     }
 
     // Resolve the command to its full path using enhanced environment.
+    // For npx, use the dedicated resolver that finds it via the active node binary.
     // This is critical for Electron apps launched from Finder/launchd where
     // PATH may not include common locations like /opt/homebrew/bin.
-    const resolvedCmd = resolveCommandPath(rawCmd, cleanEnv);
+    const resolvedCmd =
+      rawCmd === 'npx' ? resolveNpxPath(cleanEnv) : resolveCommandPath(rawCmd, cleanEnv);
     console.log(`[AcpConnection] Spawning: ${rawCmd} -> ${resolvedCmd}`);
 
     this.child = spawn(resolvedCmd, finalArgs, {

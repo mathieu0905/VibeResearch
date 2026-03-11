@@ -12,27 +12,45 @@ interface PlanCardProps {
 
 function EntryIcon({ status }: { status: string }) {
   if (status === 'completed' || status === 'done')
-    return <Check size={14} className="text-green-500 flex-shrink-0" />;
+    return <Check size={14} className="text-green-500 flex-shrink-0 mt-0.5" />;
   if (status === 'in_progress' || status === 'active')
-    return <Loader2 size={14} className="animate-spin text-notion-text-secondary flex-shrink-0" />;
-  return <Circle size={14} className="text-gray-400 flex-shrink-0" />;
+    return <Loader2 size={14} className="animate-spin text-notion-accent flex-shrink-0 mt-0.5" />;
+  return <Circle size={14} className="text-gray-400 flex-shrink-0 mt-0.5" />;
 }
 
 export function PlanCard({ content }: PlanCardProps) {
   if (!content.entries?.length) return null;
 
+  const entries = content.entries;
+
   return (
     <div className="border border-notion-border rounded-lg overflow-hidden my-2">
-      <div className="px-3 py-2 bg-notion-bg-secondary border-b border-notion-border">
+      <div className="px-3 py-2 bg-notion-sidebar border-b border-notion-border">
         <span className="font-medium text-sm text-notion-text">Plan</span>
       </div>
       <ul className="divide-y divide-notion-border">
-        {content.entries.map((entry, i) => (
-          <li key={i} className="flex items-start gap-2 px-3 py-2 bg-white">
-            <EntryIcon status={entry.status} />
-            <span className="text-sm text-notion-text">{entry.content}</span>
-          </li>
-        ))}
+        {entries.map((entry, i) => {
+          const isActive = entry.status === 'in_progress' || entry.status === 'active';
+          const isDone = entry.status === 'completed' || entry.status === 'done';
+          return (
+            <li
+              key={i}
+              className={[
+                'flex items-start gap-2 px-3 py-2 bg-white',
+                isActive ? 'border-l-2 border-notion-accent bg-notion-accent-light/40' : '',
+              ].join(' ')}
+            >
+              <EntryIcon status={entry.status} />
+              <span
+                className={`text-sm leading-snug ${
+                  isDone ? 'line-through text-notion-text-tertiary' : 'text-notion-text'
+                }`}
+              >
+                {entry.content}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

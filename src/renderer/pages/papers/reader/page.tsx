@@ -22,6 +22,7 @@ import {
   MessageSquare,
   Search,
   X,
+  Zap,
 } from 'lucide-react';
 import type { AgentConfigItem } from '@shared';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -228,13 +229,11 @@ export function ReaderPage() {
 
   // Use live stream messages if available, otherwise fall back to historic messages
   const streamBased = agentMessages.length > 0 ? agentMessages : historicMessages;
-  // Show local user messages only until the stream has its own user messages
-  const streamHasUserMessages = streamBased.some((m) => m.role === 'user');
+  // Local user messages are only shown while the stream hasn't received any user messages yet
+  const streamHasUserMessages = streamBased.some((m: any) => m.role === 'user');
   const displayMessages = streamHasUserMessages
     ? streamBased
-    : localUserMessages.length > 0
-      ? [...localUserMessages, ...streamBased]
-      : streamBased;
+    : [...localUserMessages, ...streamBased];
 
   // Rating
   const [rating, setRating] = useState<number | null>(null);
@@ -728,7 +727,7 @@ export function ReaderPage() {
             {/* Input */}
             <div className="flex-shrink-0 px-4 py-4">
               <div className="mx-auto w-full max-w-2xl">
-                <div className="rounded-2xl border border-notion-border bg-white shadow-sm transition-all focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100">
+                <div className="rounded-2xl border border-notion-border bg-white shadow-sm transition-all">
                   {/* Attached paper chips */}
                   {attachedPapers.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 px-4 pt-3">
