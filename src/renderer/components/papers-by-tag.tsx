@@ -6,6 +6,7 @@ import {
   type TagInfo,
   type TaggingStatus,
   type ImportStatus,
+  type ModelConfig,
   onIpc,
 } from '../hooks/use-ipc';
 import {
@@ -264,6 +265,9 @@ export function PapersByTag({
   const [autoTaggingPaperId, setAutoTaggingPaperId] = useState<string | null>(null);
   const [analyzingPaperId, setAnalyzingPaperId] = useState<string | null>(null);
 
+  // Lightweight model state for auto-tag feature
+  const [lightweightModel, setLightweightModel] = useState<ModelConfig | null>(null);
+
   // Selection mode state
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -348,6 +352,14 @@ export function PapersByTag({
       .catch(() => undefined);
   }, []);
 
+  // Fetch lightweight model status for auto-tag feature
+  useEffect(() => {
+    ipc
+      .getActiveModel('lightweight')
+      .then(setLightweightModel)
+      .catch(() => undefined);
+  }, []);
+
   useEffect(() => {
     fetchPapers();
   }, [fetchPapers]);
@@ -357,6 +369,14 @@ export function PapersByTag({
       void fetchPapers();
     });
   }, [fetchPapers]);
+
+  // Check if lightweight model is available for auto-tag
+  const canAutoTag = useMemo(() => {
+    if (!lightweightModel) return false;
+    // For API models, need to have API key configured
+    if (lightweightModel.backend === 'api' && !lightweightModel.hasApiKey) return false;
+    return true;
+  }, [lightweightModel]);
 
   const availableYears = useMemo(() => {
     const years = new Set<number>();
@@ -510,6 +530,11 @@ export function PapersByTag({
 
   const handleAutoTagPaper = useCallback(
     async (paperId: string) => {
+      // Check if lightweight model is configured before proceeding
+      if (!canAutoTag) {
+        toast.warning('Lightweight model not configured. Please set it up in Settings > Models.');
+        return;
+      }
       setAutoTaggingPaperId(paperId);
       try {
         await ipc.tagPaper(paperId);
@@ -531,7 +556,7 @@ export function PapersByTag({
         setAutoTaggingPaperId(null);
       }
     },
-    [fetchPapers, toast],
+    [canAutoTag, fetchPapers, toast],
   );
 
   const handleAnalyzePaper = useCallback(
@@ -1078,6 +1103,7 @@ export function PapersByTag({
                 retryingPaperId={retryingPaperId}
                 autoTaggingPaperId={autoTaggingPaperId}
                 analyzingPaperId={analyzingPaperId}
+                canAutoTag={canAutoTag}
                 onDelete={handleDelete}
                 onDownload={handleDownloadPdf}
                 onRetry={handleRetryProcessing}
@@ -1171,6 +1197,7 @@ function PaperCard({
   retryingPaperId,
   autoTaggingPaperId,
   analyzingPaperId,
+  canAutoTag,
   onDelete,
   onDownload,
   onRetry,
@@ -1187,6 +1214,7 @@ function PaperCard({
   retryingPaperId: string | null;
   autoTaggingPaperId: string | null;
   analyzingPaperId: string | null;
+  canAutoTag: boolean;
   onDelete: (id: string) => void;
   onDownload: (paper: PaperItem) => void;
   onRetry: (id: string) => void;
@@ -1316,11 +1344,25 @@ function PaperCard({
               onClick={(e) => {
                 e.stopPropagation();
                 e.preventDefault();
-                onAutoTag(paper.id);
+                if (!canAutoTag) {
+                  onAutoTag(paper.id); // This will trigger the toast warning
+                } else {
+                  onAutoTag(paper.id);
+                }
               }}
               disabled={autoTaggingPaperId === paper.id}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-secondary hover:bg-purple-50 hover:text-purple-600 disabled:opacity-100"
-              title={paper.categorizedTags?.length ? 'Re-tag paper' : 'Auto-tag paper'}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+                !canAutoTag
+                  ? 'text-notion-text-tertiary opacity-50 cursor-not-allowed'
+                  : 'text-notion-text-secondary hover:bg-purple-50 hover:text-purple-600'
+              } disabled:opacity-100`}
+              title={
+                !canAutoTag
+                  ? 'Set up lightweight model in Settings'
+                  : paper.categorizedTags?.length
+                    ? 'Re-tag paper'
+                    : 'Auto-tag paper'
+              }
             >
               {autoTaggingPaperId === paper.id ? (
                 <Loader2 size={14} className="animate-spin text-purple-600" />

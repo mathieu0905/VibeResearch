@@ -411,27 +411,6 @@ export interface EmbeddingConfig {
   embeddingApiKey?: string;
 }
 
-export interface BuiltinModelStatus {
-  ready: boolean;
-  error?: string;
-}
-
-export interface BuiltinModelDownloadProgress {
-  phase: 'downloading' | 'completed' | 'error';
-  file?: string;
-  /** Per-file percent 0-100 */
-  percent?: number;
-  /** Overall progress: which file index (1-based) */
-  fileIndex?: number;
-  /** Total number of files to download */
-  totalFiles?: number;
-  /** Bytes downloaded for current file */
-  downloadedBytes?: number;
-  /** Total bytes for current file (0 if unknown) */
-  totalBytes?: number;
-  error?: string;
-}
-
 export interface SemanticEmbeddingTestResult {
   success: boolean;
   model: string;
@@ -951,17 +930,6 @@ export const ipc = {
     invoke<SemanticModelPullJob>('settings:startSemanticModelPull', settings),
   listSemanticModelPullJobs: () =>
     invoke<SemanticModelPullJob[]>('settings:listSemanticModelPullJobs'),
-  getBuiltinModelStatus: () => invoke<BuiltinModelStatus>('settings:getBuiltinModelStatus'),
-  checkBuiltinModelExists: () =>
-    invoke<{ exists: boolean; modelPath: string }>('settings:checkBuiltinModelExists'),
-  downloadBuiltinModel: () => invoke<{ started: boolean }>('settings:downloadBuiltinModel'),
-  getBuiltinModelPath: () => invoke<string | null>('settings:getBuiltinModelPath'),
-  setBuiltinModelPath: (dirPath: string | undefined) =>
-    invoke<{ success: boolean }>('settings:setBuiltinModelPath', dirPath),
-  getBuiltinModelDownloadStatus: () =>
-    invoke<{ downloading: boolean; progress: BuiltinModelDownloadProgress | null }>(
-      'settings:getBuiltinModelDownloadStatus',
-    ),
   getDevMode: () => invoke<{ enabled: boolean }>('settings:getDevMode'),
   setDevMode: (enabled: boolean) => invoke<{ success: boolean }>('settings:setDevMode', enabled),
 

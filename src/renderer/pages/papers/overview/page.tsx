@@ -699,10 +699,12 @@ function TagEditor({
   paper: PaperItem;
   onUpdate: (updated: PaperItem) => void;
 }) {
+  const toast = useToast();
   const [allTags, setAllTags] = useState<TagInfo[]>([]);
   const [saving, setSaving] = useState(false);
   const [autoTagging, setAutoTagging] = useState(false);
   const [organizing, setOrganizing] = useState(false);
+  const [lightweightModel, setLightweightModel] = useState<ModelConfig | null>(null);
 
   // Load all tags for autocomplete
   useEffect(() => {
@@ -711,6 +713,20 @@ function TagEditor({
       .then(setAllTags)
       .catch(() => {});
   }, []);
+
+  // Load lightweight model status
+  useEffect(() => {
+    ipc
+      .getActiveModel('lightweight')
+      .then(setLightweightModel)
+      .catch(() => undefined);
+  }, []);
+
+  const canAutoTag = useMemo(() => {
+    if (!lightweightModel) return false;
+    if (lightweightModel.backend === 'api' && !lightweightModel.hasApiKey) return false;
+    return true;
+  }, [lightweightModel]);
 
   // Group categorized tags by category
   const categorizedTags = paper.categorizedTags || [];
@@ -757,6 +773,10 @@ function TagEditor({
   };
 
   const handleAutoTag = async () => {
+    if (!canAutoTag) {
+      toast.warning('Lightweight model not configured. Please set it up in Settings > Models.');
+      return;
+    }
     setAutoTagging(true);
     try {
       const result = await ipc.tagPaper(paper.id);
@@ -770,10 +790,7 @@ function TagEditor({
       if (updated) onUpdate(updated);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Auto-tagging failed';
-      const isNoModel =
-        msg.includes('No usable lightweight API model') ||
-        msg.includes('No API key configured for the selected lightweight model');
-      alert(isNoModel ? 'No lightweight model configured. Please check Settings > Models.' : msg);
+      toast.error(msg);
     } finally {
       setAutoTagging(false);
     }
@@ -811,7 +828,12 @@ function TagEditor({
           <button
             onClick={handleAutoTag}
             disabled={autoTagging || saving}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border px-2.5 py-1 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar hover:text-notion-text disabled:opacity-40"
+            title={!canAutoTag ? 'Set up lightweight model in Settings' : 'Auto-tag paper'}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
+              !canAutoTag
+                ? 'border-notion-border text-notion-text-tertiary opacity-50 cursor-not-allowed'
+                : 'border-notion-border text-notion-text-secondary hover:bg-notion-sidebar hover:text-notion-text'
+            } disabled:opacity-40`}
           >
             {autoTagging ? <Loader2 size={12} className="animate-spin" /> : <Wand2 size={12} />}
             Auto Tag

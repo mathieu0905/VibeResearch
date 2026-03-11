@@ -18,8 +18,6 @@ import {
   type ProxyTestResult,
   type SemanticSearchSettings,
   type SemanticEmbeddingTestResult,
-  type BuiltinModelStatus,
-  type BuiltinModelDownloadProgress,
   type EmbeddingConfig,
 } from '../../hooks/use-ipc';
 import {
@@ -2810,23 +2808,12 @@ function AddEmbeddingModal({
   onClose: () => void;
 }) {
   const [name, setName] = useState(initial?.name ?? '');
-  const [provider, setProvider] = useState<'builtin' | 'openai-compatible'>(
-    initial?.provider ?? 'builtin',
-  );
   const [embeddingModel, setEmbeddingModel] = useState(
     initial?.embeddingModel ?? 'text-embedding-3-small',
   );
   const [apiBase, setApiBase] = useState(initial?.embeddingApiBase ?? '');
   const [apiKey, setApiKey] = useState(initial?.embeddingApiKey ?? '');
   const [saving, setSaving] = useState(false);
-
-  // Builtin model state
-  const [modelExists, setModelExists] = useState<boolean | null>(null);
-  const [modelPath, setModelPath] = useState('');
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<BuiltinModelDownloadProgress | null>(
-    null,
-  );
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -2836,58 +2823,6 @@ function AddEmbeddingModal({
     return () => document.removeEventListener('keydown', handler);
   }, [onClose]);
 
-  useEffect(() => {
-    if (provider !== 'builtin') return;
-    ipc
-      .checkBuiltinModelExists()
-      .then((res) => {
-        setModelExists(res.exists);
-        setModelPath(res.modelPath);
-      })
-      .catch(() => setModelExists(false));
-    // Recover in-progress download state
-    ipc
-      .getBuiltinModelDownloadStatus()
-      .then((res) => {
-        if (res.downloading && res.progress) {
-          setDownloading(true);
-          setDownloadProgress(res.progress);
-        } else if (res.progress?.phase === 'completed') {
-          setModelExists(true);
-        }
-      })
-      .catch(() => {});
-  }, [provider]);
-
-  useEffect(() => {
-    if (provider !== 'builtin') return;
-    const unsub = onIpc('settings:builtinModelDownloadProgress', (...args) => {
-      const progress = args[1] as BuiltinModelDownloadProgress;
-      setDownloadProgress(progress);
-      if (progress.phase === 'completed') {
-        setDownloading(false);
-        setModelExists(true);
-      } else if (progress.phase === 'error') {
-        setDownloading(false);
-      }
-    });
-    return unsub;
-  }, [provider]);
-
-  const handleDownload = async () => {
-    setDownloading(true);
-    setDownloadProgress({ phase: 'downloading', percent: 0 });
-    try {
-      await ipc.downloadBuiltinModel();
-    } catch (err) {
-      setDownloading(false);
-      setDownloadProgress({
-        phase: 'error',
-        error: err instanceof Error ? err.message : 'Download failed',
-      });
-    }
-  };
-
   const handleSave = async () => {
     if (!name.trim()) return;
     setSaving(true);
@@ -2895,14 +2830,10 @@ function AddEmbeddingModal({
       const config: EmbeddingConfig = {
         id: initial?.id ?? Math.random().toString(36).slice(2, 10),
         name: name.trim(),
-        provider,
-        embeddingModel:
-          provider === 'builtin'
-            ? 'all-MiniLM-L6-v2'
-            : embeddingModel.trim() || 'text-embedding-3-small',
-        embeddingApiBase:
-          provider === 'openai-compatible' ? apiBase.trim() || undefined : undefined,
-        embeddingApiKey: provider === 'openai-compatible' ? apiKey.trim() || undefined : undefined,
+        provider: 'openai-compatible',
+        embeddingModel: embeddingModel.trim() || 'text-embedding-3-small',
+        embeddingApiBase: apiBase.trim() || undefined,
+        embeddingApiKey: apiKey.trim() || undefined,
       };
       await ipc.saveEmbeddingConfig(config);
       onSave(config);
@@ -2949,224 +2880,56 @@ function AddEmbeddingModal({
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Built-in Local, OpenAI Embeddings"
+              placeholder="e.g. OpenAI Embeddings"
               className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
           </div>
 
-          {/* Provider selector */}
+          {/* Base URL */}
           <div>
-            <label className="mb-2 block text-xs font-medium text-notion-text-secondary">
-              Provider
+            <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+              Base URL
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setProvider('builtin')}
-                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${provider === 'builtin' ? 'border-blue-300 bg-blue-50' : 'border-notion-border bg-white hover:bg-notion-sidebar'}`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Cpu size={13} className="text-blue-500" />
-                  <p className="text-xs font-medium text-notion-text">Built-in</p>
-                </div>
-                <p className="mt-0.5 text-[11px] text-notion-text-tertiary">
-                  all-MiniLM-L6-v2, no config needed
-                </p>
-              </button>
-              <button
-                type="button"
-                onClick={() => setProvider('openai-compatible')}
-                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${provider === 'openai-compatible' ? 'border-blue-300 bg-blue-50' : 'border-notion-border bg-white hover:bg-notion-sidebar'}`}
-              >
-                <div className="flex items-center gap-1.5">
-                  <Globe size={13} className="text-notion-text-secondary" />
-                  <p className="text-xs font-medium text-notion-text">OpenAI-compatible</p>
-                </div>
-                <p className="mt-0.5 text-[11px] text-notion-text-tertiary">
-                  OpenAI, local server, or any compatible API
-                </p>
-              </button>
-            </div>
+            <input
+              value={apiBase}
+              onChange={(e) => setApiBase(e.target.value)}
+              placeholder="https://api.openai.com/v1"
+              className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+            <p className="mt-1 text-[11px] text-notion-text-tertiary">
+              Leave empty to use OpenAI's official API
+            </p>
           </div>
 
-          {/* Builtin model status */}
-          {provider === 'builtin' && modelExists !== null && (
-            <div
-              className={`rounded-lg border px-3 py-2.5 text-xs ${modelExists ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}
-            >
-              {modelExists ? (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-green-700">
-                    <Check size={13} className="shrink-0" strokeWidth={2.5} />
-                    <span>
-                      Model ready — <span className="font-mono">{modelPath}</span>
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const res = await ipc.selectFolder();
-                      if (res) {
-                        await ipc.setBuiltinModelPath(res);
-                        const check = await ipc.checkBuiltinModelExists();
-                        setModelExists(check.exists);
-                        setModelPath(check.modelPath);
-                      }
-                    }}
-                    className="text-[11px] text-notion-text-tertiary hover:text-notion-accent transition-colors"
-                  >
-                    Change path
-                  </button>
-                </div>
-              ) : downloading ? (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-notion-text-secondary">
-                    <Loader2 size={13} className="animate-spin shrink-0" />
-                    <span>
-                      {downloadProgress?.file
-                        ? `Downloading ${downloadProgress.file}`
-                        : 'Starting download…'}
-                      {downloadProgress?.fileIndex && downloadProgress?.totalFiles
-                        ? ` (${downloadProgress.fileIndex}/${downloadProgress.totalFiles})`
-                        : ''}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="h-1.5 flex-1 rounded-full bg-notion-border overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-blue-500 transition-all duration-200"
-                        style={{
-                          width: `${
-                            downloadProgress?.fileIndex && downloadProgress?.totalFiles
-                              ? Math.round(
-                                  ((downloadProgress.fileIndex -
-                                    1 +
-                                    (downloadProgress.percent ?? 0) / 100) /
-                                    downloadProgress.totalFiles) *
-                                    100,
-                                )
-                              : 0
-                          }%`,
-                        }}
-                      />
-                    </div>
-                    <span className="shrink-0 text-[11px] tabular-nums text-notion-text-tertiary">
-                      {downloadProgress?.downloadedBytes != null && downloadProgress.totalBytes
-                        ? `${formatBytes(downloadProgress.downloadedBytes)} / ${formatBytes(downloadProgress.totalBytes)}`
-                        : downloadProgress?.percent != null && downloadProgress.percent > 0
-                          ? `${downloadProgress.percent}%`
-                          : ''}
-                    </span>
-                  </div>
-                </div>
-              ) : downloadProgress?.phase === 'error' ? (
-                <div className="space-y-1.5">
-                  <div className="flex items-center gap-2 text-red-600">
-                    <X size={13} className="shrink-0" strokeWidth={2.5} />
-                    <span>{downloadProgress.error ?? 'Download failed'}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleDownload}
-                      className="flex items-center gap-1.5 rounded-lg bg-notion-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80"
-                    >
-                      <Download size={12} />
-                      Retry
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-amber-700">
-                    <AlertTriangle size={13} className="shrink-0" />
-                    <span>Model not found (~86 MB)</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleDownload}
-                      className="flex items-center gap-1.5 rounded-lg bg-notion-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80"
-                    >
-                      <Download size={12} />
-                      Auto Download
-                    </button>
-                    <span className="text-notion-text-tertiary">or</span>
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        const res = await ipc.selectFolder();
-                        if (res) {
-                          await ipc.setBuiltinModelPath(res);
-                          const check = await ipc.checkBuiltinModelExists();
-                          setModelExists(check.exists);
-                          setModelPath(check.modelPath);
-                        }
-                      }}
-                      className="flex items-center gap-1.5 rounded-lg border border-notion-border px-3 py-1.5 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
-                    >
-                      <FolderOpen size={12} />
-                      Select Folder
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-notion-text-tertiary">
-                    Or download from{' '}
-                    <a
-                      href="https://github.com/Noietch/VibeResearch/releases"
-                      className="text-notion-accent underline"
-                    >
-                      GitHub Releases
-                    </a>{' '}
-                    and select the extracted folder (should contain{' '}
-                    <code className="rounded bg-notion-sidebar px-1">
-                      Xenova/all-MiniLM-L6-v2/onnx/model.onnx
-                    </code>
-                    )
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+          {/* API Key */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+              API Key
+            </label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="sk-..."
+              className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
 
-          {/* OpenAI-compatible fields */}
-          {provider === 'openai-compatible' && (
-            <>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
-                  Base URL
-                </label>
-                <input
-                  value={apiBase}
-                  onChange={(e) => setApiBase(e.target.value)}
-                  placeholder="https://api.openai.com/v1"
-                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
-                  API Key
-                </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
-                  Model
-                </label>
-                <input
-                  value={embeddingModel}
-                  onChange={(e) => setEmbeddingModel(e.target.value)}
-                  placeholder="text-embedding-3-small"
-                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-            </>
-          )}
+          {/* Model */}
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+              Model
+            </label>
+            <input
+              value={embeddingModel}
+              onChange={(e) => setEmbeddingModel(e.target.value)}
+              placeholder="text-embedding-3-small"
+              className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-sm text-notion-text outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+            <p className="mt-1 text-[11px] text-notion-text-tertiary">
+              Supported: text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002
+            </p>
+          </div>
         </div>
 
         <div className="mt-6 flex justify-end gap-2">
@@ -3209,51 +2972,9 @@ function EmbeddingCard({
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<SemanticEmbeddingTestResult | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
-  const [modelExists, setModelExists] = useState<boolean | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState<BuiltinModelDownloadProgress | null>(
-    null,
-  );
   const testSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    if (config.provider !== 'builtin') return;
-    ipc
-      .checkBuiltinModelExists()
-      .then((res) => setModelExists(res.exists))
-      .catch(() => setModelExists(false));
-    ipc
-      .getBuiltinModelDownloadStatus()
-      .then((res) => {
-        if (res.downloading && res.progress) {
-          setDownloading(true);
-          setDownloadProgress(res.progress);
-        } else if (res.progress?.phase === 'completed') {
-          setModelExists(true);
-        }
-      })
-      .catch(() => {});
-  }, [config.provider]);
-
-  useEffect(() => {
-    if (config.provider !== 'builtin') return;
-    const unsub = onIpc('settings:builtinModelDownloadProgress', (...args) => {
-      const progress = args[1] as BuiltinModelDownloadProgress;
-      setDownloadProgress(progress);
-      if (progress.phase === 'completed') {
-        setDownloading(false);
-        setModelExists(true);
-      } else if (progress.phase === 'error') {
-        setDownloading(false);
-      }
-    });
-    return unsub;
-  }, [config.provider]);
-
-  const subtitle =
-    config.provider === 'builtin'
-      ? 'Built-in · all-MiniLM-L6-v2'
-      : `OpenAI-compatible · ${config.embeddingModel}`;
+  const subtitle = `OpenAI-compatible · ${config.embeddingModel}`;
 
   const handleTest = async () => {
     setTesting(true);
@@ -3310,79 +3031,6 @@ function EmbeddingCard({
               'Test'
             )}
           </button>
-          {/* Download / Set path — only for builtin, only when model not found */}
-          {config.provider === 'builtin' && modelExists === false && !downloading && (
-            <>
-              <button
-                type="button"
-                onClick={async () => {
-                  setDownloading(true);
-                  setDownloadProgress({ phase: 'downloading', percent: 0 });
-                  try {
-                    await ipc.downloadBuiltinModel();
-                  } catch (e) {
-                    setDownloading(false);
-                    setDownloadProgress({
-                      phase: 'error',
-                      error: e instanceof Error ? e.message : 'Download failed',
-                    });
-                  }
-                }}
-                className="flex items-center gap-1 rounded-lg bg-notion-accent px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-80"
-              >
-                <Download size={12} />
-                Download
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  const res = await ipc.selectFolder();
-                  if (res) {
-                    await ipc.setBuiltinModelPath(res);
-                    const check = await ipc.checkBuiltinModelExists();
-                    setModelExists(check.exists);
-                  }
-                }}
-                className="flex items-center gap-1 rounded-lg border border-notion-border px-3 py-1.5 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
-              >
-                <FolderOpen size={12} />
-                Set Path
-              </button>
-            </>
-          )}
-          {config.provider === 'builtin' && downloading && (
-            <div className="flex items-center gap-1.5 text-xs text-notion-text-secondary">
-              <Loader2 size={12} className="animate-spin shrink-0" />
-              <span className="tabular-nums">
-                {downloadProgress?.fileIndex && downloadProgress?.totalFiles
-                  ? `${downloadProgress.fileIndex}/${downloadProgress.totalFiles}`
-                  : ''}
-                {downloadProgress?.downloadedBytes != null && downloadProgress.totalBytes
-                  ? ` ${formatBytes(downloadProgress.downloadedBytes)}/${formatBytes(downloadProgress.totalBytes)}`
-                  : downloadProgress?.percent != null && downloadProgress.percent > 0
-                    ? ` ${downloadProgress.percent}%`
-                    : ' Downloading…'}
-              </span>
-              <div className="h-1 w-20 rounded-full bg-notion-border overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-notion-accent transition-all duration-200"
-                  style={{
-                    width: `${
-                      downloadProgress?.fileIndex && downloadProgress?.totalFiles
-                        ? Math.round(
-                            ((downloadProgress.fileIndex -
-                              1 +
-                              (downloadProgress.percent ?? 0) / 100) /
-                              downloadProgress.totalFiles) *
-                              100,
-                          )
-                        : 0
-                    }%`,
-                  }}
-                />
-              </div>
-            </div>
-          )}
           {!isActive && (
             <button
               onClick={onSetActive}
@@ -3453,7 +3101,7 @@ function SemanticSection() {
     autoProcess: true,
     autoEnrich: true,
     embeddingModel: 'text-embedding-3-small',
-    embeddingProvider: 'builtin',
+    embeddingProvider: 'openai-compatible',
     recommendationExploration: 0.35,
   });
 
@@ -3549,13 +3197,6 @@ function SemanticSection() {
   );
 }
 
-const BUILTIN_CONFIG: EmbeddingConfig = {
-  id: '__builtin__',
-  name: 'Built-in Model',
-  provider: 'builtin',
-  embeddingModel: 'all-MiniLM-L6-v2',
-};
-
 function EmbeddingSection() {
   const [configs, setConfigs] = useState<EmbeddingConfig[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -3614,25 +3255,27 @@ function EmbeddingSection() {
         </div>
 
         <div className="space-y-2 p-4">
-          {/* Fixed built-in card — always visible */}
-          <EmbeddingCard
-            config={BUILTIN_CONFIG}
-            isActive={activeId === '__builtin__'}
-            onSetActive={() => handleSetActive('__builtin__')}
-            onEdit={() => {}}
-            onDelete={() => {}}
-            readOnly
-          />
-          {configs.map((c) => (
-            <EmbeddingCard
-              key={c.id}
-              config={c}
-              isActive={c.id === activeId}
-              onSetActive={() => handleSetActive(c.id)}
-              onEdit={() => setEditingConfig(c)}
-              onDelete={() => handleDelete(c.id)}
-            />
-          ))}
+          {configs.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-notion-border bg-notion-sidebar/30 p-6 text-center">
+              <p className="text-sm text-notion-text-secondary">
+                No embedding models configured yet.
+              </p>
+              <p className="mt-1 text-xs text-notion-text-tertiary">
+                Add an OpenAI-compatible embedding config to enable semantic search.
+              </p>
+            </div>
+          ) : (
+            configs.map((c) => (
+              <EmbeddingCard
+                key={c.id}
+                config={c}
+                isActive={c.id === activeId}
+                onSetActive={() => handleSetActive(c.id)}
+                onEdit={() => setEditingConfig(c)}
+                onDelete={() => handleDelete(c.id)}
+              />
+            ))
+          )}
         </div>
       </div>
 

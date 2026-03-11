@@ -1,4 +1,3 @@
-import { BrowserWindow } from 'electron';
 import {
   getProviders,
   saveProvider,
@@ -7,7 +6,6 @@ import {
   getDecryptedApiKey,
   type ProviderConfig,
 } from '../store/provider-store';
-import { BuiltinEmbeddingProvider, type ModelDownloadProgress } from './builtin-embedding-provider';
 import {
   getAppSettings,
   setEditorCommand,
@@ -26,8 +24,6 @@ import {
   deleteEmbeddingConfig,
   getActiveEmbeddingConfigId,
   setActiveEmbeddingConfigId,
-  getBuiltinModelPath,
-  setBuiltinModelPath,
   getDevMode,
   setDevMode,
   type ProxyScope,
@@ -125,8 +121,6 @@ function buildSemanticNotes(input: {
 
 export class ProvidersService {
   private papersRepository = new PapersRepository();
-  private builtinDownloadStatus: ModelDownloadProgress | null = null;
-  private builtinDownloading = false;
 
   listProviders(): (ProviderConfig & { hasApiKey: boolean })[] {
     const providers = getProviders();
@@ -253,17 +247,9 @@ export class ProvidersService {
   }
 
   listEmbeddingConfigs(): { configs: EmbeddingConfig[]; activeId: string | null } {
-    // Filter out builtin configs — the builtin card is always shown as a fixed card in the UI
     const allConfigs = getEmbeddingConfigs();
-    const userConfigs = allConfigs.filter((c) => c.provider !== 'builtin');
-    const rawActiveId = getActiveEmbeddingConfigId();
-    // Map to '__builtin__' if: no active set, active is the virtual builtin id, or active config has builtin provider
-    const activeConfig = allConfigs.find((c) => c.id === rawActiveId);
-    const activeId =
-      !rawActiveId || rawActiveId === '__builtin__' || activeConfig?.provider === 'builtin'
-        ? '__builtin__'
-        : rawActiveId;
-    return { configs: userConfigs, activeId };
+    const activeId = getActiveEmbeddingConfigId();
+    return { configs: allConfigs, activeId };
   }
 
   saveEmbeddingConfig(config: EmbeddingConfig): { success: boolean } {
@@ -329,18 +315,10 @@ export class ProvidersService {
       throw new Error('Embedding model returned an empty vector.');
     }
 
-    const providerName =
-      (settings.embeddingProvider ?? 'builtin') === 'builtin'
-        ? 'all-MiniLM-L6-v2'
-        : settings.embeddingModel;
-
     return {
       success: true,
-      model: providerName,
-      baseUrl:
-        settings.embeddingProvider === 'openai-compatible'
-          ? (settings.embeddingApiBase ?? 'https://api.openai.com/v1')
-          : 'local',
+      model: settings.embeddingModel || 'unknown',
+      baseUrl: settings.embeddingApiBase ?? 'https://api.openai.com/v1',
       dimensions: embedding.length,
       elapsedMs: Date.now() - startedAt,
       preview: embedding.slice(0, 5),
@@ -355,56 +333,6 @@ export class ProvidersService {
 
   listSemanticModelPullJobs(): SemanticModelPullJob[] {
     return listSemanticModelPullJobs();
-  }
-
-  getBuiltinModelStatus() {
-    return localSemanticService.getProviderStatus();
-  }
-
-  checkBuiltinModelExists(): { exists: boolean; modelPath: string } {
-    const provider = new BuiltinEmbeddingProvider();
-    return { exists: provider.checkModelExists(), modelPath: provider.getModelPath() };
-  }
-
-  getBuiltinModelPathSetting(): string | undefined {
-    return getBuiltinModelPath();
-  }
-
-  setBuiltinModelPathSetting(dirPath: string | undefined): { success: boolean } {
-    setBuiltinModelPath(dirPath);
-    // Re-init provider with new path
-    localSemanticService.switchProvider();
-    return { success: true };
-  }
-
-  getBuiltinModelDownloadStatus(): {
-    downloading: boolean;
-    progress: ModelDownloadProgress | null;
-  } {
-    return { downloading: this.builtinDownloading, progress: this.builtinDownloadStatus };
-  }
-
-  startBuiltinModelDownload(): void {
-    if (this.builtinDownloading) return;
-
-    const provider = new BuiltinEmbeddingProvider();
-    this.builtinDownloading = true;
-    this.builtinDownloadStatus = { phase: 'downloading', percent: 0 };
-
-    const broadcast = (progress: ModelDownloadProgress) => {
-      this.builtinDownloadStatus = progress;
-      if (progress.phase === 'completed' || progress.phase === 'error') {
-        this.builtinDownloading = false;
-      }
-      for (const win of BrowserWindow.getAllWindows()) {
-        win.webContents.send('settings:builtinModelDownloadProgress', progress);
-      }
-    };
-
-    provider.downloadModel(broadcast).catch((err: unknown) => {
-      const error = err instanceof Error ? err.message : String(err);
-      broadcast({ phase: 'error', error });
-    });
   }
 
   getDevMode(): boolean {
@@ -442,10 +370,7 @@ export class ProvidersService {
 
     return {
       success: true,
-      baseUrl:
-        settings.embeddingProvider === 'openai-compatible'
-          ? (settings.embeddingApiBase ?? 'https://api.openai.com/v1')
-          : 'local',
+      baseUrl: settings.embeddingApiBase ?? 'https://api.openai.com/v1',
       embeddingModel: settings.embeddingModel,
       enabled: settings.enabled,
       autoProcess: settings.autoProcess,

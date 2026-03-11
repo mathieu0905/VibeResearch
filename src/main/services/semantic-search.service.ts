@@ -205,6 +205,16 @@ export class SemanticSearchService {
       };
     }
 
+    // Check if embedding provider is properly configured
+    if (!localSemanticService.hasValidConfig()) {
+      return {
+        mode: 'fallback',
+        papers: [],
+        fallbackReason:
+          'Embedding provider is not configured. Please set up your OpenAI-compatible API key or base URL in Settings.',
+      };
+    }
+
     let queryEmbedding: number[];
     try {
       [queryEmbedding] = await localSemanticService.embedTexts([trimmed]);

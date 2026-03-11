@@ -1,5 +1,5 @@
 export interface EmbeddingProviderInfo {
-  id: 'builtin' | 'openai-compatible' | 'ollama';
+  id: 'openai-compatible' | 'ollama';
   name: string;
   modelName: string;
   dimensions: number;

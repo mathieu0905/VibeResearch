@@ -16,7 +16,7 @@ export interface ProxyScope {
 export interface EmbeddingConfig {
   id: string; // random 8-char id
   name: string; // user-facing label
-  provider: 'builtin' | 'openai-compatible';
+  provider: 'openai-compatible';
   embeddingModel: string;
   embeddingApiBase?: string;
   embeddingApiKey?: string;
@@ -27,7 +27,7 @@ export interface SemanticSearchSettings {
   autoProcess: boolean;
   autoEnrich: boolean;
   embeddingModel: string;
-  embeddingProvider: 'builtin' | 'openai-compatible';
+  embeddingProvider: 'openai-compatible';
   embeddingApiBase?: string; // OpenAI-compatible base URL, e.g. https://api.openai.com/v1
   embeddingApiKey?: string; // API key for OpenAI-compatible provider
   recommendationExploration: number;
@@ -47,7 +47,7 @@ interface AppSettings {
   activeEmbeddingConfigId?: string; // which config is active
   tagMigrationV1Done?: boolean;
   userProfile?: UserProfile;
-  builtinModelPath?: string; // user-specified path to extracted builtin model directory
+  builtinModelPath?: string; // deprecated: kept for migration only
   devMode?: boolean; // Developer mode: show welcome modal on every startup
 }
 
@@ -62,9 +62,16 @@ const DEFAULT_SEMANTIC_SEARCH_SETTINGS: SemanticSearchSettings = {
   autoProcess: true,
   autoEnrich: true,
   embeddingModel: 'text-embedding-3-small',
-  embeddingProvider: 'builtin',
+  embeddingProvider: 'openai-compatible',
   recommendationExploration: 0.35,
 };
+
+// OpenAI embedding models
+export const OPENAI_EMBEDDING_MODELS = [
+  { id: 'text-embedding-ada-002', name: 'text-embedding-ada-002', dimensions: 1536 },
+  { id: 'text-embedding-3-small', name: 'text-embedding-3-small', dimensions: 1536 },
+  { id: 'text-embedding-3-large', name: 'text-embedding-3-large', dimensions: 3072 },
+];
 
 function getSettingsPath(): string {
   return getAppSettingsPath();
@@ -87,18 +94,43 @@ function load(): AppSettings {
         ...DEFAULT_SEMANTIC_SEARCH_SETTINGS,
         ...saved.semanticSearch,
       };
-      // Migration: remap legacy 'ollama' provider to 'openai-compatible'
+      // Migration: remap legacy 'builtin' or 'ollama' provider to 'openai-compatible'
       if (saved.semanticSearch) {
         const p = saved.semanticSearch.embeddingProvider as string;
-        if (p === 'ollama') {
+        if (p === 'builtin' || p === 'ollama') {
           saved.semanticSearch.embeddingProvider = 'openai-compatible';
           if (!saved.semanticSearch.embeddingApiBase && saved.semanticSearch.baseUrl) {
             saved.semanticSearch.embeddingApiBase = saved.semanticSearch.baseUrl;
           }
+          // Default to text-embedding-3-small if coming from builtin
+          if (p === 'builtin') {
+            saved.semanticSearch.embeddingModel = 'text-embedding-3-small';
+          }
         }
-        // If no provider set yet, default to builtin
+        // If no provider set yet, default to openai-compatible
         if (!saved.semanticSearch.embeddingProvider) {
-          saved.semanticSearch.embeddingProvider = 'builtin';
+          saved.semanticSearch.embeddingProvider = 'openai-compatible';
+        }
+      }
+      // Migration: update embeddingConfigs to remove builtin provider
+      if (saved.embeddingConfigs) {
+        saved.embeddingConfigs = saved.embeddingConfigs
+          .filter((c) => c.provider !== 'builtin')
+          .map((c) => ({
+            ...c,
+            provider: 'openai-compatible',
+          }));
+        // If all configs were builtin, create a default one
+        if (saved.embeddingConfigs.length === 0) {
+          const migratedConfig: EmbeddingConfig = {
+            id: Math.random().toString(36).slice(2, 10),
+            name: 'OpenAI (text-embedding-3-small)',
+            provider: 'openai-compatible',
+            embeddingModel: 'text-embedding-3-small',
+            embeddingApiBase: 'https://api.openai.com/v1',
+          };
+          saved.embeddingConfigs = [migratedConfig];
+          saved.activeEmbeddingConfigId = migratedConfig.id;
         }
       }
       // Migration: synthesize embeddingConfigs from semanticSearch fields if absent
@@ -106,11 +138,8 @@ function load(): AppSettings {
         const ss = saved.semanticSearch;
         const migratedConfig: EmbeddingConfig = {
           id: Math.random().toString(36).slice(2, 10),
-          name:
-            ss?.embeddingProvider === 'openai-compatible'
-              ? `OpenAI-compatible (${ss.embeddingModel ?? 'text-embedding-3-small'})`
-              : 'Built-in (all-MiniLM-L6-v2)',
-          provider: ss?.embeddingProvider ?? 'builtin',
+          name: `OpenAI-compatible (${ss?.embeddingModel ?? 'text-embedding-3-small'})`,
+          provider: 'openai-compatible',
           embeddingModel: ss?.embeddingModel ?? 'text-embedding-3-small',
           embeddingApiBase: ss?.embeddingApiBase,
           embeddingApiKey: ss?.embeddingApiKey,
@@ -279,14 +308,14 @@ export function getActiveEmbeddingConfig(): EmbeddingConfig | null {
   return (settings.embeddingConfigs ?? []).find((c) => c.id === activeId) ?? null;
 }
 
+// Deprecated: builtin model path no longer used
 export function getBuiltinModelPath(): string | undefined {
-  return load().builtinModelPath;
+  return undefined;
 }
 
-export function setBuiltinModelPath(dirPath: string | undefined): void {
-  const settings = load();
-  settings.builtinModelPath = dirPath;
-  save(settings);
+// Deprecated: no-op
+export function setBuiltinModelPath(_dirPath: string | undefined): void {
+  // no-op
 }
 
 export function getDevMode(): boolean {

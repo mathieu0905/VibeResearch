@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-03-11 (23)
+
+### feat: remove builtin embedding provider, use OpenAI-compatible API only
+
+- **Problem**: `@huggingface/transformers` + `onnxruntime-node` added ~466MB to the build, making the DMG ~1GB
+- **Solution**: Completely remove local/builtin embedding, only support OpenAI-compatible embedding APIs
+- **Changes**:
+  - Removed `@huggingface/transformers` and `onnxruntime-node` from dependencies (~466MB saved)
+  - Deleted `src/main/services/builtin-embedding-provider.ts` (entire local embedding implementation)
+  - Simplified `LocalSemanticService` to always use `OpenAICompatibleEmbeddingProvider`
+  - Added `hasValidConfig()` method to check if embedding provider is configured
+  - Semantic search now falls back to fuzzy search when embedding provider not configured
+  - Removed builtin model download UI from setup wizard
+  - Rewrote settings embedding config UI to only support 'openai-compatible' provider
+  - Added migration logic to convert existing 'builtin' configs to 'openai-compatible'
+  - Supported models: text-embedding-ada-002, text-embedding-3-small, text-embedding-3-large
+- **Scope**:
+  - `package.json` - removed heavy ML dependencies
+  - `src/main/services/builtin-embedding-provider.ts` - **DELETED**
+  - `src/main/services/local-semantic.service.ts` - simplified provider selection, added config validation
+  - `src/main/services/semantic-search.service.ts` - added fallback when provider not configured
+  - `src/main/store/app-settings-store.ts` - removed 'builtin' provider type, added migration
+  - `src/renderer/components/setup-wizard-modal.tsx` - removed builtin model download step
+  - `src/renderer/pages/settings/page.tsx` - simplified to OpenAI-compatible only
+  - `tests/integration/builtin-embedding.test.ts` - **DELETED** (tests for removed functionality)
+
+## 2026-03-11 (22)
+
+### feat: auto-tag button shows toast when lightweight model not configured
+
+- **Problem**: Auto-tag button in library and paper overview was disabled/greyed out when no lightweight model API was configured, with no explanation
+- **Solution**:
+  - Check lightweight model status on component mount
+  - Show toast notification when user clicks the button without model configured
+  - Update button styling to show disabled state with tooltip
+- **Scope**:
+  - `src/renderer/components/papers-by-tag.tsx` - library page auto-tag button
+  - `src/renderer/pages/papers/overview/page.tsx` - paper overview page auto-tag button
+
 ## 2026-03-11 (21)
 
 ### fix: proxy toggle switch not persisting state

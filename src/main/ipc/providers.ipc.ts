@@ -290,78 +290,6 @@ export function setupProvidersIpc() {
     },
   );
 
-  ipcMain.handle('settings:getBuiltinModelStatus', async (): Promise<IpcResult<unknown>> => {
-    try {
-      const result = providersService.getBuiltinModelStatus();
-      return ok(result);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[settings:getBuiltinModelStatus] Error:', msg);
-      return err(msg);
-    }
-  });
-
-  ipcMain.handle('settings:getBuiltinModelPath', async (): Promise<IpcResult<unknown>> => {
-    try {
-      const result = providersService.getBuiltinModelPathSetting();
-      return ok(result ?? null);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[settings:getBuiltinModelPath] Error:', msg);
-      return err(msg);
-    }
-  });
-
-  ipcMain.handle(
-    'settings:setBuiltinModelPath',
-    async (_, dirPath: string | undefined): Promise<IpcResult<unknown>> => {
-      try {
-        const result = providersService.setBuiltinModelPathSetting(dirPath);
-        return ok(result);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error('[settings:setBuiltinModelPath] Error:', msg);
-        return err(msg);
-      }
-    },
-  );
-
-  ipcMain.handle('settings:checkBuiltinModelExists', async (): Promise<IpcResult<unknown>> => {
-    try {
-      const result = providersService.checkBuiltinModelExists();
-      return ok(result);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[settings:checkBuiltinModelExists] Error:', msg);
-      return err(msg);
-    }
-  });
-
-  ipcMain.handle(
-    'settings:getBuiltinModelDownloadStatus',
-    async (): Promise<IpcResult<unknown>> => {
-      try {
-        const result = providersService.getBuiltinModelDownloadStatus();
-        return ok(result);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error('[settings:getBuiltinModelDownloadStatus] Error:', msg);
-        return err(msg);
-      }
-    },
-  );
-
-  ipcMain.handle('settings:downloadBuiltinModel', async (): Promise<IpcResult<unknown>> => {
-    try {
-      providersService.startBuiltinModelDownload();
-      return ok({ started: true });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[settings:downloadBuiltinModel] Error:', msg);
-      return err(msg);
-    }
-  });
-
   ipcMain.handle('embedding:list', async (): Promise<IpcResult<unknown>> => {
     try {
       const result = providersService.listEmbeddingConfigs();
@@ -400,18 +328,8 @@ export function setupProvidersIpc() {
 
   ipcMain.handle('embedding:setActive', async (_, id: string): Promise<IpcResult<unknown>> => {
     try {
-      let config: import('../store/app-settings-store').EmbeddingConfig | undefined;
-      if (id === '__builtin__') {
-        config = {
-          id: '__builtin__',
-          name: 'Built-in Model',
-          provider: 'builtin',
-          embeddingModel: 'all-MiniLM-L6-v2',
-        };
-      } else {
-        const configs = providersService.listEmbeddingConfigs().configs;
-        config = configs.find((c) => c.id === id);
-      }
+      const configs = providersService.listEmbeddingConfigs().configs;
+      const config = configs.find((c) => c.id === id);
       if (!config) return err(`Embedding config not found: ${id}`);
       const result = providersService.switchEmbeddingConfig(config);
       await resumeAutomaticPaperProcessing().catch((error) => {
