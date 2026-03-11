@@ -61,6 +61,17 @@ import {
   isGroupExpanded,
 } from './settings-nav';
 
+// ─── Timeout Helper ───────────────────────────────────────────────────────────
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message?: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(message ?? `Timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 // ─── Editor SVG Icons ─────────────────────────────────────────────────────────
 
 const VSCodeIcon = () => (
@@ -1048,18 +1059,21 @@ function AddModelModal({
     setTesting(true);
     setTestResult(null);
     try {
-      const result =
+      const result = await withTimeout(
         backend === 'api'
-          ? await ipc.testModelConnection({
+          ? ipc.testModelConnection({
               provider,
               model: model.trim(),
               apiKey: apiKey.trim() || undefined,
               baseURL: baseURL.trim() || undefined,
             })
-          : await ipc.testAgentCli({
+          : ipc.testAgentCli({
               command: command.trim(),
               envVars: envVars.trim() || undefined,
-            });
+            }),
+        5000,
+        'Test timed out after 5 seconds',
+      );
       setTestResult(result);
       if (result.success) {
         if (testDismissTimer.current) clearTimeout(testDismissTimer.current);
@@ -1416,18 +1430,21 @@ function EditModelModal({
     setTesting(true);
     setTestResult(null);
     try {
-      const result =
+      const result = await withTimeout(
         backend === 'api'
-          ? await ipc.testModelConnection({
+          ? ipc.testModelConnection({
               provider,
               model: modelName.trim(),
               apiKey: apiKey.trim() || undefined,
               baseURL: baseURL.trim() || undefined,
             })
-          : await ipc.testAgentCli({
+          : ipc.testAgentCli({
               command: command.trim(),
               envVars: envVars.trim() || undefined,
-            });
+            }),
+        5000,
+        'Test timed out after 5 seconds',
+      );
       setTestResult(result);
       if (result.success) {
         if (testDismissTimer.current) clearTimeout(testDismissTimer.current);
@@ -2982,12 +2999,16 @@ function EmbeddingCard({
     setTestError(null);
     if (testSuccessTimerRef.current) clearTimeout(testSuccessTimerRef.current);
     try {
-      const result = await ipc.testSemanticEmbedding({
-        embeddingProvider: config.provider,
-        embeddingModel: config.embeddingModel,
-        embeddingApiBase: config.embeddingApiBase,
-        embeddingApiKey: config.embeddingApiKey,
-      });
+      const result = await withTimeout(
+        ipc.testSemanticEmbedding({
+          embeddingProvider: config.provider,
+          embeddingModel: config.embeddingModel,
+          embeddingApiBase: config.embeddingApiBase,
+          embeddingApiKey: config.embeddingApiKey,
+        }),
+        5000,
+        'Embedding test timed out after 5 seconds',
+      );
       setTestResult(result);
       testSuccessTimerRef.current = setTimeout(() => setTestResult(null), 3000);
     } catch (err) {

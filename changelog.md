@@ -1,5 +1,40 @@
 # Changelog
 
+## 2026-03-11 (25)
+
+### feat: add 5-second timeout to all connection tests in settings
+
+- **Problem**: Connection tests for embedding models, lightweight models, and agents could hang indefinitely if the server is unresponsive
+- **Solution**: Added 5-second timeout to all connection test functions
+- **Changes**:
+  - Added `withTimeout()` helper function to wrap async calls with timeout
+  - Applied timeout to `testSemanticEmbedding()` in EmbeddingCard component
+  - Applied timeout to `testModelConnection()` and `testAgentCli()` in Add/Edit Model modals
+  - Applied timeout to `testAgentAcp()` in AgentSettings component
+- **Scope**:
+  - `src/renderer/pages/settings/page.tsx` - added withTimeout helper and applied to embedding/model tests
+  - `src/renderer/components/settings/AgentSettings.tsx` - added withTimeout helper and applied to agent test
+
+## 2026-03-11 (24)
+
+### fix: remove better-sqlite3 API usage after migration to pure JS VecStore
+
+- **Problem**: After removing `better-sqlite3` and `sqlite-vec` dependencies, startup errors occurred:
+  - `db.prepare is not a function` in `dropDerivedIndexTablesForPrisma` and `ensureRecommendationResultColumns`
+  - `getVecStore(...).exec is not a function` in `ensureFtsTable`
+  - Duplicate key `listChatSessions` in `use-ipc.ts`
+- **Root cause**: Code was still using better-sqlite3 APIs (`prepare`, `exec`, `transaction`) but `VecStore` is now a pure JavaScript implementation without these methods
+- **Solution**:
+  - Refactored `index.ts` database initialization to use Prisma's `$executeRawUnsafe` for raw SQL
+  - Changed schema hash storage from `vec_meta` table to JSON file (`schema-hash.json`)
+  - Simplified `ensureRecommendationResultColumns` - columns now managed by Prisma schema
+  - Completely rewrote `search-unit-index.service.ts` to use `VecStore` instead of sqlite-vec + FTS5
+  - Renamed `listChatSessions` to `listReadingChatSessions` in reading module to avoid key collision
+- **Scope**:
+  - `src/main/index.ts` - use Prisma for raw SQL, JSON file for schema hash
+  - `src/main/services/search-unit-index.service.ts` - complete rewrite using VecStore
+  - `src/renderer/hooks/use-ipc.ts` - renamed duplicate key
+
 ## 2026-03-11 (23)
 
 ### feat: remove builtin embedding provider, use OpenAI-compatible API only

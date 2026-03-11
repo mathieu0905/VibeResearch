@@ -30,6 +30,15 @@ import { AgentLogo } from '../agent-todo/AgentLogo';
 
 const AGENT_NAME_SUGGESTIONS = ['Aria', 'Max', 'Nova', 'Echo', 'Sage', 'Orion', 'Luna', 'Finn'];
 
+function withTimeout<T>(promise: Promise<T>, ms: number, message?: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(message ?? `Timed out after ${ms}ms`)), ms),
+    ),
+  ]);
+}
+
 export function AgentSettings() {
   const [agents, setAgents] = useState<AgentConfigItem[]>([]);
   const [activeTab, setActiveTab] = useState<'local' | 'remote'>('local');
@@ -325,7 +334,11 @@ export function AgentSettings() {
     setTesting(agent.id);
     setTestResult(null);
     try {
-      const result = await ipc.testAgentAcp(agent.id);
+      const result = await withTimeout(
+        ipc.testAgentAcp(agent.id),
+        5000,
+        'Agent test timed out after 5 seconds',
+      );
       if (result && 'sessionId' in result) {
         setTestResult({
           agentId: agent.id,
