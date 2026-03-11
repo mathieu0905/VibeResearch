@@ -1,4 +1,4 @@
-import { getVecDb } from '../../db/vec-client';
+import { getVecStore, VecEntry } from '../../db/vec-store';
 
 export interface VecSearchHit {
   chunkId: string;
@@ -13,71 +13,41 @@ export interface VecIndexStatus {
 }
 
 let currentDimension: number | null = null;
+let currentModel: string | null = null;
 let initialized = false;
 
-function getMeta(key: string): string | null {
-  const db = getVecDb();
-  const row = db.prepare('SELECT value FROM vec_meta WHERE key = ?').get(key) as
-    | { value: string }
-    | undefined;
-  return row?.value ?? null;
-}
-
-function setMeta(key: string, value: string): void {
-  const db = getVecDb();
-  db.prepare('INSERT OR REPLACE INTO vec_meta (key, value) VALUES (?, ?)').run(key, value);
-}
-
-function vecTableExists(): boolean {
-  const db = getVecDb();
-  const row = db
-    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='vec_chunks'")
-    .get() as { name: string } | undefined;
-  return !!row;
-}
-
-function createVecTable(dimension: number): void {
-  const db = getVecDb();
-  db.exec(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
-      chunk_id TEXT PRIMARY KEY,
-      embedding float[${dimension}] distance_metric=cosine
-    )
-  `);
-}
-
-function dropVecTable(): void {
-  const db = getVecDb();
-  if (vecTableExists()) {
-    db.exec('DROP TABLE vec_chunks');
-  }
+function getStore() {
+  return getVecStore();
 }
 
 export function initialize(dimension: number, model: string): void {
-  const storedDim = getMeta('dimension');
-  const storedModel = getMeta('model');
+  const store = getStore();
 
-  if (storedDim && Number(storedDim) !== dimension) {
-    // Dimension changed — rebuild
+  // Check if we need to rebuild
+  const storedDim = store.getDimension();
+  const storedModel = store.getModel();
+
+  if (storedDim && storedDim !== dimension) {
     console.log(`[vec-index] Dimension changed ${storedDim} → ${dimension}, rebuilding vec table`);
-    dropVecTable();
+    store.clear();
   }
 
   if (storedModel && storedModel !== model) {
     console.log(`[vec-index] Model changed ${storedModel} → ${model}, rebuilding vec table`);
-    dropVecTable();
+    store.clear();
   }
 
-  createVecTable(dimension);
-  setMeta('dimension', String(dimension));
-  setMeta('model', model);
+  store.initialize(dimension, model);
   currentDimension = dimension;
+  currentModel = model;
   initialized = true;
   console.log(`[vec-index] Initialized (dimension=${dimension}, model=${model})`);
 }
 
 export function isInitialized(): boolean {
-  return initialized;
+  // Check store initialization state
+  const store = getStore();
+  return initialized && store.isInitialized();
 }
 
 export function syncChunksForPaper(
@@ -86,76 +56,63 @@ export function syncChunksForPaper(
 ): void {
   if (!initialized) return;
 
-  const db = getVecDb();
+  const store = getStore();
 
   // Auto-detect dimension from first embedding if not yet set
   if (!currentDimension && chunks.length > 0) {
     const dim = chunks[0].embedding.length;
     if (dim > 0) {
-      initialize(dim, getMeta('model') ?? 'unknown');
+      const model = store.getModel() || 'unknown';
+      initialize(dim, model);
     }
   }
 
-  const deleteStmt = db.prepare(
-    'DELETE FROM vec_chunks WHERE chunk_id IN (SELECT id FROM PaperChunk WHERE paperId = ?)',
-  );
-  const insertStmt = db.prepare('INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)');
+  // Delete existing chunks for this paper
+  store.deleteByPaperId(paperId);
 
-  const sync = db.transaction(() => {
-    deleteStmt.run(paperId);
-    for (const chunk of chunks) {
-      const buf = new Float32Array(chunk.embedding);
-      insertStmt.run(chunk.id, Buffer.from(buf.buffer));
-    }
-  });
+  // Insert new chunks
+  const entries: VecEntry[] = chunks.map((chunk) => ({
+    chunkId: chunk.id,
+    embedding: new Float32Array(chunk.embedding),
+  }));
 
-  sync();
+  store.batchInsert(entries);
+  store.save();
 }
 
 export function deleteChunksByPaperId(paperId: string): void {
   if (!initialized) return;
-  const db = getVecDb();
-  db.prepare(
-    'DELETE FROM vec_chunks WHERE chunk_id IN (SELECT id FROM PaperChunk WHERE paperId = ?)',
-  ).run(paperId);
+  const store = getStore();
+  store.deleteByPaperId(paperId);
+  store.save();
 }
 
 export function deleteChunksByIds(ids: string[]): void {
   if (!initialized || ids.length === 0) return;
-  const db = getVecDb();
-  const placeholders = ids.map(() => '?').join(',');
-  db.prepare(`DELETE FROM vec_chunks WHERE chunk_id IN (${placeholders})`).run(...ids);
+  const store = getStore();
+  store.deleteMany(ids);
+  store.save();
 }
 
 export function searchKNN(queryEmbedding: number[], k: number): VecSearchHit[] {
   if (!initialized) return [];
 
-  const db = getVecDb();
-  const buf = new Float32Array(queryEmbedding);
-
-  const rows = db
-    .prepare(
-      `SELECT chunk_id, distance
-       FROM vec_chunks
-       WHERE embedding MATCH ?
-       ORDER BY distance
-       LIMIT ?`,
-    )
-    .all(Buffer.from(buf.buffer), k) as Array<{ chunk_id: string; distance: number }>;
-
-  return rows.map((row) => ({
-    chunkId: row.chunk_id,
-    distance: row.distance,
-  }));
+  const store = getStore();
+  const query = new Float32Array(queryEmbedding);
+  return store.searchKNN(query, k);
 }
 
 export async function rebuildFromPrisma(): Promise<number> {
-  // Use better-sqlite3 (already open) instead of Prisma to avoid loading 19k+ large
-  // embeddingJson rows through Prisma's tokio runtime, which triggers Electron malloc guard.
-  const db = getVecDb();
-  const chunks = db
-    .prepare('SELECT id, embeddingJson FROM PaperChunk ORDER BY paperId ASC, chunkIndex ASC')
-    .all() as { id: string; embeddingJson: string }[];
+  const store = getStore();
+
+  // Import prisma to query chunks
+  const { getPrismaClient } = await import('@db');
+  const prisma = getPrismaClient();
+
+  const chunks = await prisma.paperChunk.findMany({
+    select: { id: true, embeddingJson: true },
+    orderBy: [{ paperId: 'asc' }, { chunkIndex: 'asc' }],
+  });
 
   if (chunks.length === 0) return 0;
 
@@ -164,71 +121,73 @@ export async function rebuildFromPrisma(): Promise<number> {
   const dimension = firstEmbedding.length;
   if (dimension === 0) return 0;
 
-  const model = getMeta('model') ?? 'unknown';
+  const model = store.getModel() || 'unknown';
 
-  // Rebuild: drop + recreate
-  dropVecTable();
-  createVecTable(dimension);
-  setMeta('dimension', String(dimension));
-  currentDimension = dimension;
-  initialized = true;
+  // Rebuild: clear and reinsert
+  store.clear();
+  store.initialize(dimension, model);
 
-  const insertStmt = db.prepare('INSERT INTO vec_chunks (chunk_id, embedding) VALUES (?, ?)');
-
-  const batchSize = 500;
-  let inserted = 0;
-
-  for (let i = 0; i < chunks.length; i += batchSize) {
-    const batch = chunks.slice(i, i + batchSize);
-    const insertBatch = db.transaction(() => {
-      for (const chunk of batch) {
-        try {
-          const embedding = JSON.parse(chunk.embeddingJson) as number[];
-          if (embedding.length !== dimension) continue;
-          const buf = new Float32Array(embedding);
-          insertStmt.run(chunk.id, Buffer.from(buf.buffer));
-          inserted++;
-        } catch {
-          // Skip malformed embeddings
-        }
-      }
-    });
-    insertBatch();
+  const entries: VecEntry[] = [];
+  for (const chunk of chunks) {
+    try {
+      const embedding = JSON.parse(chunk.embeddingJson) as number[];
+      if (embedding.length !== dimension) continue;
+      entries.push({
+        chunkId: chunk.id,
+        embedding: new Float32Array(embedding),
+      });
+    } catch {
+      // Skip malformed embeddings
+    }
   }
 
+  // Batch insert
+  for (let i = 0; i < entries.length; i += 500) {
+    const batch = entries.slice(i, i + 500);
+    store.batchInsert(batch);
+  }
+
+  store.save();
+  currentDimension = dimension;
+  currentModel = model;
+  initialized = true;
+
   console.log(
-    `[vec-index] Rebuilt index: ${inserted}/${chunks.length} chunks (dimension=${dimension}, model=${model})`,
+    `[vec-index] Rebuilt index: ${entries.length}/${chunks.length} chunks (dimension=${dimension}, model=${model})`,
   );
-  return inserted;
+  return entries.length;
 }
 
 export function getStatus(): VecIndexStatus {
-  if (!initialized) {
+  const store = getStore();
+
+  if (!initialized || !store.isInitialized()) {
     return { initialized: false, dimension: null, model: null, rowCount: 0 };
   }
 
-  const db = getVecDb();
-  let rowCount = 0;
-  try {
-    const row = db.prepare('SELECT count(*) as cnt FROM vec_chunks').get() as { cnt: number };
-    rowCount = row.cnt;
-  } catch {
-    // Table might not exist yet
-  }
-
   return {
-    initialized,
+    initialized: true,
     dimension: currentDimension,
-    model: getMeta('model'),
-    rowCount,
+    model: currentModel,
+    rowCount: store.getCount(),
   };
 }
 
 export function resetIndex(): void {
-  dropVecTable();
-  const db = getVecDb();
-  db.prepare("DELETE FROM vec_meta WHERE key IN ('dimension', 'model')").run();
+  const store = getStore();
+  store.clear();
+  store.initialize(0, '');
   currentDimension = null;
+  currentModel = null;
   initialized = false;
   console.log('[vec-index] Index reset');
+}
+
+// Initialize on module load
+const store = getStore();
+if (store.isInitialized()) {
+  currentDimension = store.getDimension();
+  currentModel = store.getModel();
+  initialized = true;
+  console.log(`[vec-index] Restored from disk (dim=${currentDimension}, model=${currentModel})`);
 }

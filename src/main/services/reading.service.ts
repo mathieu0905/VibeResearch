@@ -159,6 +159,11 @@ export class ReadingService {
     return this.readingRepository.listByPaper(paperId);
   }
 
+  async listChatSessions(paperId: string) {
+    const items = await this.readingRepository.listByPaper(paperId);
+    return items.filter((item) => item.title.startsWith('Chat:'));
+  }
+
   async delete(id: string) {
     return this.readingRepository.delete(id);
   }

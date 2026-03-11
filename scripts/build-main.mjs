@@ -62,9 +62,6 @@ const external = [
   '@prisma/client',
   // sql.js: uses dynamic WASM loading
   'sql.js',
-  // Native modules — must remain external for dlopen at runtime
-  'better-sqlite3',
-  'sqlite-vec',
   // Transformers.js + ONNX Runtime — must stay external for WASM/native loading
   '@huggingface/transformers',
   'onnxruntime-node',

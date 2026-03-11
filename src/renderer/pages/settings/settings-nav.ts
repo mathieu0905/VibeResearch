@@ -6,6 +6,7 @@ export type SectionId =
   | 'general.proxy'
   | 'general.editor'
   | 'general.semantic'
+  | 'general.dev'
   | 'models'
   | 'agents'
   | 'storage';
@@ -28,6 +29,11 @@ export const NAV_GROUPS: NavGroup[] = [
         id: 'general.semantic',
         label: 'Semantic Search',
         keywords: ['semantic', 'search', 'embedding', 'recommendation'],
+      },
+      {
+        id: 'general.dev',
+        label: 'Developer Mode',
+        keywords: ['developer', 'dev', 'debug', 'welcome'],
       },
     ],
   },
@@ -78,6 +84,10 @@ export const SECTION_META: Record<SectionId, { title: string; description: strin
   'general.semantic': {
     title: 'Semantic Search',
     description: 'Configure embedding-based search and paper recommendations.',
+  },
+  'general.dev': {
+    title: 'Developer Mode',
+    description: 'Enable developer mode to show welcome modal on every startup.',
   },
   models: {
     title: 'Models & Usage',

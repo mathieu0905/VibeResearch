@@ -23,9 +23,27 @@ import {
   Search,
   X,
   Zap,
+  History,
 } from 'lucide-react';
 import type { AgentConfigItem } from '@shared';
 import { motion, AnimatePresence } from 'framer-motion';
+
+// ─── Helper Functions ───────────────────────────────────────────────────────────
+
+function formatRelativeTime(date: Date | string): string {
+  const d = new Date(date);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'now';
+  if (diffMins < 60) return `${diffMins}m`;
+  if (diffHours < 24) return `${diffHours}h`;
+  if (diffDays < 7) return `${diffDays}d`;
+  return d.toLocaleDateString();
+}
 
 // ─── Star Rating ──────────────────────────────────────────────────────────────
 
@@ -212,6 +230,13 @@ export function ReaderPage() {
       createdAt: string;
     }[]
   >([]);
+
+  // Chat history dropdown state
+  const [chatSessions, setChatSessions] = useState<
+    { id: string; title: string; createdAt: string; runId: string | null }[]
+  >([]);
+  const [showChatHistory, setShowChatHistory] = useState(false);
+  const chatHistoryRef = useRef<HTMLDivElement>(null);
 
   // Local user messages injected before the agent stream arrives
   const [localUserMessages, setLocalUserMessages] = useState<
@@ -416,6 +441,103 @@ export function ReaderPage() {
       .catch(() => undefined);
   }, [paper?.id]);
 
+  // Load chat sessions for history dropdown
+  useEffect(() => {
+    if (!paper) return;
+    const titlePrefix = `Chat: ${paper.title.slice(0, 60)}`;
+    ipc
+      .listAgentTodos()
+      .then(async (todos) => {
+        const chatTodos = todos
+          .filter((t) => t.title === titlePrefix || t.title.startsWith('Chat:'))
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        // For each chat todo, get the latest run
+        const sessions: { id: string; title: string; createdAt: string; runId: string | null }[] =
+          [];
+        for (const todo of chatTodos.slice(0, 10)) {
+          const runs = await ipc.listAgentTodoRuns(todo.id);
+          sessions.push({
+            id: todo.id,
+            title: todo.title,
+            createdAt: todo.createdAt,
+            runId: runs.length > 0 ? runs[0].id : null,
+          });
+        }
+        setChatSessions(sessions);
+      })
+      .catch(() => undefined);
+  }, [paper?.id]);
+
+  // Close chat history dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (chatHistoryRef.current && !chatHistoryRef.current.contains(e.target as Node)) {
+        setShowChatHistory(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Handler to load a chat session from history
+  const handleLoadChatSession = useCallback(
+    async (session: { id: string; title: string; runId: string | null }) => {
+      if (!session.runId) return;
+
+      // Reset current state first
+      setAgentTodoId(null);
+      setAgentRunId(null);
+      setLocalUserMessages([]);
+      agentRunIdRef.current = null;
+      agentTodoIdRef.current = '';
+
+      // Load messages from AgentTodoRun
+      const msgs = await ipc.getAgentTodoRunMessages(session.runId);
+      const parsed = msgs.map((m) => ({
+        ...m,
+        content: typeof m.content === 'string' ? JSON.parse(m.content) : m.content,
+      }));
+
+      // Merge chunked messages (same logic as restore)
+      const merged: typeof parsed = [];
+      const seen = new Map<string, number>();
+      for (const m of parsed) {
+        const existing = seen.get(m.msgId);
+        if (existing !== undefined && m.type === 'text') {
+          const prev = merged[existing];
+          const prevText = (prev.content as { text: string }).text;
+          const newText = (m.content as { text: string }).text;
+          merged[existing] = { ...prev, content: { text: prevText + newText } };
+        } else if (existing !== undefined && m.type === 'tool_call') {
+          const prev = merged[existing];
+          const prevContent = prev.content as Record<string, unknown>;
+          const newContent = m.content as Record<string, unknown>;
+          const mergedContent: Record<string, unknown> = { ...prevContent };
+          for (const [k, v] of Object.entries(newContent)) {
+            if (v !== undefined && v !== null && v !== '') mergedContent[k] = v;
+          }
+          merged[existing] = { ...prev, status: m.status || prev.status, content: mergedContent };
+        } else if (existing !== undefined && m.type === 'plan') {
+          merged[existing] = m;
+        } else {
+          seen.set(m.msgId, merged.length);
+          merged.push(m);
+        }
+      }
+
+      // Set the loaded messages and update state
+      agentTodoIdRef.current = session.id;
+      setAgentTodoId(session.id);
+      setAgentRunId(session.runId);
+      agentRunIdRef.current = session.runId;
+      setHistoricMessages(merged);
+      setShowChatHistory(false);
+      setTimeout(() => textareaRef.current?.focus(), 0);
+    },
+    [],
+  );
+
   // Reset agent state for new chat
   const handleNewChat = useCallback(() => {
     setChatInput('');
@@ -425,8 +547,32 @@ export function ReaderPage() {
     setHistoricMessages([]);
     agentRunIdRef.current = null;
     agentTodoIdRef.current = '';
+    // Refresh chat sessions list
+    if (paper) {
+      const titlePrefix = `Chat: ${paper.title.slice(0, 60)}`;
+      ipc
+        .listAgentTodos()
+        .then(async (todos) => {
+          const chatTodos = todos
+            .filter((t) => t.title === titlePrefix || t.title.startsWith('Chat:'))
+            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          const sessions: { id: string; title: string; createdAt: string; runId: string | null }[] =
+            [];
+          for (const todo of chatTodos.slice(0, 10)) {
+            const runs = await ipc.listAgentTodoRuns(todo.id);
+            sessions.push({
+              id: todo.id,
+              title: todo.title,
+              createdAt: todo.createdAt,
+              runId: runs.length > 0 ? runs[0].id : null,
+            });
+          }
+          setChatSessions(sessions);
+        })
+        .catch(() => undefined);
+    }
     setTimeout(() => textareaRef.current?.focus(), 0);
-  }, []);
+  }, [paper]);
 
   const handleChatSend = useCallback(async () => {
     const text = chatInput.trim();
@@ -681,7 +827,7 @@ export function ReaderPage() {
             style={{ width: layoutMode === 'chat-only' ? '100%' : `${leftWidth}%` }}
           >
             {/* Chat Header */}
-            <div className="flex flex-shrink-0 items-center border-b border-notion-border px-4 py-2">
+            <div className="flex flex-shrink-0 items-center gap-2 border-b border-notion-border px-4 py-2">
               <button
                 onClick={handleNewChat}
                 className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar hover:text-notion-text"
@@ -689,6 +835,76 @@ export function ReaderPage() {
                 <Plus size={14} />
                 New Chat
               </button>
+
+              {/* Chat History Dropdown */}
+              <div ref={chatHistoryRef} className="relative">
+                <button
+                  onClick={() => setShowChatHistory(!showChatHistory)}
+                  className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar hover:text-notion-text"
+                >
+                  <History size={14} />
+                  History
+                  <ChevronDown size={12} />
+                </button>
+
+                <AnimatePresence>
+                  {showChatHistory && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute left-0 top-full z-50 mt-1 w-64 rounded-lg border border-notion-border bg-white shadow-lg"
+                    >
+                      <div className="max-h-64 overflow-y-auto notion-scrollbar p-1">
+                        {chatSessions.length === 0 ? (
+                          <div className="px-3 py-2 text-xs text-notion-text-tertiary">
+                            No chat history
+                          </div>
+                        ) : (
+                          chatSessions.map((session) => (
+                            <div
+                              key={session.id}
+                              className="group flex items-center gap-1 rounded-md px-1 py-1 hover:bg-notion-sidebar"
+                            >
+                              <button
+                                onClick={() => handleLoadChatSession(session)}
+                                className="flex min-w-0 flex-1 items-center gap-2 px-1.5 py-1 text-left text-sm text-notion-text-secondary transition-colors hover:text-notion-text"
+                              >
+                                <MessageSquare size={14} className="flex-shrink-0" />
+                                <span
+                                  className="truncate text-xs"
+                                  title={session.title.replace('Chat: ', '')}
+                                >
+                                  {session.title.replace('Chat: ', '')}
+                                </span>
+                                <span className="flex-shrink-0 text-[10px] text-notion-text-tertiary">
+                                  {formatRelativeTime(session.createdAt)}
+                                </span>
+                              </button>
+                              <button
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (confirm('Delete this chat history?')) {
+                                    await ipc.deleteAgentTodo(session.id);
+                                    setChatSessions((prev) =>
+                                      prev.filter((s) => s.id !== session.id),
+                                    );
+                                  }
+                                }}
+                                className="flex-shrink-0 rounded p-1 text-notion-text-tertiary hover:bg-red-50 hover:text-red-500"
+                                title="Delete"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
             {/* Messages */}

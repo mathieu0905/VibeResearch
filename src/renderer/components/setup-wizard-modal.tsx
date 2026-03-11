@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -11,8 +11,11 @@ import {
   Globe,
   ChevronDown,
   ChevronUp,
+  Download,
+  Cpu,
+  FileArchive,
 } from 'lucide-react';
-import { ipc, type ProviderConfig } from '../hooks/use-ipc';
+import { ipc, type ProviderConfig, type BuiltinModelDownloadProgress } from '../hooks/use-ipc';
 import appIcon from '../../../assets/icon.png';
 
 const SETUP_DISMISSED_KEY = 'researchclaw-setup-dismissed';
@@ -25,13 +28,17 @@ export function markSetupDismissed(): void {
   localStorage.setItem(SETUP_DISMISSED_KEY, 'true');
 }
 
+export function clearSetupDismissed(): void {
+  localStorage.removeItem(SETUP_DISMISSED_KEY);
+}
+
 interface SetupWizardModalProps {
   providers: ProviderConfig[];
   onComplete: () => void;
   onSkip: () => void;
 }
 
-type Step = 'welcome' | 'select-provider' | 'api-key';
+type Step = 'welcome' | 'select-provider' | 'api-key' | 'download-model';
 
 const PROVIDER_INFO: Record<
   string,
@@ -84,8 +91,57 @@ export function SetupWizardModal({ providers, onComplete, onSkip }: SetupWizardM
   const [testResult, setTestResult] = useState<'success' | 'error' | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // Model download state
+  const [modelExists, setModelExists] = useState<boolean | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState<BuiltinModelDownloadProgress | null>(
+    null,
+  );
+
   const selectedProvider = providers.find((p) => p.id === selectedProviderId);
   const providerInfo = selectedProviderId ? PROVIDER_INFO[selectedProviderId] : null;
+
+  // Check model status when entering download-model step
+  useEffect(() => {
+    if (step === 'download-model') {
+      checkModelStatus();
+    }
+  }, [step]);
+
+  // Poll download progress
+  useEffect(() => {
+    if (!downloading) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const result = await ipc.getBuiltinModelDownloadStatus();
+        if (result.success && result.data) {
+          setDownloading(result.data.downloading);
+          setDownloadProgress(result.data.progress);
+
+          // If download completed, check model exists again
+          if (result.data.progress?.phase === 'completed') {
+            checkModelStatus();
+          }
+        }
+      } catch (error) {
+        console.error('Failed to get download status:', error);
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [downloading]);
+
+  const checkModelStatus = async () => {
+    try {
+      const result = await ipc.checkBuiltinModelExists();
+      if (result.success) {
+        setModelExists(result.data.exists);
+      }
+    } catch (error) {
+      console.error('Failed to check model status:', error);
+    }
+  };
 
   const handleSkip = useCallback(() => {
     markSetupDismissed();
@@ -159,12 +215,30 @@ export function SetupWizardModal({ providers, onComplete, onSkip }: SetupWizardM
     }
   }, [selectedProvider, apiKey, testResult, onComplete, getEffectiveBaseURL, getEffectiveModel]);
 
+  const handleStartDownload = async () => {
+    try {
+      await ipc.downloadBuiltinModel();
+      setDownloading(true);
+    } catch (error) {
+      console.error('Failed to start download:', error);
+    }
+  };
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Escape') handleSkip();
     },
     [handleSkip],
   );
+
+  const getTotalProgress = () => {
+    if (!downloadProgress) return 0;
+    const { fileIndex = 1, totalFiles = 4, percent = 0 } = downloadProgress;
+    // Calculate overall progress based on completed files + current file progress
+    const completedFilesProgress = ((fileIndex - 1) / totalFiles) * 100;
+    const currentFileProgress = percent / totalFiles;
+    return Math.round(completedFilesProgress + currentFileProgress);
+  };
 
   return (
     <motion.div
@@ -438,12 +512,128 @@ export function SetupWizardModal({ providers, onComplete, onSkip }: SetupWizardM
                     Test & Save
                   </button>
                   <button
-                    onClick={handleComplete}
+                    onClick={() => setStep('download-model')}
                     disabled={!apiKey.trim() || saving}
                     className="flex items-center gap-1 rounded-lg bg-notion-text px-4 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
                   >
                     {saving && <Loader2 size={13} className="animate-spin" />}
-                    Finish
+                    Next
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
+          {step === 'download-model' && (
+            <motion.div
+              key="download-model"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              transition={{ duration: 0.15 }}
+            >
+              <h2 className="mb-1 text-lg font-bold tracking-tight text-notion-text">
+                Download Embedding Model
+              </h2>
+              <p className="mb-4 text-sm text-notion-text-secondary">
+                ResearchClaw uses a local embedding model for semantic search. The model will be
+                downloaded to your device.
+              </p>
+
+              <div className="mb-4 rounded-lg border border-notion-border bg-notion-sidebar/30 p-4">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-notion-accent/10">
+                    <Cpu size={20} className="text-notion-accent" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-medium text-notion-text">all-MiniLM-L6-v2</h3>
+                    <p className="mt-0.5 text-xs text-notion-text-secondary">
+                      A lightweight sentence embedding model optimized for semantic similarity
+                      search.
+                    </p>
+                    <div className="mt-2 flex items-center gap-3 text-xs text-notion-text-tertiary">
+                      <span className="flex items-center gap-1">
+                        <FileArchive size={12} />
+                        ~90 MB
+                      </span>
+                      <span>•</span>
+                      <span>384 dimensions</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status */}
+              {modelExists === true && !downloading && (
+                <div className="mb-4 flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-600">
+                  <CheckCircle2 size={16} />
+                  <span>Model already downloaded and ready to use</span>
+                </div>
+              )}
+
+              {downloading && downloadProgress && (
+                <div className="mb-4">
+                  <div className="mb-2 flex items-center justify-between text-xs">
+                    <span className="text-notion-text-secondary">
+                      {downloadProgress.phase === 'downloading'
+                        ? `Downloading ${downloadProgress.file || 'model files'}...`
+                        : downloadProgress.phase === 'completed'
+                          ? 'Download completed!'
+                          : 'Download failed'}
+                    </span>
+                    <span className="text-notion-text-tertiary">
+                      {downloadProgress.fileIndex && downloadProgress.totalFiles
+                        ? `File ${downloadProgress.fileIndex}/${downloadProgress.totalFiles}`
+                        : ''}
+                    </span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-notion-border">
+                    <div
+                      className="h-full bg-notion-accent transition-all duration-300"
+                      style={{ width: `${getTotalProgress()}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 text-right text-xs text-notion-text-tertiary">
+                    {getTotalProgress()}%
+                  </div>
+                </div>
+              )}
+
+              {downloadProgress?.phase === 'error' && (
+                <div className="mb-4 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-500">
+                  <AlertCircle size={16} />
+                  <span>
+                    Download failed. You can retry or skip and download later in settings.
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={() => setStep('api-key')}
+                  className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm text-notion-text-secondary transition-colors hover:bg-notion-sidebar-hover hover:text-notion-text"
+                >
+                  <ChevronLeft size={16} />
+                  Back
+                </button>
+                <div className="flex items-center gap-2">
+                  {modelExists !== true && !downloading && (
+                    <button
+                      onClick={handleStartDownload}
+                      className="flex items-center gap-1.5 rounded-lg bg-notion-accent px-4 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-80"
+                    >
+                      <Download size={16} />
+                      Download Model
+                    </button>
+                  )}
+                  <button
+                    onClick={handleComplete}
+                    disabled={saving}
+                    className="flex items-center gap-1 rounded-lg bg-notion-text px-4 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-80 disabled:opacity-50"
+                  >
+                    {saving && <Loader2 size={13} className="animate-spin" />}
+                    {modelExists ? 'Finish' : 'Skip'}
                   </button>
                 </div>
               </div>

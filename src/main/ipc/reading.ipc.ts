@@ -167,6 +167,10 @@ export function setupReadingIpc() {
     return getReadingService().listByPaper(paperId);
   });
 
+  ipcMain.handle('reading:listChatSessions', async (_, paperId: string) => {
+    return getReadingService().listChatSessions(paperId);
+  });
+
   ipcMain.handle('reading:delete', async (_, id: string) => {
     return getReadingService().delete(id);
   });

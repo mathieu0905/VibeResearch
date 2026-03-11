@@ -42,7 +42,6 @@ export function AgentSettings() {
     agentTool: 'claude-code' as AgentToolKind,
     configContent: '',
     authContent: '',
-    extraEnvText: '',
     defaultModel: '',
     apiKey: '',
     baseUrl: '',
@@ -57,7 +56,6 @@ export function AgentSettings() {
     sshPrivateKeyPath: '~/.ssh/id_ed25519',
     sshPassphrase: '',
     remoteCliPath: '',
-    remoteExtraEnvText: '',
     apiKey: '',
     baseUrl: '',
     defaultModel: '',
@@ -216,7 +214,6 @@ export function AgentSettings() {
     setSaving(true);
     try {
       const meta = getAgentToolMeta(newRemoteAgent.agentTool);
-      const remoteEnv = parseEnvText(newRemoteAgent.remoteExtraEnvText);
       await ipc.addAgent({
         name: newRemoteAgent.name,
         backend: newRemoteAgent.agentTool.replace(/-/g, ''),
@@ -235,7 +232,6 @@ export function AgentSettings() {
         sshPrivateKeyPath: newRemoteAgent.sshPrivateKeyPath || undefined,
         sshPassphrase: newRemoteAgent.sshPassphrase || undefined,
         remoteCliPath: newRemoteAgent.remoteCliPath || undefined,
-        remoteExtraEnv: Object.keys(remoteEnv).length > 0 ? remoteEnv : undefined,
       });
       setNewRemoteAgent({
         name: '',
@@ -247,7 +243,6 @@ export function AgentSettings() {
         sshPrivateKeyPath: '~/.ssh/id_ed25519',
         sshPassphrase: '',
         remoteCliPath: '',
-        remoteExtraEnvText: '',
         apiKey: '',
         baseUrl: '',
         defaultModel: '',
@@ -266,7 +261,6 @@ export function AgentSettings() {
     if (!newAgent.name || !newAgent.cliPath) return;
     setSaving(true);
     try {
-      const extraEnv = parseEnvText(newAgent.extraEnvText);
       const meta = getAgentToolMeta(newAgent.agentTool);
       await ipc.addAgent({
         name: newAgent.name,
@@ -276,7 +270,6 @@ export function AgentSettings() {
         agentTool: newAgent.agentTool,
         configContent: newAgent.configContent || undefined,
         authContent: newAgent.authContent || undefined,
-        extraEnv: Object.keys(extraEnv).length > 0 ? extraEnv : undefined,
         defaultModel: newAgent.defaultModel || undefined,
         apiKey: newAgent.apiKey || undefined,
         baseUrl: newAgent.baseUrl || undefined,
@@ -289,7 +282,6 @@ export function AgentSettings() {
         agentTool: 'claude-code',
         configContent: '',
         authContent: '',
-        extraEnvText: '',
         defaultModel: '',
         apiKey: '',
         baseUrl: '',
@@ -316,7 +308,6 @@ export function AgentSettings() {
         agentTool: editingAgent.agentTool,
         configContent: editingAgent.configContent || undefined,
         authContent: editingAgent.authContent || undefined,
-        extraEnv: editingAgent.extraEnv,
         defaultModel: editingAgent.defaultModel || undefined,
         apiKey: editingAgent.apiKey || undefined,
         baseUrl: editingAgent.baseUrl || undefined,
@@ -803,24 +794,6 @@ export function AgentSettings() {
                     className="w-full rounded-lg border border-notion-border px-3 py-2 font-mono text-sm focus:border-notion-accent focus:outline-none focus:ring-2 focus:ring-notion-accent/20"
                   />
                 </div>
-                {/* Remote Extra PATH */}
-                <div>
-                  <label className="mb-1.5 block text-xs font-medium text-notion-text">
-                    Extra Environment Variables
-                    <span className="ml-1 text-notion-text-tertiary font-normal">
-                      (KEY=VALUE, one per line)
-                    </span>
-                  </label>
-                  <textarea
-                    value={newRemoteAgent.remoteExtraEnvText}
-                    onChange={(e) =>
-                      setNewRemoteAgent((p) => ({ ...p, remoteExtraEnvText: e.target.value }))
-                    }
-                    placeholder={'PATH=/custom/bin:$PATH\nOPENAI_API_KEY=sk-...'}
-                    rows={3}
-                    className="w-full rounded-lg border border-notion-border px-3 py-2 font-mono text-xs focus:border-notion-accent focus:outline-none focus:ring-2 focus:ring-notion-accent/20"
-                  />
-                </div>
                 {/* API Key */}
                 {getAgentToolMeta(newRemoteAgent.agentTool).requiresApiKey && (
                   <div>
@@ -1032,23 +1005,6 @@ export function AgentSettings() {
                     )}
                   </div>
                 )}
-
-                {/* Environment Variables */}
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-notion-text">
-                    Environment Variables
-                  </label>
-                  <textarea
-                    value={newAgent.extraEnvText}
-                    onChange={(e) => setNewAgent((p) => ({ ...p, extraEnvText: e.target.value }))}
-                    placeholder={'ANTHROPIC_AUTH_TOKEN=your-token\nANTHROPIC_BASE_URL=https://...'}
-                    rows={3}
-                    className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-notion-accent/20 focus:border-notion-accent resize-none"
-                  />
-                  <p className="mt-1 text-xs text-notion-text-tertiary">
-                    One KEY=VALUE per line. Injected into the agent process environment.
-                  </p>
-                </div>
 
                 {/* Config & Auth (collapsible) */}
                 <details className="group">
@@ -1490,12 +1446,6 @@ function EditAgentModal({
   onLoadConfigContents: (tool: AgentToolKind, target: 'config' | 'auth') => void;
   onAutoDetectConfig: (tool: AgentToolKind) => void;
 }) {
-  const [extraEnvText, setExtraEnvText] = useState(() => envToText(agent?.extraEnv));
-
-  useEffect(() => {
-    setExtraEnvText(envToText(agent?.extraEnv));
-  }, [agent?.id]);
-
   if (!agent) return null;
 
   const meta = getAgentToolMeta(agent.agentTool || 'claude-code');
@@ -1686,26 +1636,6 @@ function EditAgentModal({
                 </div>
               )}
 
-              {/* Environment Variables */}
-              <div>
-                <label className="mb-1 block text-xs font-medium text-notion-text">
-                  Environment Variables
-                </label>
-                <textarea
-                  value={extraEnvText}
-                  onChange={(e) => {
-                    setExtraEnvText(e.target.value);
-                    onUpdate({ extraEnv: parseEnvText(e.target.value) });
-                  }}
-                  placeholder={'ANTHROPIC_AUTH_TOKEN=your-token\nANTHROPIC_BASE_URL=https://...'}
-                  rows={3}
-                  className="w-full rounded-lg border border-notion-border bg-white px-3 py-2 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-notion-accent/20 focus:border-notion-accent resize-none"
-                />
-                <p className="mt-1 text-xs text-notion-text-tertiary">
-                  One KEY=VALUE per line. Injected into the agent process environment.
-                </p>
-              </div>
-
               {/* Config & Auth */}
               <details className="group" open={!!agent.configContent || !!agent.authContent}>
                 <summary className="flex items-center gap-2 cursor-pointer text-xs font-medium text-notion-text-secondary hover:text-notion-text">
@@ -1796,36 +1726,6 @@ function EditAgentModal({
       </motion.div>
     </AnimatePresence>
   );
-}
-
-function parseEnvText(text: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq < 1) continue;
-    const key = trimmed.slice(0, eq).trim();
-    let value = trimmed.slice(eq + 1).trim();
-    // Remove trailing comma (JSON-style)
-    if (value.endsWith(',')) value = value.slice(0, -1).trim();
-    // Remove surrounding quotes (single or double)
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (key) result[key] = value;
-  }
-  return result;
-}
-
-function envToText(env?: Record<string, string>): string {
-  if (!env || Object.keys(env).length === 0) return '';
-  return Object.entries(env)
-    .map(([k, v]) => `${k}=${v}`)
-    .join('\n');
 }
 
 function formatUsageLabel(provider: string, model: string) {

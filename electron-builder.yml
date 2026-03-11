@@ -14,9 +14,7 @@ files:
   - package.json
   - node_modules/@prisma/client/**/*
   - node_modules/sql.js/**/*
-  - node_modules/better-sqlite3/**/*
-  - node_modules/sqlite-vec/**/*
-  - node_modules/sqlite-vec-*/**/*
+  # Native module helpers (for sql.js and other deps)
   - node_modules/bindings/**/*
   - node_modules/file-uri-to-path/**/*
   - node_modules/node-addon-api/**/*
@@ -26,8 +24,26 @@ files:
   - '!**/README.md'
   - '!**/CHANGELOG.md'
   - '!**/LICENSE'
+  - '!**/test/**/*'
+  - '!**/tests/**/*'
+  - '!**/*.test.js'
+  - '!**/*.spec.js'
+  - '!**/*.d.ts'
+  - '!**/docs/**/*'
+  - '!**/examples/**/*'
+  - '!**/benchmark/**/*'
   # Exclude @napi-rs/canvas - not needed for Electron (charts render in browser)
   - '!node_modules/@napi-rs/**/*'
+  # Exclude development files from node_modules
+  - '!node_modules/**/*.ts'
+  - '!node_modules/**/tsconfig.json'
+  - '!node_modules/**/.editorconfig'
+  - '!node_modules/**/.eslintrc*'
+  - '!node_modules/**/.prettierrc*'
+  - '!node_modules/**/Makefile'
+  - '!node_modules/**/gulpfile.js'
+  - '!node_modules/**/webpack.config.js'
+  - '!node_modules/**/rollup.config.js'
 
 # electron-builder ignores hidden dirs (starting with .) in files config.
 # Use extraResources to include _prisma (copy of .prisma) outside asar,
@@ -45,8 +61,6 @@ extraResources:
 # Unpack native .node binaries from asar so they can be dlopen'd at runtime
 asarUnpack:
   - 'dist/native/**'
-  - 'node_modules/better-sqlite3/**/*.node'
-  - 'node_modules/sqlite-vec-*/**/*'
 
 extraMetadata:
   main: dist/main/index.js

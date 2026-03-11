@@ -33,7 +33,12 @@ import {
 } from '../hooks/use-ipc';
 import { useAnalysis } from '../hooks/use-analysis';
 import { useMainReady } from '../hooks/use-main-ready';
-import { SetupWizardModal, isSetupDismissed, markSetupDismissed } from './setup-wizard-modal';
+import {
+  SetupWizardModal,
+  isSetupDismissed,
+  markSetupDismissed,
+  clearSetupDismissed,
+} from './setup-wizard-modal';
 
 // Detect if running on Windows
 const isWindows = navigator.userAgent.includes('Windows');
@@ -207,6 +212,22 @@ export function AppShell({
 
   const [showSetupWizard, setShowSetupWizard] = useState(false);
   const [setupProviders, setSetupProviders] = useState<ProviderConfig[]>([]);
+  const [devMode, setDevMode] = useState(false);
+
+  // Load dev mode setting
+  useEffect(() => {
+    if (!isMainReady) return;
+    ipc
+      .getDevMode()
+      .then((result) => {
+        setDevMode(result.enabled);
+        // In dev mode, clear the dismissed flag so welcome shows every time
+        if (result.enabled) {
+          clearSetupDismissed();
+        }
+      })
+      .catch(() => {});
+  }, [isMainReady]);
 
   useEffect(() => {
     if (!isMainReady || isSetupDismissed()) return;
@@ -214,14 +235,14 @@ export function AppShell({
       .listProviders()
       .then((providers) => {
         const hasConfigured = providers.some((p) => p.hasApiKey);
-        if (!hasConfigured) {
+        if (!hasConfigured || devMode) {
           markSetupDismissed();
           setSetupProviders(providers);
           setShowSetupWizard(true);
         }
       })
       .catch(() => {});
-  }, [isMainReady]);
+  }, [isMainReady, devMode]);
 
   const sidebarRef = useRef<HTMLElement>(null);
 

@@ -25,7 +25,6 @@ const MODEL_OPTIONS: ModelOption[] = [
   { id: 'gpt-5-codex', provider: 'openai', description: '编码优化' },
   { id: 'gpt-5-pro', provider: 'openai', description: '深度思考' },
   { id: 'gpt-5-mini', provider: 'openai', description: '快速经济版' },
-  { id: 'gpt-5-nano', provider: 'openai', description: '最快最便宜' },
   { id: 'gpt-5-chat-latest', provider: 'openai', description: 'ChatGPT当前版本' },
 
   // OpenAI o-series
@@ -41,8 +40,6 @@ const MODEL_OPTIONS: ModelOption[] = [
   { id: 'gpt-4.1-2025-04-14', provider: 'openai', description: '1M输入32k输出' },
   { id: 'gpt-4.1-mini', provider: 'openai', description: '经济版' },
   { id: 'gpt-4.1-mini-2025-04-14', provider: 'openai', description: '经济版' },
-  { id: 'gpt-4.1-nano', provider: 'openai', description: '最便宜' },
-  { id: 'gpt-4.1-nano-2025-04-14', provider: 'openai', description: '最便宜' },
   { id: 'gpt-4o', provider: 'openai', description: '多模态' },
   { id: 'gpt-4o-2024-11-20', provider: 'openai', description: '多模态' },
   { id: 'gpt-4o-2024-08-06', provider: 'openai', description: '多模态' },
