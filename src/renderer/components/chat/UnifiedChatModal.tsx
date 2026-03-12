@@ -12,6 +12,7 @@ import {
   ChevronRight,
   History,
   Zap,
+  FileText,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ipc } from '../../hooks/use-ipc';
@@ -58,6 +59,7 @@ export function UnifiedChatModal({
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
   const [backend, setBackend] = useState<string | null>(null); // 'lightweight' | 'claude-code' | null
+  const [paperTitles, setPaperTitles] = useState<Map<string, string>>(new Map());
 
   const jobIdRef = useRef<string>('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -101,6 +103,29 @@ export function UnifiedChatModal({
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [isOpen, onClose]);
+
+  // Load paper titles for display
+  useEffect(() => {
+    const activePapers = currentSessionPaperIds ?? paperIds;
+    if (activePapers.length === 0) return;
+
+    const loadTitles = async () => {
+      const titles = new Map<string, string>();
+      for (const paperId of activePapers) {
+        try {
+          const paper = await ipc.getPaper(paperId);
+          if (paper) {
+            titles.set(paperId, paper.title);
+          }
+        } catch (err) {
+          console.error('Failed to load paper title:', err);
+        }
+      }
+      setPaperTitles(titles);
+    };
+
+    void loadTitles();
+  }, [currentSessionPaperIds, paperIds]);
 
   const loadSessions = async () => {
     setLoadingSessions(true);
@@ -359,8 +384,7 @@ export function UnifiedChatModal({
                               </div>
                               {session.paperIds.length > 0 && (
                                 <span className="text-xs text-notion-text-tertiary">
-                                  {session.paperIds.length} paper
-                                  {session.paperIds.length > 1 ? 's' : ''}
+                                  {t('chat.paperCount', { count: session.paperIds.length })}
                                 </span>
                               )}
                             </div>
@@ -386,7 +410,7 @@ export function UnifiedChatModal({
                 <button
                   onClick={() => setShowSidebar(!showSidebar)}
                   className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-notion-sidebar-hover"
-                  title={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
+                  title={showSidebar ? t('chat.hideSidebar') : t('chat.showSidebar')}
                 >
                   {showSidebar ? (
                     <ChevronLeft size={16} className="text-notion-text-secondary" />
@@ -400,8 +424,9 @@ export function UnifiedChatModal({
                 <div className="min-w-0 flex-1">
                   <h2 className="text-sm font-semibold text-notion-text">
                     {currentSessionId
-                      ? sessions.find((s) => s.id === currentSessionId)?.title || 'Research Chat'
-                      : 'Research Chat'}
+                      ? sessions.find((s) => s.id === currentSessionId)?.title ||
+                        t('chat.researchChatTitle')
+                      : t('chat.researchChatTitle')}
                   </h2>
                   {sourceCount > 0 && (
                     <p className="text-xs text-notion-text-tertiary">
@@ -508,6 +533,28 @@ export function UnifiedChatModal({
 
               {/* Input Footer */}
               <div className="flex-shrink-0 px-4 py-4">
+                {/* Paper context indicator */}
+                {activePaperIds.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {activePaperIds.slice(0, 3).map((paperId) => (
+                      <div
+                        key={paperId}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-notion-tag-blue px-2 py-1 text-xs text-notion-text"
+                        title={paperTitles.get(paperId) || paperId}
+                      >
+                        <FileText size={10} />
+                        <span className="max-w-[160px] truncate">
+                          {paperTitles.get(paperId) || paperId}
+                        </span>
+                      </div>
+                    ))}
+                    {activePaperIds.length > 3 && (
+                      <div className="inline-flex items-center rounded-lg bg-notion-sidebar px-2 py-1 text-xs text-notion-text-tertiary">
+                        +{activePaperIds.length - 3} more
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="relative rounded-2xl border border-notion-border bg-white shadow-sm transition-all focus-within:border-notion-text/30 focus-within:shadow-md">
                   <textarea
                     ref={textareaRef}

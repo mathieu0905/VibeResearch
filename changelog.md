@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-03-12 (43)
+
+### feat: ACP chat integration — Phase 5 paper context display
+
+- **Goal**: Show attached papers in chat UI to improve context awareness.
+- **Changes**:
+  - Added paper context indicator chips above input area
+  - Display up to 3 paper titles with FileText icon
+  - Show "+N more" indicator for additional papers
+  - Load paper titles asynchronously via IPC
+  - Truncate long titles with tooltip showing full title
+  - Paper chips styled with Notion blue tag background
+  - Papers shown for both new chats (from props) and loaded sessions
+- **UI Design**:
+  - Chips positioned above textarea in input footer
+  - Light blue background (`bg-notion-tag-blue`)
+  - 10px FileText icon + truncated title (max 160px)
+  - Hover shows full title via title attribute
+  - Collapsed "+N more" chip for overflow
+- **State Management**:
+  - `paperTitles` Map stores paperId → title mapping
+  - useEffect loads titles when paperIds change
+  - Falls back to paperId if title load fails
+- **Integration**:
+  - Works with existing paper context injection in backend
+  - No changes to IPC or service layer needed
+  - Papers already passed through to `buildPaperContext()`
+- **Testing**: All tests pass (437 passed, 48 skipped)
+- **Next**: Phase 6 (multi-backend support), Phase 8 (testing and docs)
+
 ## 2026-03-12 (42)
 
 ### feat: ACP chat integration — Phase 7 i18n support
