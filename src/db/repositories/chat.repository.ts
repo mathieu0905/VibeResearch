@@ -5,12 +5,16 @@ export interface CreateChatSessionInput {
   title: string;
   paperIds?: string[];
   repoIds?: string[];
+  backend?: string | null; // 'lightweight' | 'claude-code' | 'codex' | 'gemini' | 'opencode' | null
+  cwd?: string | null;
+  sessionMode?: string | null;
 }
 
 export interface CreateChatMessageInput {
   sessionId: string;
-  role: 'user' | 'assistant';
+  role: string; // 'user' | 'assistant' | 'thought' | 'tool_call' | 'permission'
   content: string;
+  metadataJson?: string;
 }
 
 export class ChatRepository {
@@ -25,6 +29,9 @@ export class ChatRepository {
         title: input.title,
         paperIdsJson: JSON.stringify(input.paperIds ?? []),
         repoIdsJson: JSON.stringify(input.repoIds ?? []),
+        backend: input.backend ?? null,
+        cwd: input.cwd ?? null,
+        sessionMode: input.sessionMode ?? null,
       },
     });
   }
@@ -55,11 +62,30 @@ export class ChatRepository {
     });
   }
 
+  async updateSessionAcpFields(
+    id: string,
+    fields: {
+      acpSessionId?: string | null;
+      currentModelId?: string | null;
+      backend?: string | null;
+    },
+  ) {
+    return this.prisma.chatSession.update({
+      where: { id },
+      data: { ...fields, updatedAt: new Date() },
+    });
+  }
+
   // ── Messages ──────────────────────────────────────────────────────────────
 
   async addMessage(input: CreateChatMessageInput) {
     return this.prisma.chatMessage.create({
-      data: input,
+      data: {
+        sessionId: input.sessionId,
+        role: input.role,
+        content: input.content,
+        metadataJson: input.metadataJson ?? '{}',
+      },
     });
   }
 

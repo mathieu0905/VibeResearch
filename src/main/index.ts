@@ -19,10 +19,9 @@ import { setupTaskResultsIpc } from './ipc/task-results.ipc';
 import { setupExperimentReportIpc } from './ipc/experiment-report.ipc';
 import { stopAllRunners } from './services/agent-runner-registry';
 import { setupCitationsIpc } from './ipc/citations.ipc';
-import { setupRecommendationsIpc } from './ipc/recommendations.ipc';
-import { setupComparisonIpc } from './ipc/comparison.ipc';
 import { setupUserProfileIpc } from './ipc/user-profile.ipc';
 import { setupChatIpc } from './ipc/chat.ipc';
+import { setupAcpChatIpc } from './ipc/acp-chat.ipc';
 import { ensureStorageDir, getDbPath, getStorageDir } from './store/storage-path';
 import { hasLanguagePreference, setLanguage } from './store/app-settings-store';
 import { PapersRepository } from '@db';
@@ -31,6 +30,7 @@ import { resumeAutomaticCitationExtraction } from './services/citation-processin
 import { stopOllamaService, warmupOllamaService } from './services/ollama.service';
 import { closeVecStore } from '../db/vec-store';
 import * as vecIndex from './services/vec-index.service';
+import * as paperEmbeddingService from './services/paper-embedding.service';
 import { getPrismaClient } from '../db/client';
 
 // CJS-compatible __dirname (esbuild bundles to CJS, so __dirname is available globally)
@@ -460,44 +460,40 @@ app.whenReady().then(async () => {
     .initialize()
     .catch((err) => console.error('[AgentTodo] Failed to initialize scheduler:', err));
   setupCitationsIpc();
-  setupRecommendationsIpc();
-  setupComparisonIpc();
   setupUserProfileIpc();
   setupChatIpc();
+  setupAcpChatIpc();
   setupFileIpc();
 
   // Initialize vec index (background, non-blocking)
   void (async () => {
     try {
-      const status = vecIndex.getStatus();
-      const repo = new PapersRepository();
-      if (!status.initialized) {
-        const chunkCount = await repo.countChunksForSemanticSearch();
-        if (chunkCount > 0) {
-          console.log(`[startup] Rebuilding vec index from ${chunkCount} existing chunks...`);
-          const inserted = await vecIndex.rebuildFromPrisma();
-          console.log(`[startup] Vec index rebuilt: ${inserted} chunks indexed`);
-        }
-      }
+      // Initialize vector index
+      await vecIndex.initialize();
 
-      const searchUnitCount = await repo.countSearchUnitsForSemanticSearch();
-      if (searchUnitCount > 0) {
-        const searchUnitIndex = await import('./services/search-unit-index.service');
-        const inserted = await searchUnitIndex.rebuildFromPrisma();
-        console.log(`[startup] Search-unit index rebuilt: ${inserted} units indexed`);
+      // Load paper embeddings into vector store
+      await paperEmbeddingService.initializeVecStore();
 
-        // If no units were indexed (all had empty embeddings), re-process all indexed papers
-        if (inserted === 0) {
-          console.log('[startup] All search units had empty embeddings, re-indexing papers...');
-          const { retryPaperProcessing } = await import('./services/paper-processing.service');
-          const paperIds = await repo.listIndexedPaperIds();
-          void (async () => {
-            for (const paperId of paperIds) {
-              await retryPaperProcessing(paperId).catch(() => undefined);
-            }
-            console.log(`[startup] Re-indexed ${paperIds.length} papers`);
-          })();
-        }
+      // Check for papers without embeddings
+      const stats = await paperEmbeddingService.getEmbeddingStats();
+      if (stats.papersWithoutEmbeddings > 0) {
+        console.log(
+          `[startup] Found ${stats.papersWithoutEmbeddings} papers without embeddings, processing in background...`,
+        );
+
+        // Process pending papers in background (non-blocking)
+        void (async () => {
+          let processed = 0;
+          while (processed < stats.papersWithoutEmbeddings) {
+            const count = await paperEmbeddingService.processPendingPapers(10);
+            if (count === 0) break;
+            processed += count;
+            console.log(`[startup] Processed ${processed}/${stats.papersWithoutEmbeddings} papers`);
+          }
+          console.log('[startup] All papers processed');
+        })();
+      } else {
+        console.log('[startup] All papers have embeddings');
       }
     } catch (err) {
       console.error('[startup] Vec index initialization failed:', err);

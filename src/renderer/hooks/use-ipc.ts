@@ -15,8 +15,6 @@ import type {
   AgentTodoMessageItem,
   AgentToolKind,
   GraphData,
-  RecommendationItem,
-  ComparisonNoteItem,
   UserProfileState,
   UserProfile,
   TaskResultItem,
@@ -563,11 +561,6 @@ export interface ProjectPaperItem extends PaperItem {
   projectPaperId: string;
 }
 
-export interface RecommendationRefreshResult {
-  generatedAt: string;
-  count: number;
-}
-
 export type { UserProfileState, UserProfile };
 
 export interface CliConfig {
@@ -886,6 +879,99 @@ export const ipc = {
   killChatStream: (streamId: string) => invoke<{ killed: boolean }>('chat:kill', streamId),
   generateChatTitle: (content: string) => invoke<string>('chat:generateTitle', content),
 
+  // ACP Chat (unified lightweight + agent chat)
+  createAcpChatSession: (input: {
+    projectId: string;
+    title: string;
+    paperIds?: string[];
+    repoIds?: string[];
+    backend?: string | null;
+    cwd?: string | null;
+    sessionMode?: string | null;
+  }) =>
+    invoke<{
+      id: string;
+      projectId: string;
+      title: string;
+      paperIdsJson: string;
+      repoIdsJson: string;
+      backend: string | null;
+      cwd: string | null;
+      sessionMode: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }>('acp-chat:session:create', input),
+  listAcpChatSessions: (projectId: string) =>
+    invoke<
+      {
+        id: string;
+        projectId: string;
+        title: string;
+        paperIdsJson: string;
+        repoIdsJson: string;
+        backend: string | null;
+        cwd: string | null;
+        sessionMode: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }[]
+    >('acp-chat:session:list', projectId),
+  getAcpChatSession: (id: string) =>
+    invoke<{
+      id: string;
+      projectId: string;
+      title: string;
+      paperIds: string[];
+      repoIds: string[];
+      backend: string | null;
+      cwd: string | null;
+      sessionMode: string | null;
+      createdAt: string;
+      updatedAt: string;
+    } | null>('acp-chat:session:get', id),
+  updateAcpChatSessionTitle: (id: string, title: string) =>
+    invoke<{
+      id: string;
+      projectId: string;
+      title: string;
+      paperIdsJson: string;
+      repoIdsJson: string;
+      createdAt: string;
+      updatedAt: string;
+    }>('acp-chat:session:updateTitle', id, title),
+  deleteAcpChatSession: (id: string) =>
+    invoke<{
+      id: string;
+      projectId: string;
+      title: string;
+      paperIdsJson: string;
+      repoIdsJson: string;
+      createdAt: string;
+      updatedAt: string;
+    }>('acp-chat:session:delete', id),
+  listAcpChatMessages: (sessionId: string) =>
+    invoke<
+      {
+        id: string;
+        sessionId: string;
+        role: string;
+        content: string;
+        metadataJson: string;
+        createdAt: string;
+      }[]
+    >('acp-chat:message:list', sessionId),
+  sendAcpChatMessage: (input: {
+    chatSessionId: string;
+    projectId: string;
+    paperIds: string[];
+    repoIds?: string[];
+    prompt: string;
+    backend?: string | null;
+    cwd?: string;
+  }) => invoke<{ jobId: string; started: boolean }>('acp-chat:send', input),
+  killAcpChatJob: (jobId: string) => invoke<{ killed: boolean }>('acp-chat:kill', jobId),
+  generateAcpChatTitle: (content: string) => invoke<string>('acp-chat:generateTitle', content),
+
   // Ingest
   importChromeHistoryFromFile: (filePath: string) =>
     invoke<{ imported: number; previewTitles: string[] }>('ingest:chromeHistoryFromFile', filePath),
@@ -1045,76 +1131,6 @@ export const ipc = {
   updateUserProfile: (input: Partial<UserProfile>) =>
     invoke<UserProfileState>('userProfile:update', input),
   generateUserProfileSummary: () => invoke<UserProfileState>('userProfile:generateSummary'),
-
-  // Recommendations
-  listRecommendations: (filter?: { status?: 'new' | 'ignored' | 'saved' }) =>
-    invoke<RecommendationItem[]>('recommendations:list', filter ?? {}),
-  refreshRecommendations: (limit?: number) =>
-    invoke<RecommendationRefreshResult>('recommendations:refresh', limit),
-  ignoreRecommendation: (candidateId: string) =>
-    invoke<{ success: boolean }>('recommendations:ignore', candidateId),
-  saveRecommendation: (candidateId: string) =>
-    invoke<PaperItem>('recommendations:save', candidateId),
-  trackRecommendationOpened: (candidateId: string) =>
-    invoke<{ success: boolean }>('recommendations:opened', candidateId),
-  moreLikeRecommendation: (candidateId: string) =>
-    invoke<{ success: boolean }>('recommendations:moreLikeThis', candidateId),
-  lessLikeRecommendation: (candidateId: string) =>
-    invoke<{ success: boolean }>('recommendations:lessLikeThis', candidateId),
-
-  // Comparison
-  startComparison: (input: { sessionId: string; paperIds: string[]; language?: 'en' | 'zh' }) =>
-    invoke<{ jobId: string; savedId: string | null; started: boolean }>('comparison:start', input),
-  getActiveComparisonJobs: () =>
-    invoke<
-      Array<{
-        jobId: string;
-        paperIds: string[];
-        active: boolean;
-        stage: 'preparing' | 'streaming' | 'done' | 'error' | 'cancelled';
-        partialText: string;
-        message: string;
-        error: string | null;
-        savedId: string | null;
-      }>
-    >('comparison:getActiveJobs'),
-  killComparison: (jobId: string) => invoke<{ killed: boolean }>('comparison:kill', jobId),
-  listComparisons: () => invoke<ComparisonNoteItem[]>('comparison:list'),
-  deleteComparison: (id: string) => invoke<{ success: boolean }>('comparison:delete', id),
-  translateComparison: (input: { comparisonId: string }) =>
-    invoke<{ jobId: string; started: boolean }>('comparison:translate', input),
-  getActiveTranslationJobs: () =>
-    invoke<
-      Array<{
-        jobId: string;
-        comparisonId: string;
-        active: boolean;
-        stage: 'streaming' | 'done' | 'error' | 'cancelled';
-        partialText: string;
-        message: string;
-        error: string | null;
-      }>
-    >('comparison:getActiveTranslationJobs'),
-  killTranslation: (jobId: string) =>
-    invoke<{ killed: boolean }>('comparison:killTranslation', jobId),
-  startComparisonChat: (input: {
-    comparisonId: string;
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>;
-  }) => invoke<{ jobId: string; started: boolean }>('comparison:chat', input),
-  getComparisonChatJobs: () =>
-    invoke<
-      Array<{
-        jobId: string;
-        comparisonId: string;
-        active: boolean;
-        stage: 'streaming' | 'done' | 'error' | 'cancelled';
-        partialText: string;
-        message: string;
-        error: string | null;
-      }>
-    >('comparison:chatJobs'),
-  killComparisonChat: (comparisonId: string) =>
-    invoke<{ killed: boolean }>('comparison:chatKill', comparisonId),
 
   // Citations & Graph
   extractCitations: (paper: {
