@@ -263,10 +263,15 @@ export function ReaderPage() {
 
   // Use live stream messages if available, otherwise fall back to historic messages
   const streamBased = agentMessages.length > 0 ? agentMessages : historicMessages;
-  // Local user messages are only shown while the stream hasn't received any user messages yet
+  // Local user messages are only shown while the stream hasn't received any user messages yet.
+  // Once the stream has user messages, switch to stream data — but keep any local messages
+  // whose msgId hasn't arrived in the stream yet (e.g. a second message sent before the first
+  // one is persisted to DB and echoed back through the stream).
+  const streamMsgIds = new Set(streamBased.map((m: any) => m.msgId as string));
   const streamHasUserMessages = streamBased.some((m: any) => m.role === 'user');
+  const pendingLocalMessages = localUserMessages.filter((m) => !streamMsgIds.has(m.msgId));
   const displayMessages = streamHasUserMessages
-    ? streamBased
+    ? [...streamBased, ...pendingLocalMessages]
     : [...localUserMessages, ...streamBased];
 
   // Rating

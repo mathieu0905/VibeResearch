@@ -277,11 +277,13 @@ export function IdeaChatModal({
     }
 
     const userMsg: ChatMessage = { role: 'user', content: text };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setStreaming(true);
     setStreamingContent('');
+
+    // Capture current messages + new user message for the stream request
+    const newMessages = [...messages, userMsg];
 
     try {
       await ipc.startChatStream({
