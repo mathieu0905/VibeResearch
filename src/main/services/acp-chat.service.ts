@@ -71,6 +71,10 @@ export class AcpChatService {
     return this.repo.updateSessionTitle(id, title);
   }
 
+  async updateSessionBackend(id: string, backend: string | null) {
+    return this.repo.updateSessionAcpFields(id, { backend });
+  }
+
   async deleteSession(id: string) {
     return this.repo.deleteSession(id);
   }

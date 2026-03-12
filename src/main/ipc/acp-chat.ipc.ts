@@ -76,6 +76,20 @@ export function setupAcpChatIpc() {
     },
   );
 
+  ipcMain.handle(
+    'acp-chat:session:updateBackend',
+    async (_, id: string, backend: string | null): Promise<IpcResult<unknown>> => {
+      try {
+        const result = await getService().updateSessionBackend(id, backend);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[acp-chat:session:updateBackend] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
   ipcMain.handle('acp-chat:session:delete', async (_, id: string): Promise<IpcResult<unknown>> => {
     try {
       const result = await getService().deleteSession(id);

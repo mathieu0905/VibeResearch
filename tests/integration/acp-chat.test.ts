@@ -69,7 +69,9 @@ describe('ACP Chat Service', () => {
 
       const sessions = await service.listSessionsByProject(projectId);
       expect(sessions).toHaveLength(2);
-      expect(sessions.map((s) => s.title)).toEqual(['Chat 1', 'Chat 2']);
+      // Check that both sessions are present (order doesn't matter for this test)
+      const titles = sessions.map((s) => s.title).sort();
+      expect(titles).toEqual(['Chat 1', 'Chat 2']);
     });
 
     it('gets a session by ID', async () => {

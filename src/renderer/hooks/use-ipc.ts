@@ -852,6 +852,18 @@ export const ipc = {
       createdAt: string;
       updatedAt: string;
     }>('acp-chat:session:updateTitle', id, title),
+  updateAcpChatSessionBackend: (id: string, backend: string | null) =>
+    invoke<{
+      id: string;
+      projectId: string;
+      title: string;
+      paperIdsJson: string;
+      repoIdsJson: string;
+      backend: string | null;
+      cwd: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }>('acp-chat:session:updateBackend', id, backend),
   deleteAcpChatSession: (id: string) =>
     invoke<{
       id: string;

@@ -78,9 +78,9 @@ export function UnifiedChatModal({
     }
   }, [isOpen, projectId]);
 
-  // Reset when modal opens (start new chat)
+  // Reset when modal closes (prepare for next open)
   useEffect(() => {
-    if (isOpen) {
+    if (!isOpen) {
       setInput('');
       setCurrentSessionId(null);
       setCurrentSessionPaperIds(null);
@@ -327,9 +327,24 @@ export function UnifiedChatModal({
                     </label>
                     <select
                       value={backend ?? 'lightweight'}
-                      onChange={(e) =>
-                        setBackend(e.target.value === 'lightweight' ? null : e.target.value)
-                      }
+                      onChange={async (e) => {
+                        const newBackend = e.target.value === 'lightweight' ? null : e.target.value;
+                        setBackend(newBackend);
+                        // Persist backend change to current session
+                        if (currentSessionId) {
+                          try {
+                            await ipc.updateAcpChatSessionBackend(currentSessionId, newBackend);
+                            // Update local sessions list
+                            setSessions((prev) =>
+                              prev.map((s) =>
+                                s.id === currentSessionId ? { ...s, backend: newBackend } : s,
+                              ),
+                            );
+                          } catch (err) {
+                            console.error('Failed to update session backend:', err);
+                          }
+                        }
+                      }}
                       className="w-full rounded-lg border border-notion-border bg-white px-2 py-1.5 text-sm text-notion-text focus:border-notion-accent focus:outline-none"
                     >
                       <option value="lightweight">{t('chat.backend.lightweight')}</option>
