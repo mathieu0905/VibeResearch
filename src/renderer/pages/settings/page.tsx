@@ -3386,6 +3386,7 @@ function renderSection(id: SectionId) {
 }
 
 export function SettingsPage() {
+  const { t } = useTranslation();
   const [activeSection, setActiveSection] = useState<SectionId>('general.proxy');
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
