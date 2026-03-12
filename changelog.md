@@ -1,5 +1,45 @@
 # Changelog
 
+## 2026-03-12 (63)
+
+### refactor: Migrate PDF viewer to @embedpdf/react-pdf-viewer
+
+**Summary**: Replaced custom react-pdf implementation with production-ready @embedpdf/react-pdf-viewer library for better performance and features.
+
+**Changes**:
+
+1. **Replaced PDF viewer library**:
+   - Removed: `react-pdf` and `pdfjs-dist` (custom implementation with manual zoom/pan)
+   - Added: `@embedpdf/react-pdf-viewer` (production-ready drop-in component)
+
+2. **Simplified component implementation** (`pdf-viewer-zoomable.tsx`):
+   - Removed ~200 lines of custom zoom/pan logic
+   - Removed manual wheel event handling for pinch gestures
+   - Removed custom mouse pan implementation
+   - Removed manual page navigation state management
+   - Now uses PDFViewer component with built-in features
+
+3. **Features retained**:
+   - Local file loading via Electron IPC (base64 → Blob URL)
+   - File not found callback for download UI
+   - Dark theme support
+   - All zoom, pan, and navigation features (now built-in)
+
+4. **Benefits**:
+   - Production-ready viewer with better performance
+   - Built-in toolbar with professional UI
+   - Thumbnail sidebar support
+   - Annotation support (available if needed)
+   - Better touch/trackpad gesture handling
+   - Reduced maintenance burden
+
+**Technical details**:
+
+- Still converts local file path to Blob URL for browser compatibility
+- Proper cleanup of blob URLs on unmount
+- Dark theme configured via `theme.preference: 'dark'`
+- Tab bar hidden (`tabBar: 'never'`) for single-document view
+
 ## 2026-03-12 (62)
 
 ### fix: Resolve PDF.js version mismatch and ArrayBuffer detachment issues
