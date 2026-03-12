@@ -1,5 +1,55 @@
 # Changelog
 
+## 2026-03-12 (62)
+
+### feat: Add trackpad pinch-to-zoom support for PDF viewer
+
+**Summary**: Replaced browser native PDF viewer with custom react-pdf implementation to support trackpad gestures (pinch-to-zoom and pan).
+
+**Changes**:
+
+1. **Installed dependencies**:
+   - `react-pdf` - React wrapper for PDF.js
+   - `pdfjs-dist` - PDF.js core library
+   - `@types/pdfjs-dist` - TypeScript types
+
+2. **Created new PDF viewer component** (`pdf-viewer-zoomable.tsx`):
+   - Custom PDF rendering using react-pdf and canvas
+   - Trackpad pinch gesture detection (via `wheel` event with `ctrlKey`)
+   - Zoom controls: pinch, buttons (±), and reset
+   - Pan support: two-finger scroll or mouse drag
+   - Page navigation controls
+   - Scale range: 50% - 500%
+   - Proper cleanup and error handling
+
+3. **Updated main PDF viewer** (`pdf-viewer.tsx`):
+   - Now delegates to `PdfViewerZoomable` component
+   - Maintains same API (path, onFileNotFound callback)
+
+**Technical details**:
+
+- PDF.js worker configured to use local bundled worker (no CDN dependency)
+- Vite automatically bundles `pdf.worker.min.mjs` into dist
+- Wheel event listener with `passive: false` to enable preventDefault for zoom
+- Pinch detection: `e.ctrlKey` is set by browser for trackpad pinch gestures
+- Pan offset calculated from deltaX/deltaY for scroll, or mouse drag
+- Canvas-based rendering for better control over zoom/pan
+
+**Impact**:
+
+- ✅ Users can now pinch-to-zoom PDFs on trackpad
+- ✅ Two-finger scroll for panning
+- ✅ Mouse drag also works for panning
+- ✅ Zoom controls UI for manual adjustment
+- ✅ No more reliance on browser's built-in PDF viewer
+- ✅ Better user experience for PDF reading
+
+**Files changed**:
+
+- `src/renderer/components/pdf-viewer-zoomable.tsx` (new)
+- `src/renderer/components/pdf-viewer.tsx` (updated)
+- `package.json` (added react-pdf, pdfjs-dist, @types/pdfjs-dist)
+
 ## 2026-03-12 (61)
 
 ### fix: i18n - Translate all remaining hardcoded UI text
