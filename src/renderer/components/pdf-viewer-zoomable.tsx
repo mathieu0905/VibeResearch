@@ -101,14 +101,14 @@ export function PdfViewerZoomable({ path, onFileNotFound }: PdfViewerZoomablePro
     if (e.ctrlKey) {
       // Pinch zoom
       const delta = -e.deltaY;
-      const zoomFactor = delta > 0 ? 1.1 : 0.9;
+      const zoomFactor = delta > 0 ? 1.05 : 0.95;
 
       setScale((prevScale) => {
         const newScale = Math.max(0.5, Math.min(5.0, prevScale * zoomFactor));
         return newScale;
       });
     } else {
-      // Scroll
+      // Scroll (pan)
       setPanOffset((prev) => ({
         x: prev.x - e.deltaX,
         y: prev.y - e.deltaY,
@@ -247,7 +247,7 @@ export function PdfViewerZoomable({ path, onFileNotFound }: PdfViewerZoomablePro
       {/* PDF container */}
       <div
         ref={containerRef}
-        className="h-full w-full overflow-hidden"
+        className="flex h-full w-full items-center justify-center overflow-hidden"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
@@ -258,8 +258,6 @@ export function PdfViewerZoomable({ path, onFileNotFound }: PdfViewerZoomablePro
           ref={contentRef}
           style={{
             transform: `translate(${panOffset.x}px, ${panOffset.y}px)`,
-            display: 'inline-block',
-            transformOrigin: 'top left',
           }}
         >
           {pdfUrl && (

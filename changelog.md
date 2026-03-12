@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-03-12 (64)
+
+### feat: Improve PDF viewer centering and pinch-to-zoom smoothness
+
+**Summary**: Enhanced PDF viewer UX with centered layout and smoother pinch zoom gestures.
+
+**Changes**:
+
+1. **Centered PDF display**:
+   - Changed container layout from `overflow-hidden` to `flex items-center justify-center`
+   - PDF now appears centered in the viewport instead of top-left aligned
+   - Better initial presentation for all PDF sizes
+
+2. **Smoother pinch zoom**:
+   - Reduced zoom factor from 1.1/0.9 to 1.05/0.95 for finer control
+   - More gradual zoom response to trackpad pinch gestures
+   - Better matches native app zoom behavior
+
+**Technical details**:
+
+- Container uses flexbox centering while maintaining overflow-hidden for panning
+- Content div uses CSS transform for pan offset
+- Page component handles scale rendering for sharp text at all zoom levels
+
 ## 2026-03-12 (63)
 
 ### fix: Revert PDF viewer to react-pdf (embedpdf incompatible with Electron)
