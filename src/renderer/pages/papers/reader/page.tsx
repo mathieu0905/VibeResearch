@@ -276,6 +276,22 @@ export function ReaderPage() {
     ? [...streamBased, ...pendingLocalMessages]
     : [...localUserMessages, ...streamBased];
 
+  // Debug logging for message display
+  if (localUserMessages.length > 0) {
+    console.log('[ReaderChat] Message display debug:', {
+      localUserMessages: localUserMessages.length,
+      agentMessages: agentMessages.length,
+      historicMessages: historicMessages.length,
+      streamBased: streamBased.length,
+      streamHasUserMessages,
+      pendingLocalMessages: pendingLocalMessages.length,
+      displayMessages: displayMessages.length,
+      localMsgIds: localUserMessages.map((m) => m.msgId),
+      streamMsgIds: Array.from(streamMsgIds),
+      pendingMsgIds: pendingLocalMessages.map((m) => m.msgId),
+    });
+  }
+
   // Rating
   const [rating, setRating] = useState<number | null>(null);
   const [showRatingPrompt, setShowRatingPrompt] = useState(false);
@@ -487,7 +503,7 @@ export function ReaderPage() {
       .listAgentTodos()
       .then(async (todos) => {
         const chatTodos = todos
-          .filter((t) => t.title === titlePrefix || t.title.startsWith('Chat:'))
+          .filter((t) => t.title === titlePrefix)
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
         // For each chat todo, get the latest run
@@ -592,7 +608,7 @@ export function ReaderPage() {
         .listAgentTodos()
         .then(async (todos) => {
           const chatTodos = todos
-            .filter((t) => t.title === titlePrefix || t.title.startsWith('Chat:'))
+            .filter((t) => t.title === titlePrefix)
             .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
           const sessions: { id: string; title: string; createdAt: string; runId: string | null }[] =
             [];

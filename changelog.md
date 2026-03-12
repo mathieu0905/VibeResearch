@@ -1,5 +1,44 @@
 # Changelog
 
+## 2026-03-12 (59)
+
+### fix: Chat history now correctly filters by paper (no cross-contamination)
+
+**Summary**: Fixed critical bug where chat history dropdown showed conversations from ALL papers instead of just the current paper.
+
+**Problem**:
+When opening the chat history dropdown in reader page, users would see chat sessions from other papers mixed together with the current paper's sessions. This made it confusing and could lead to loading wrong conversations.
+
+**Root cause**:
+The chat session filter used an incorrect condition:
+
+```typescript
+.filter((t) => t.title === titlePrefix || t.title.startsWith('Chat:'))
+```
+
+This would match:
+
+1. Current paper's chats (`t.title === titlePrefix`) ✅
+2. **ALL chats from any paper** (`t.title.startsWith('Chat:')`) ❌
+
+**Solution**:
+Remove the overly broad `startsWith('Chat:')` condition and only match the exact title prefix for the current paper:
+
+```typescript
+.filter((t) => t.title === titlePrefix)
+```
+
+**Impact**:
+
+- ✅ Chat history dropdown now only shows sessions for the current paper
+- ✅ No more confusion from seeing other papers' conversations
+- ✅ Clicking history items loads the correct session every time
+- ✅ Fixed in both places: initial load (useEffect) and refresh (handleNewChat)
+
+**Files changed**:
+
+- `src/renderer/pages/papers/reader/page.tsx`: Fixed chat session filtering logic in two locations
+
 ## 2026-03-12 (58)
 
 ### fix: Reader chat panel can now continue conversation after page reload
