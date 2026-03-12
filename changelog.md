@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-03-12 (42)
+
+### feat: ACP chat integration — Phase 7 i18n support
+
+- **Goal**: Add internationalization support to UnifiedChatModal for Chinese and English.
+- **Changes**:
+  - Added `chat` section to `en.json` and `zh.json` with 30+ translation keys
+  - Integrated `useTranslation` hook in UnifiedChatModal component
+  - Translated all UI strings: mode selector, history, placeholders, hints, errors
+  - Backend labels: "💬 Lightweight" / "🤖 Claude Agent"
+  - Session management: "History", "New Chat", "No chat history"
+  - Message UI: "Thinking…", "Type a message…", "Press Enter to send"
+  - Source count: "{{count}} source(s) selected" with pluralization
+  - Error messages: load failed, send failed, no model configured
+  - Permission UI: "Permission Required", "Approve", "Reject"
+- **Translation Keys**:
+  - `chat.mode`, `chat.modeLightweight`, `chat.modeAgent`
+  - `chat.history`, `chat.newChat`, `chat.noHistory`
+  - `chat.thinking`, `chat.placeholder`, `chat.sendHint`
+  - `chat.sourcesSelected`, `chat.startConversation`
+  - `chat.error.*` (loadFailed, sendFailed, sessionCreateFailed, noModel)
+  - `chat.permission.*` (title, description, approve, reject)
+  - `chat.backend.*` (lightweight, claude, codex, gemini, opencode)
+- **Testing**: All tests pass (437 passed, 48 skipped)
+- **Next**: Phase 5 (file attachments), Phase 6 (multi-backend support), Phase 8 (testing and docs)
+
 ## 2026-03-12 (41)
 
 ### feat: ACP chat integration — Phase 4 unified chat UI

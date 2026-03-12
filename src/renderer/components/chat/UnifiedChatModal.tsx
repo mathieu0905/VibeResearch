@@ -13,6 +13,7 @@ import {
   History,
   Zap,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ipc } from '../../hooks/use-ipc';
 import { useAcpChatStream } from '../../hooks/use-acp-chat-stream';
 
@@ -49,6 +50,7 @@ export function UnifiedChatModal({
   paperIds,
   repoIds,
 }: UnifiedChatModalProps) {
+  const { t } = useTranslation();
   const [input, setInput] = useState('');
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -295,7 +297,7 @@ export function UnifiedChatModal({
                   {/* Backend Selector */}
                   <div className="flex-shrink-0 border-b border-notion-border p-3">
                     <label className="mb-1.5 block text-xs font-medium text-notion-text">
-                      Mode
+                      {t('chat.mode')}
                     </label>
                     <select
                       value={backend ?? 'lightweight'}
@@ -304,8 +306,8 @@ export function UnifiedChatModal({
                       }
                       className="w-full rounded-lg border border-notion-border bg-white px-2 py-1.5 text-sm text-notion-text focus:border-notion-accent focus:outline-none"
                     >
-                      <option value="lightweight">💬 Lightweight</option>
-                      <option value="claude-code">🤖 Claude Agent</option>
+                      <option value="lightweight">{t('chat.backend.lightweight')}</option>
+                      <option value="claude-code">{t('chat.backend.claude')}</option>
                     </select>
                   </div>
 
@@ -313,12 +315,14 @@ export function UnifiedChatModal({
                   <div className="flex flex-shrink-0 items-center justify-between border-b border-notion-border px-3 py-3">
                     <div className="flex items-center gap-2">
                       <History size={16} className="text-notion-text-secondary" />
-                      <span className="text-sm font-medium text-notion-text">History</span>
+                      <span className="text-sm font-medium text-notion-text">
+                        {t('chat.history')}
+                      </span>
                     </div>
                     <button
                       onClick={createNewSession}
                       className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-notion-sidebar-hover"
-                      title="New Chat"
+                      title={t('chat.newChat')}
                     >
                       <Plus size={16} className="text-notion-text-secondary" />
                     </button>
@@ -332,7 +336,7 @@ export function UnifiedChatModal({
                       </div>
                     ) : sessions.length === 0 ? (
                       <div className="px-2 py-4 text-center">
-                        <p className="text-xs text-notion-text-tertiary">No chat history</p>
+                        <p className="text-xs text-notion-text-tertiary">{t('chat.noHistory')}</p>
                       </div>
                     ) : (
                       <div className="space-y-1">
@@ -401,7 +405,7 @@ export function UnifiedChatModal({
                   </h2>
                   {sourceCount > 0 && (
                     <p className="text-xs text-notion-text-tertiary">
-                      {sourceCount} source{sourceCount > 1 ? 's' : ''} selected
+                      {t('chat.sourcesSelected', { count: sourceCount })}
                     </p>
                   )}
                 </div>
@@ -423,11 +427,11 @@ export function UnifiedChatModal({
                         className="mx-auto mb-3 text-notion-text-tertiary/40"
                       />
                       <p className="text-sm text-notion-text-tertiary">
-                        Start a conversation about your research ideas
+                        {t('chat.startConversation')}
                       </p>
                       {sourceCount > 0 && (
                         <p className="mt-1 text-xs text-notion-text-tertiary">
-                          {sourceCount} source{sourceCount > 1 ? 's' : ''} will be used as context
+                          {t('chat.sourcesSelected', { count: sourceCount })}
                         </p>
                       )}
                     </div>
@@ -473,7 +477,7 @@ export function UnifiedChatModal({
                     <div className="max-w-[80%] rounded-xl bg-notion-sidebar px-4 py-2.5 text-sm leading-relaxed text-notion-text">
                       <span className="flex items-center gap-2 text-notion-text-tertiary">
                         <Loader2 size={12} className="animate-spin" />
-                        Thinking…
+                        {t('chat.thinking')}
                       </span>
                     </div>
                   </div>
@@ -515,7 +519,7 @@ export function UnifiedChatModal({
                         void sendMessage();
                       }
                     }}
-                    placeholder="Ask about research ideas…"
+                    placeholder={t('chat.placeholder')}
                     rows={1}
                     className="w-full resize-none bg-transparent px-4 py-3 pr-12 text-sm text-notion-text placeholder:text-notion-text-tertiary focus:outline-none"
                     style={{ minHeight: '48px', maxHeight: '200px' }}
@@ -538,7 +542,7 @@ export function UnifiedChatModal({
                   )}
                 </div>
                 <p className="mt-2 text-center text-xs text-notion-text-tertiary">
-                  Press Enter to send, Shift+Enter for new line
+                  {t('chat.sendHint')}
                 </p>
               </div>
             </div>

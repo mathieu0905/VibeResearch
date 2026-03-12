@@ -213,5 +213,44 @@
     "title": "Tasks",
     "noTasks": "No tasks yet",
     "newTask": "New Task"
+  },
+  "chat": {
+    "title": "Chat",
+    "mode": "Mode",
+    "modeLightweight": "Lightweight",
+    "modeAgent": "Agent",
+    "history": "History",
+    "newChat": "New Chat",
+    "noHistory": "No chat history yet",
+    "deleteSession": "Delete session",
+    "deleteConfirm": "Delete this chat session?",
+    "thinking": "Thinking…",
+    "placeholder": "Type a message…",
+    "send": "Send",
+    "sendHint": "Press Enter to send, Shift+Enter for new line",
+    "sourcesSelected": "{{count}} source(s) selected",
+    "startConversation": "Start a conversation",
+    "error": {
+      "loadFailed": "Failed to load chat session",
+      "sendFailed": "Failed to send message",
+      "sessionCreateFailed": "Failed to create chat session",
+      "noModel": "No model configured. Please set up a model in Settings.",
+      "agentSpawnFailed": "Failed to start agent"
+    },
+    "permission": {
+      "title": "Permission Required",
+      "description": "The agent is requesting permission to:",
+      "approve": "Approve",
+      "reject": "Reject",
+      "allowOnce": "Allow once",
+      "rejectAlways": "Reject always"
+    },
+    "backend": {
+      "lightweight": "💬 Lightweight",
+      "claude": "🤖 Claude Agent",
+      "codex": "🤖 Codex",
+      "gemini": "🤖 Gemini",
+      "opencode": "🤖 OpenCode"
+    }
   }
 }

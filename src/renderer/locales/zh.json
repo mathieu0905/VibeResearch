@@ -213,5 +213,44 @@
     "title": "任务",
     "noTasks": "暂无任务",
     "newTask": "新建任务"
+  },
+  "chat": {
+    "title": "对话",
+    "mode": "模式",
+    "modeLightweight": "轻量模式",
+    "modeAgent": "代理模式",
+    "history": "历史记录",
+    "newChat": "新对话",
+    "noHistory": "暂无对话历史",
+    "deleteSession": "删除会话",
+    "deleteConfirm": "确定删除此对话会话？",
+    "thinking": "思考中…",
+    "placeholder": "输入消息…",
+    "send": "发送",
+    "sendHint": "按 Enter 发送，Shift+Enter 换行",
+    "sourcesSelected": "已选择 {{count}} 个来源",
+    "startConversation": "开始对话",
+    "error": {
+      "loadFailed": "加载对话会话失败",
+      "sendFailed": "发送消息失败",
+      "sessionCreateFailed": "创建对话会话失败",
+      "noModel": "未配置模型。请在设置中配置模型。",
+      "agentSpawnFailed": "启动代理失败"
+    },
+    "permission": {
+      "title": "需要权限",
+      "description": "代理正在请求权限：",
+      "approve": "批准",
+      "reject": "拒绝",
+      "allowOnce": "允许一次",
+      "rejectAlways": "始终拒绝"
+    },
+    "backend": {
+      "lightweight": "💬 轻量模式",
+      "claude": "🤖 Claude 代理",
+      "codex": "🤖 Codex",
+      "gemini": "🤖 Gemini",
+      "opencode": "🤖 OpenCode"
+    }
   }
 }
