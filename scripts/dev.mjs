@@ -25,21 +25,14 @@ function shutdown() {
 
   log('dev', 'Shutting down...');
 
-  // Kill child processes with SIGTERM first, then SIGKILL if needed
+  // Kill child processes immediately
   const killProcess = (proc, name) => {
     if (!proc || proc.killed) return;
 
     try {
-      // Try graceful shutdown first
-      proc.kill('SIGTERM');
-
-      // Force kill after 2 seconds if still running
-      setTimeout(() => {
-        if (proc && !proc.killed) {
-          log('dev', `Force killing ${name}...`);
-          proc.kill('SIGKILL');
-        }
-      }, 2000);
+      log('dev', `Killing ${name}...`);
+      // Use SIGKILL for immediate termination
+      proc.kill('SIGKILL');
     } catch (err) {
       log('dev', `Error killing ${name}: ${err.message}`);
     }
@@ -51,10 +44,8 @@ function shutdown() {
   electronProcess = null;
   viteProcess = null;
 
-  // Exit after a short delay to allow cleanup
-  setTimeout(() => {
-    process.exit(0);
-  }, 2500);
+  // Exit immediately
+  process.exit(0);
 }
 
 process.on('SIGINT', shutdown);

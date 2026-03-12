@@ -1,4 +1,4 @@
-import { PdfViewerZoomable } from './pdf-viewer-zoomable';
+import { PdfViewerNative } from './pdf-viewer-native';
 
 interface PdfViewerProps {
   /** Local file path (not URL) */
@@ -7,6 +7,10 @@ interface PdfViewerProps {
   onFileNotFound?: () => void;
 }
 
+/**
+ * PDF viewer using Chrome's native PDF renderer
+ * No libraries needed - Chrome handles everything
+ */
 export function PdfViewer({ path, onFileNotFound }: PdfViewerProps) {
-  return <PdfViewerZoomable path={path} onFileNotFound={onFileNotFound} />;
+  return <PdfViewerNative path={path} onFileNotFound={onFileNotFound} />;
 }
