@@ -1,5 +1,41 @@
 # Changelog
 
+## 2026-03-12 (58)
+
+### fix: Reader chat panel now loads specific session from URL todoId
+
+**Summary**: Fixed bug where clicking a chat history entry from paper overview would not load the correct chat session in reader page.
+
+**Problem**:
+When users clicked a chat history item from the paper overview page (which navigates to `/papers/{id}/reader?panel=chat&todoId={sessionId}`), the reader page would ignore the `todoId` URL parameter and instead auto-load the most recent chat session for that paper. This made it impossible to view older chat sessions.
+
+**Root cause**:
+The reader page's chat restoration logic (`src/renderer/pages/papers/reader/page.tsx:382-468`) only implemented auto-restore of the most recent session. It never checked for a `todoId` query parameter in the URL.
+
+**Solution**:
+
+1. **Extracted chat loading logic into reusable function** (`loadChatSession`):
+   - Handles loading run messages from DB
+   - Checks for active running tasks
+   - Merges chunked messages correctly
+   - Can be called with any todoId
+
+2. **Added URL todoId parameter handling**:
+   - Check `searchParams.get('todoId')` first
+   - If present, load that specific session
+   - Otherwise, fall back to auto-restore behavior
+
+**Impact**:
+
+- Users can now click chat history items and view the correct session
+- Switching between different chat sessions works correctly
+- Auto-restore still works when no todoId is specified
+- Code is more maintainable with reduced duplication
+
+**Files changed**:
+
+- `src/renderer/pages/papers/reader/page.tsx`: Added `loadChatSession` callback and URL parameter handling
+
 ## 2026-03-12 (57)
 
 ### fix: Chat message ordering and deduplication across runs

@@ -284,6 +284,79 @@ export function ReaderPage() {
   const MAX_WIDTH = 60;
   const activePanel = searchParams.get('panel');
 
+  // Load a specific chat session by todoId
+  const loadChatSession = useCallback(
+    async (todoId: string) => {
+      try {
+        const runs = await ipc.listAgentTodoRuns(todoId);
+        if (runs.length === 0) return;
+
+        const latestRun = runs[0];
+        agentTodoIdRef.current = todoId;
+        setAgentTodoId(todoId);
+        setAgentRunId(latestRun.id);
+        agentRunIdRef.current = latestRun.id;
+
+        // First check if the task is still actively running in main process
+        const activeStatus = await ipc.getActiveAgentTodoStatus(todoId);
+        if (
+          activeStatus &&
+          (activeStatus.status === 'running' ||
+            activeStatus.status === 'initializing' ||
+            activeStatus.status === 'waiting_permission')
+        ) {
+          // Task is still running - use live messages from runner
+          setHistoricMessages(
+            activeStatus.messages.map((m) => ({
+              ...m,
+              content: typeof m.content === 'string' ? JSON.parse(m.content as string) : m.content,
+              status: m.status ?? null,
+            })),
+          );
+          return;
+        }
+
+        // Task completed/failed - load persisted messages from DB
+        const msgs = await ipc.getAgentTodoRunMessages(latestRun.id);
+        const parsed = msgs.map((m) => ({
+          ...m,
+          content: typeof m.content === 'string' ? JSON.parse(m.content) : m.content,
+        }));
+
+        // Merge chunked messages (same logic as task detail page)
+        const merged: typeof parsed = [];
+        const seen = new Map<string, number>();
+        for (const m of parsed) {
+          const existing = seen.get(m.msgId);
+          if (existing !== undefined && m.type === 'text') {
+            const prev = merged[existing];
+            const prevText = (prev.content as { text: string }).text;
+            const newText = (m.content as { text: string }).text;
+            merged[existing] = { ...prev, content: { text: prevText + newText } };
+          } else if (existing !== undefined && m.type === 'tool_call') {
+            const prev = merged[existing];
+            const prevContent = prev.content as Record<string, unknown>;
+            const newContent = m.content as Record<string, unknown>;
+            const mergedContent: Record<string, unknown> = { ...prevContent };
+            for (const [k, v] of Object.entries(newContent)) {
+              if (v !== undefined && v !== null && v !== '') mergedContent[k] = v;
+            }
+            merged[existing] = { ...prev, status: m.status || prev.status, content: mergedContent };
+          } else if (existing !== undefined && m.type === 'plan') {
+            merged[existing] = m;
+          } else {
+            seen.set(m.msgId, merged.length);
+            merged.push(m);
+          }
+        }
+        setHistoricMessages(merged);
+      } catch (error) {
+        console.error('Failed to load chat session:', error);
+      }
+    },
+    [setAgentTodoId, setAgentRunId, setHistoricMessages],
+  );
+
   useEffect(() => {
     if (activePanel === 'chat') {
       setLayoutMode('split');
@@ -382,6 +455,16 @@ export function ReaderPage() {
   // Restore previous chat session when paper loads
   useEffect(() => {
     if (!paper) return;
+
+    // Check if URL specifies a specific todoId to load
+    const urlTodoId = searchParams.get('todoId');
+    if (urlTodoId) {
+      // Load the specific chat session from URL
+      loadChatSession(urlTodoId);
+      return;
+    }
+
+    // Otherwise, auto-restore the most recent chat session for this paper
     const titlePrefix = `Chat: ${paper.title.slice(0, 60)}`;
     ipc
       .listAgentTodos()
@@ -389,73 +472,12 @@ export function ReaderPage() {
         const match = todos
           .filter((t) => t.title === titlePrefix)
           .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
-        if (!match) return;
-
-        const runs = await ipc.listAgentTodoRuns(match.id);
-        if (runs.length === 0) return;
-
-        const latestRun = runs[0];
-        agentTodoIdRef.current = match.id;
-        setAgentTodoId(match.id);
-        setAgentRunId(latestRun.id);
-        agentRunIdRef.current = latestRun.id;
-
-        // First check if the task is still actively running in main process
-        const activeStatus = await ipc.getActiveAgentTodoStatus(match.id);
-        if (
-          activeStatus &&
-          (activeStatus.status === 'running' ||
-            activeStatus.status === 'initializing' ||
-            activeStatus.status === 'waiting_permission')
-        ) {
-          // Task is still running - use live messages from runner
-          // These messages are already accumulated correctly in the runner
-          setHistoricMessages(
-            activeStatus.messages.map((m) => ({
-              ...m,
-              content: typeof m.content === 'string' ? JSON.parse(m.content as string) : m.content,
-              status: m.status ?? null,
-            })),
-          );
-          return;
+        if (match) {
+          await loadChatSession(match.id);
         }
-
-        // Task completed/failed - load persisted messages from DB
-        const msgs = await ipc.getAgentTodoRunMessages(latestRun.id);
-        const parsed = msgs.map((m) => ({
-          ...m,
-          content: typeof m.content === 'string' ? JSON.parse(m.content) : m.content,
-        }));
-        // Merge chunked messages (same logic as task detail page)
-        const merged: typeof parsed = [];
-        const seen = new Map<string, number>();
-        for (const m of parsed) {
-          const existing = seen.get(m.msgId);
-          if (existing !== undefined && m.type === 'text') {
-            const prev = merged[existing];
-            const prevText = (prev.content as { text: string }).text;
-            const newText = (m.content as { text: string }).text;
-            merged[existing] = { ...prev, content: { text: prevText + newText } };
-          } else if (existing !== undefined && m.type === 'tool_call') {
-            const prev = merged[existing];
-            const prevContent = prev.content as Record<string, unknown>;
-            const newContent = m.content as Record<string, unknown>;
-            const mergedContent: Record<string, unknown> = { ...prevContent };
-            for (const [k, v] of Object.entries(newContent)) {
-              if (v !== undefined && v !== null && v !== '') mergedContent[k] = v;
-            }
-            merged[existing] = { ...prev, status: m.status || prev.status, content: mergedContent };
-          } else if (existing !== undefined && m.type === 'plan') {
-            merged[existing] = m;
-          } else {
-            seen.set(m.msgId, merged.length);
-            merged.push(m);
-          }
-        }
-        setHistoricMessages(merged);
       })
       .catch(() => undefined);
-  }, [paper?.id]);
+  }, [paper?.id, searchParams, loadChatSession]);
 
   // Load chat sessions for history dropdown
   useEffect(() => {
