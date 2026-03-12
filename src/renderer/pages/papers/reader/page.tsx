@@ -644,6 +644,7 @@ export function ReaderPage() {
     const agentId = chatModel.id;
 
     const runId = agentRunIdRef.current;
+    const isRunning = agentStatus === 'running' || agentStatus === 'initializing';
 
     if (!agentTodoId) {
       // First message: create a new todo and run it.
@@ -670,8 +671,8 @@ export function ReaderPage() {
       const run = await ipc.runAgentTodo(todo.id);
       setAgentRunId(run.id);
       agentRunIdRef.current = run.id;
-    } else if (!runId) {
-      // Stopped/cancelled: resume the existing todo with a new run.
+    } else if (!runId || !isRunning) {
+      // No active run or agent stopped: resume the existing todo with a new run.
       // Update the prompt to the new user message, then run.
       // The service layer will automatically find the previous sessionId and resume it.
       await ipc.updateAgentTodo(agentTodoId, { prompt: fullText });
@@ -682,7 +683,16 @@ export function ReaderPage() {
       // Follow-up message: send to existing active run
       await ipc.sendAgentMessage(agentTodoId, runId, fullText);
     }
-  }, [chatInput, agentRunning, paper, chatModel, agentTodoId, paperDir, attachedPapers]);
+  }, [
+    chatInput,
+    agentRunning,
+    paper,
+    chatModel,
+    agentTodoId,
+    paperDir,
+    attachedPapers,
+    agentStatus,
+  ]);
 
   const handleChatKill = useCallback(async () => {
     if (agentTodoId) {
@@ -727,9 +737,19 @@ export function ReaderPage() {
       agentRunIdRef.current = run.id;
     } else {
       const runId = agentRunIdRef.current;
-      if (runId) await ipc.sendAgentMessage(agentTodoId, runId, prompt);
+      const isRunning = agentStatus === 'running' || agentStatus === 'initializing';
+      if (!runId || !isRunning) {
+        // No active run: create a new run
+        await ipc.updateAgentTodo(agentTodoId, { prompt });
+        const run = await ipc.runAgentTodo(agentTodoId);
+        setAgentRunId(run.id);
+        agentRunIdRef.current = run.id;
+      } else {
+        // Send to existing active run
+        await ipc.sendAgentMessage(agentTodoId, runId, prompt);
+      }
     }
-  }, [t, agentRunning, paper, chatModel, agentTodoId, paperDir]);
+  }, [t, agentRunning, paper, chatModel, agentTodoId, paperDir, agentStatus]);
 
   const handleDownloadPdf = useCallback(async () => {
     if (!paper) return;

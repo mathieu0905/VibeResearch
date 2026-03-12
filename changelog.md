@@ -2,39 +2,59 @@
 
 ## 2026-03-12 (58)
 
-### fix: Reader chat panel now loads specific session from URL todoId
+### fix: Reader chat panel can now continue conversation after page reload
 
-**Summary**: Fixed bug where clicking a chat history entry from paper overview would not load the correct chat session in reader page.
+**Summary**: Fixed critical bug where chat panel became unresponsive after switching pages and returning, making it impossible to continue conversations.
 
 **Problem**:
-When users clicked a chat history item from the paper overview page (which navigates to `/papers/{id}/reader?panel=chat&todoId={sessionId}`), the reader page would ignore the `todoId` URL parameter and instead auto-load the most recent chat session for that paper. This made it impossible to view older chat sessions.
+
+1. User opens reader page and starts a chat conversation
+2. User switches to another page (e.g., back to papers list)
+3. User returns to reader page
+4. Chat panel shows history but is completely unresponsive:
+   - Typing and clicking send does nothing
+   - No loading spinner appears
+   - No error messages shown
 
 **Root cause**:
-The reader page's chat restoration logic (`src/renderer/pages/papers/reader/page.tsx:382-468`) only implemented auto-restore of the most recent session. It never checked for a `todoId` query parameter in the URL.
+When loading a completed chat session, the code would set `agentRunId` to point to the **completed** run. Then when user tried to send a new message:
+
+1. `handleChatSend` checked: `agentTodoId` exists ✓, `runId` exists ✓
+2. It assumed the run was still active and tried to send message to it
+3. But the run was already completed, so `sendAgentMessage` failed silently
+4. The correct behavior should have been to create a **new** run to resume the conversation
 
 **Solution**:
 
-1. **Extracted chat loading logic into reusable function** (`loadChatSession`):
-   - Handles loading run messages from DB
-   - Checks for active running tasks
-   - Merges chunked messages correctly
-   - Can be called with any todoId
+1. **Check agent running status before sending messages**:
+   - Added `isRunning` check: `agentStatus === 'running' || agentStatus === 'initializing'`
+   - Changed condition from `!runId` to `!runId || !isRunning`
+   - If agent is not running, always create a new run instead of trying to send to completed run
 
-2. **Added URL todoId parameter handling**:
-   - Check `searchParams.get('todoId')` first
+2. **Applied same fix to both send handlers**:
+   - `handleChatSend`: Regular message sending
+   - `handleSummarize`: Quick summarize button
+
+3. **Added URL todoId parameter handling** (bonus fix):
+   - Check `searchParams.get('todoId')` first when loading page
    - If present, load that specific session
-   - Otherwise, fall back to auto-restore behavior
+   - Otherwise, fall back to auto-restore most recent session
 
 **Impact**:
 
-- Users can now click chat history items and view the correct session
-- Switching between different chat sessions works correctly
-- Auto-restore still works when no todoId is specified
-- Code is more maintainable with reduced duplication
+- ✅ Chat panel is now responsive after page reload
+- ✅ Users can continue conversations in restored sessions
+- ✅ Loading spinner appears correctly when sending messages
+- ✅ New runs are created automatically when needed
+- ✅ Clicking chat history items loads the correct session
+- ✅ No more silent failures when messaging completed runs
 
 **Files changed**:
 
-- `src/renderer/pages/papers/reader/page.tsx`: Added `loadChatSession` callback and URL parameter handling
+- `src/renderer/pages/papers/reader/page.tsx`:
+  - Added `isRunning` status check in `handleChatSend` and `handleSummarize`
+  - Added `loadChatSession` callback with URL parameter handling
+  - Added `agentStatus` to callback dependencies
 
 ## 2026-03-12 (57)
 
