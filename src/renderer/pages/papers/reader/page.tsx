@@ -252,6 +252,15 @@ export function ReaderPage() {
   } = useAgentStream(agentTodoId ?? '', agentTodoIdRef);
   const agentRunning = agentStatus === 'running' || agentStatus === 'initializing';
 
+  // When agent stops (cancelled/failed), clear the runId so the next message
+  // triggers a new run on the same todo (which will resume the previous session).
+  useEffect(() => {
+    if (agentStatus === 'cancelled' || agentStatus === 'failed') {
+      setAgentRunId(null);
+      agentRunIdRef.current = null;
+    }
+  }, [agentStatus]);
+
   // Use live stream messages if available, otherwise fall back to historic messages
   const streamBased = agentMessages.length > 0 ? agentMessages : historicMessages;
   // Local user messages are only shown while the stream hasn't received any user messages yet
@@ -605,6 +614,8 @@ export function ReaderPage() {
     const cwd = paperDir ?? undefined;
     const agentId = chatModel.id;
 
+    const runId = agentRunIdRef.current;
+
     if (!agentTodoId) {
       // First message: create a new todo and run it.
       // Inject paper context with file paths so agent can directly access them
@@ -630,12 +641,17 @@ export function ReaderPage() {
       const run = await ipc.runAgentTodo(todo.id);
       setAgentRunId(run.id);
       agentRunIdRef.current = run.id;
+    } else if (!runId) {
+      // Stopped/cancelled: resume the existing todo with a new run.
+      // Update the prompt to the new user message, then run.
+      // The service layer will automatically find the previous sessionId and resume it.
+      await ipc.updateAgentTodo(agentTodoId, { prompt: fullText });
+      const run = await ipc.runAgentTodo(agentTodoId);
+      setAgentRunId(run.id);
+      agentRunIdRef.current = run.id;
     } else {
-      // Follow-up message: send to existing run
-      const runId = agentRunIdRef.current;
-      if (runId) {
-        await ipc.sendAgentMessage(agentTodoId, runId, fullText);
-      }
+      // Follow-up message: send to existing active run
+      await ipc.sendAgentMessage(agentTodoId, runId, fullText);
     }
   }, [chatInput, agentRunning, paper, chatModel, agentTodoId, paperDir, attachedPapers]);
 

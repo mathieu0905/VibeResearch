@@ -6,7 +6,7 @@ import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
 } from '../agent/acp-types';
-import { YOLO_MODE_IDS } from '../agent/acp-types';
+import { YOLO_MODE_IDS, RESUME_CLI_ARGS } from '../agent/acp-types';
 import { transformAcpUpdate, TodoMessage } from '../agent/acp-adapter';
 import type { SshConnectConfig } from '@shared';
 
@@ -73,6 +73,14 @@ export class AgentTaskRunner extends EventEmitter {
         message: statusMessage,
       });
 
+      // Compute CLI-level resume args for backends that resume via CLI flags (e.g. gemini, opencode).
+      // Backends that resume via ACP _meta (claude-code, codex, goose, qwen) pass nothing here.
+      const resumeCliArgsFactory = RESUME_CLI_ARGS[this.config.backend];
+      const resumeCliArgs =
+        resumeCliArgsFactory && this.config.resumeSessionId
+          ? resumeCliArgsFactory(this.config.resumeSessionId)
+          : undefined;
+
       // Spawn locally or remotely based on config
       if (this.config.sshConfig) {
         await this.connection.spawnRemote(
@@ -81,6 +89,7 @@ export class AgentTaskRunner extends EventEmitter {
           this.config.acpArgs,
           this.config.cwd,
           this.config.extraEnv,
+          resumeCliArgs,
         );
       } else {
         await this.connection.spawn(
@@ -88,12 +97,14 @@ export class AgentTaskRunner extends EventEmitter {
           this.config.acpArgs,
           this.config.cwd,
           this.config.extraEnv,
+          resumeCliArgs,
         );
       }
 
       this.sessionId = await this.connection.createSession(
         this.config.cwd,
         this.config.resumeSessionId,
+        this.config.backend,
       );
       this.pushEvent('session', { todoId: this.config.todoId, sessionId: this.sessionId });
 

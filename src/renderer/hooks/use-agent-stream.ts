@@ -268,7 +268,7 @@ export function useAgentStream(todoId: string, externalTodoIdRef?: MutableRefObj
       setStatus(newStatus);
       if (newStatus === 'completed') setCanChat(true);
       else if (newStatus === 'running' || newStatus === 'initializing') setCanChat(false);
-      else if (newStatus === 'failed' || newStatus === 'cancelled') setCanChat(false);
+      else if (newStatus === 'failed' || newStatus === 'cancelled') setCanChat(true);
     });
 
     const offPermission = onIpc(

@@ -70,3 +70,16 @@ export const YOLO_MODE_IDS: Partial<Record<AgentBackendType, string>> = {
   gemini: 'yolo',
   qwen: 'yolo',
 };
+
+/**
+ * Factory that returns CLI args to inject at spawn time for session resume.
+ * Only backends that resume via CLI flags need an entry here.
+ * Backends that resume via ACP _meta (claude-code, codex, goose, qwen) are handled
+ * in createSession() and should NOT appear here.
+ */
+export const RESUME_CLI_ARGS: Partial<Record<string, (sessionId: string) => string[]>> = {
+  // gemini: --resume <index> or --resume latest; we store the sessionId as-is
+  gemini: (sessionId: string) => ['--resume', sessionId],
+  // opencode: --session <sessionId>
+  opencode: (sessionId: string) => ['--session', sessionId],
+};

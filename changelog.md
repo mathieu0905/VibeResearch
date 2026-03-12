@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-03-12 (35)
+
+### feat: multi-backend agent session resume
+
+- **Problem**: After stopping an agent (cancelled/failed), sending a new message would silently fail — the message went to a dead run and the agent never responded.
+- **Root cause**: `handleChatSend` always used the follow-up path when `agentTodoId` was set, even after the run was cancelled.
+- **Fix — renderer**: When `agentStatus` becomes `cancelled`/`failed`, clear `agentRunId` so the next message triggers a new run on the same todo (resume path). Added `useEffect` in `reader/page.tsx` to reset `agentRunId` on terminal status. `handleChatSend` now has three branches: create new todo / resume stopped todo / follow-up to active run.
+- **Fix — service**: `AgentTodoService.runTodo` now queries previous runs for a `sessionId` and passes it as `resumeSessionId` to the runner, enabling conversation history to be restored.
+- **Fix — ACP layer**: `AcpConnection.spawn` / `spawnRemote` accept optional `resumeArgs` appended to CLI args at spawn time (for CLI-args-based backends).
+- **Fix — ACP layer**: `AcpConnection.createSession` accepts `backend` param and selects the correct `_meta` key per backend (`claudeCode`, `codex`, `goose`, `qwen`, `openclaw`).
+- **Resume support matrix**:
+  - `claude-code` / `codex` / `goose` / `qwen` / `openclaw` → ACP `_meta.<backend>.options.resume`
+  - `gemini` → CLI `--resume <sessionId>` at spawn time
+  - `opencode` → CLI `--session <sessionId>` at spawn time
+- **`use-agent-stream`**: `cancelled`/`failed` status now sets `canChat=true` so the input is re-enabled.
+- All 457 tests pass.
+
 ## 2026-03-12 (34)
 
 ### chore: pre-release code cleanup

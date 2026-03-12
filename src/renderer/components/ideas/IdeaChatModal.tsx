@@ -53,6 +53,7 @@ export function IdeaChatModal({
   // Session management
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [currentSessionPaperIds, setCurrentSessionPaperIds] = useState<string[] | null>(null);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [showSidebar, setShowSidebar] = useState(true);
 
@@ -75,6 +76,7 @@ export function IdeaChatModal({
       setStreaming(false);
       setStreamingContent('');
       setCurrentSessionId(null);
+      setCurrentSessionPaperIds(null);
       streamId.current = `chat-${Date.now()}`;
     }
   }, [isOpen]);
@@ -106,6 +108,7 @@ export function IdeaChatModal({
       };
       setSessions((prev) => [newSession, ...prev]);
       setCurrentSessionId(newSession.id);
+      setCurrentSessionPaperIds(null); // use prop paperIds for new session
       setMessages([]);
       streamId.current = `chat-${Date.now()}`;
     } catch (err) {
@@ -119,6 +122,9 @@ export function IdeaChatModal({
       if (!session) return;
 
       setCurrentSessionId(sessionId);
+      // Use the paperIds saved with this session so continued conversation uses the same context
+      const savedPaperIds = session.paperIds as string[];
+      setCurrentSessionPaperIds(savedPaperIds.length > 0 ? savedPaperIds : null);
       const msgs = await ipc.listChatMessages(sessionId);
       setMessages(
         msgs.map((m) => ({
@@ -223,6 +229,10 @@ export function IdeaChatModal({
     const text = input.trim();
     if (!text || streaming) return;
 
+    // Use the session's saved paperIds when continuing a historical session,
+    // otherwise fall back to the current prop paperIds (new session).
+    const activePaperIds = currentSessionPaperIds ?? paperIds;
+
     // Create session if not exists
     let sessionId = currentSessionId;
     if (!sessionId) {
@@ -230,7 +240,7 @@ export function IdeaChatModal({
         const result = await ipc.createChatSession({
           projectId,
           title: 'New Chat',
-          paperIds,
+          paperIds: activePaperIds,
           repoIds,
         });
         sessionId = result.id;
@@ -278,7 +288,7 @@ export function IdeaChatModal({
         streamId: streamId.current,
         sessionId,
         projectId,
-        paperIds,
+        paperIds: activePaperIds,
         repoIds,
         messages: newMessages,
       });
@@ -294,9 +304,19 @@ export function IdeaChatModal({
         content: errorMsg,
       });
     }
-  }, [input, streaming, messages, currentSessionId, projectId, paperIds, repoIds]);
+  }, [
+    input,
+    streaming,
+    messages,
+    currentSessionId,
+    currentSessionPaperIds,
+    projectId,
+    paperIds,
+    repoIds,
+  ]);
 
-  const sourceCount = paperIds.length + (repoIds?.length ?? 0);
+  const activePaperIds = currentSessionPaperIds ?? paperIds;
+  const sourceCount = activePaperIds.length + (repoIds?.length ?? 0);
 
   return (
     <AnimatePresence>
@@ -362,16 +382,24 @@ export function IdeaChatModal({
                           <button
                             key={session.id}
                             onClick={() => void loadSession(session.id)}
-                            className={`group flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm transition-colors ${
+                            className={`group flex w-full items-start justify-between rounded-lg px-2 py-2 text-left text-sm transition-colors ${
                               currentSessionId === session.id
                                 ? 'bg-notion-accent-light text-notion-accent'
                                 : 'text-notion-text-secondary hover:bg-notion-sidebar-hover'
                             }`}
                           >
-                            <span className="flex-1 truncate pr-2">{session.title}</span>
+                            <div className="min-w-0 flex-1 pr-2">
+                              <span className="block truncate">{session.title}</span>
+                              {session.paperIds.length > 0 && (
+                                <span className="text-xs text-notion-text-tertiary">
+                                  {session.paperIds.length} paper
+                                  {session.paperIds.length > 1 ? 's' : ''}
+                                </span>
+                              )}
+                            </div>
                             <div
                               onClick={(e) => void deleteSession(session.id, e)}
-                              className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-500"
+                              className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 hover:text-red-500"
                             >
                               <Trash2 size={12} />
                             </div>

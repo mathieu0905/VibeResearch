@@ -323,6 +323,10 @@ export class AgentTodoService {
     // Increment call counter for this agent
     await this.repository.incrementAgentCallCount(agentConfig.id);
 
+    // Find the most recent run's sessionId for resuming the conversation
+    const previousRuns = await this.repository.findRunsByTodoId(todoId);
+    const resumeSessionId = previousRuns.find((r) => r.sessionId)?.sessionId ?? undefined;
+
     // Create run record
     const run = await this.repository.createRun({
       todoId,
@@ -346,6 +350,7 @@ export class AgentTodoService {
       yoloMode: todo.yoloMode,
       extraEnv,
       sshConfig,
+      resumeSessionId,
     });
 
     registerRunner(todoId, runner);

@@ -14,6 +14,19 @@ import { SshConnectionService, type SshSpawnHandle } from '../services/ssh-conne
 import { getEnhancedEnv, resolveCommandPath, resolveNpxPath } from '../utils/shell-env';
 
 /**
+ * Map from backend name to the _meta key used for session resume in newSession().
+ * Backends that resume via CLI args (gemini, opencode) are NOT listed here —
+ * their resume args are injected at spawn time instead.
+ */
+const RESUME_META_KEY: Record<string, string> = {
+  'claude-code': 'claudeCode',
+  codex: 'codex',
+  goose: 'goose',
+  qwen: 'qwen',
+  openclaw: 'openclaw',
+};
+
+/**
  * ACP client connection that spawns an agent process and communicates
  * via the @agentclientprotocol/sdk ClientSideConnection over stdio.
  *
@@ -43,6 +56,7 @@ export class AcpConnection extends EventEmitter {
     args: string[],
     cwd: string,
     env?: Record<string, string>,
+    resumeArgs?: string[],
   ): Promise<void> {
     // Use enhanced environment that includes shell PATH (for npx, node, etc.)
     // This is critical when Electron is launched from Finder/launchd instead of terminal
@@ -64,7 +78,7 @@ export class AcpConnection extends EventEmitter {
     //   - npx package:    "npx @zed-industries/codex-acp@0.18.0"
     const parts = cliPath.trim().split(/\s+/);
     const rawCmd = parts[0];
-    let finalArgs = [...parts.slice(1), ...args];
+    let finalArgs = [...parts.slice(1), ...args, ...(resumeArgs ?? [])];
 
     if (rawCmd === 'npx' && finalArgs.length > 0 && !finalArgs.includes('--yes')) {
       finalArgs = ['--yes', '--prefer-offline', ...finalArgs];
@@ -152,13 +166,15 @@ export class AcpConnection extends EventEmitter {
     args: string[],
     cwd: string,
     env?: Record<string, string>,
+    resumeArgs?: string[],
   ): Promise<void> {
     this.sshConfig = sshConfig;
 
     // Build the remote command
     // cliPath may contain spaces (e.g., "node /path/to/script.js")
     // We need to properly escape it for the remote shell
-    const fullCommand = `${cliPath} ${args.join(' ')}`;
+    const allArgs = [...args, ...(resumeArgs ?? [])];
+    const fullCommand = `${cliPath} ${allArgs.join(' ')}`;
 
     // Spawn via SSH
     this.sshHandle = await SshConnectionService.spawnRemoteProcess(
@@ -235,7 +251,7 @@ export class AcpConnection extends EventEmitter {
     });
   }
 
-  async createSession(cwd: string, resumeSessionId?: string): Promise<string> {
+  async createSession(cwd: string, resumeSessionId?: string, backend?: string): Promise<string> {
     if (!this.conn) throw new Error('Not connected');
 
     const params: Parameters<ClientSideConnection['newSession']>[0] = {
@@ -244,9 +260,15 @@ export class AcpConnection extends EventEmitter {
     };
 
     if (resumeSessionId) {
-      (params as Record<string, unknown>)._meta = {
-        claudeCode: { options: { resume: resumeSessionId } },
-      };
+      // Each backend uses a different _meta key for resume.
+      // CLI-args-based backends (gemini, opencode) handle resume at spawn time,
+      // so they don't need _meta here — but we still set it as a no-op fallback.
+      const metaKey = RESUME_META_KEY[backend ?? ''];
+      if (metaKey) {
+        (params as Record<string, unknown>)._meta = {
+          [metaKey]: { options: { resume: resumeSessionId } },
+        };
+      }
     }
 
     const result = await this.conn.newSession(params);
