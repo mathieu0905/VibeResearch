@@ -141,6 +141,20 @@ export function setupAcpChatIpc() {
     }
   });
 
+  ipcMain.handle(
+    'acp-chat:permission:respond',
+    async (_, jobId: string, requestId: number, optionId: string): Promise<IpcResult<unknown>> => {
+      try {
+        await getService().respondToPermission(jobId, requestId, optionId);
+        return ok({ responded: true });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[acp-chat:permission:respond] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
   // ── Title Generation ──────────────────────────────────────────────────────
 
   ipcMain.handle(

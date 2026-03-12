@@ -1,15 +1,12 @@
 import { BrowserWindow } from 'electron';
 import { PapersRepository } from '@db';
 import { getSemanticSearchSettings } from '../store/app-settings-store';
-import { sanitizeSemanticText } from './semantic-utils';
-import { rebuildSearchUnitsForPaper } from './search-unit-sync.service';
+import * as paperEmbeddingService from './paper-embedding.service';
 
 export type PaperProcessingStatus =
   | 'idle'
   | 'queued'
-  | 'extracting_text'
   | 'extracting_metadata'
-  | 'chunking'
   | 'embedding'
   | 'completed'
   | 'failed';
@@ -47,19 +44,11 @@ async function processPaper(paperId: string) {
   const paper = await repo.findById(paperId);
   if (!paper) return;
 
-  const abstractText = sanitizeSemanticText(paper.abstract ?? '');
-  if (!abstractText.trim()) {
-    await updateStatus(repo, paperId, 'failed', {
-      processingError: 'No abstract available for indexing.',
-      indexedAt: null,
-    });
-    return;
-  }
-
   try {
     await updateStatus(repo, paperId, 'embedding', { processingError: null });
 
-    await rebuildSearchUnitsForPaper(paperId);
+    // Generate embeddings for title and abstract
+    await paperEmbeddingService.generateEmbeddings(paperId);
 
     await updateStatus(repo, paperId, 'completed', {
       processingError: null,

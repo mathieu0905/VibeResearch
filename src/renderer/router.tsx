@@ -7,7 +7,6 @@ import { ReaderPage } from './pages/papers/reader/page';
 import { NotesPage } from './pages/papers/notes/page';
 import { ProjectsPage, ProjectDetailPage } from './pages/projects/page';
 import { SettingsPage } from './pages/settings/page';
-import { ComparePage } from './pages/compare/page';
 import { AgentTodosPage } from './pages/agent-todos/page';
 import { AgentTodoDetailPage } from './pages/agent-todos/[id]/page';
 import { TabsProvider } from './hooks/use-tabs';
@@ -58,11 +57,6 @@ export const router = createHashRouter([
       {
         path: 'papers/:id/notes',
         element: <NotesPage />,
-        handle: { fullWidth: true, hideBackButton: true },
-      },
-      {
-        path: 'compare',
-        element: <ComparePage />,
         handle: { fullWidth: true, hideBackButton: true },
       },
       { path: 'projects', element: <ProjectsPage /> },

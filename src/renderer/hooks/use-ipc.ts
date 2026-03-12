@@ -970,6 +970,8 @@ export const ipc = {
     cwd?: string;
   }) => invoke<{ jobId: string; started: boolean }>('acp-chat:send', input),
   killAcpChatJob: (jobId: string) => invoke<{ killed: boolean }>('acp-chat:kill', jobId),
+  respondToAcpChatPermission: (jobId: string, requestId: number, optionId: string) =>
+    invoke<{ responded: boolean }>('acp-chat:permission:respond', jobId, requestId, optionId),
   generateAcpChatTitle: (content: string) => invoke<string>('acp-chat:generateTitle', content),
 
   // Ingest

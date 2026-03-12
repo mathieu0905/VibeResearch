@@ -50,8 +50,7 @@ import {
   type SemanticIndexDebugSummary,
 } from '../../db/repositories/papers.repository';
 import { getSelectedModelInfo } from './ai-provider.service';
-import * as vecIndex from './vec-index.service';
-import * as searchUnitIndex from './search-unit-index.service';
+import * as paperEmbeddingService from './paper-embedding.service';
 
 export interface SemanticEmbeddingTestResult {
   success: boolean;
@@ -219,7 +218,9 @@ export class ProvidersService {
     return getSemanticSearchSettings();
   }
 
-  setSemanticSearchSettings(settings: Partial<SemanticSearchSettings>): { success: boolean } {
+  async setSemanticSearchSettings(
+    settings: Partial<SemanticSearchSettings>,
+  ): Promise<{ success: boolean }> {
     const current = getSemanticSearchSettings();
     setSemanticSearchSettings(settings);
 
@@ -233,12 +234,11 @@ export class ProvidersService {
       const reason = providerChanged
         ? `provider changed: ${current.embeddingProvider} → ${settings.embeddingProvider}`
         : `model changed: ${current.embeddingModel} → ${settings.embeddingModel}`;
-      console.log(`[providers] ${reason}, resetting vec index`);
+      console.log(`[providers] ${reason}, rebuilding embeddings`);
       try {
-        vecIndex.resetIndex();
-        searchUnitIndex.resetIndex();
+        await paperEmbeddingService.rebuildAllEmbeddings();
       } catch (err) {
-        console.warn('[providers] Failed to reset vec index:', err);
+        console.warn('[providers] Failed to rebuild embeddings:', err);
       }
       void this.papersRepository
         .clearAllIndexedAt()
@@ -265,7 +265,7 @@ export class ProvidersService {
     return { success: true };
   }
 
-  switchEmbeddingConfig(config: EmbeddingConfig): { success: boolean } {
+  async switchEmbeddingConfig(config: EmbeddingConfig): Promise<{ success: boolean }> {
     const current = getSemanticSearchSettings();
     setActiveEmbeddingConfigId(config.id);
 
@@ -284,12 +284,11 @@ export class ProvidersService {
       const reason = providerChanged
         ? `provider changed: ${current.embeddingProvider} → ${config.provider}`
         : `model changed: ${current.embeddingModel} → ${config.embeddingModel}`;
-      console.log(`[providers] ${reason}, resetting vec index`);
+      console.log(`[providers] ${reason}, rebuilding embeddings`);
       try {
-        vecIndex.resetIndex();
-        searchUnitIndex.resetIndex();
+        await paperEmbeddingService.rebuildAllEmbeddings();
       } catch (err) {
-        console.warn('[providers] Failed to reset vec index:', err);
+        console.warn('[providers] Failed to rebuild embeddings:', err);
       }
       void this.papersRepository
         .clearAllIndexedAt()

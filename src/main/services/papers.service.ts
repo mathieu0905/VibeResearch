@@ -6,9 +6,7 @@ import { getPapersDir } from '../store/app-settings-store';
 import { schedulePaperProcessing } from './paper-processing.service';
 import { scheduleCitationExtraction } from './citation-processing.service';
 import { scheduleAutoPaperEnrichment } from './auto-paper-enrichment.service';
-import * as vecIndex from './vec-index.service';
-import * as searchUnitIndex from './search-unit-index.service';
-import { rebuildSearchUnitsForPaper } from './search-unit-sync.service';
+import * as paperEmbeddingService from './paper-embedding.service';
 
 export interface CreatePaperInput {
   title: string;
@@ -296,7 +294,7 @@ export class PapersService {
 
         const rawTitle = titleMatch[1].replace(/^\[[\w./-]+\]\s*/, '').trim();
         await this.papersRepository.updateTitle(paper.id, rawTitle);
-        await rebuildSearchUnitsForPaper(paper.id).catch(() => undefined);
+        await paperEmbeddingService.generateEmbeddings(paper.id).catch(() => undefined);
         fixed++;
       } catch {
         failed++;
@@ -315,7 +313,7 @@ export class PapersService {
       const bareTitle = paper.title.replace(/^\[\d{4}\.\d{4,5}(v\d+)?\]\s*/, '');
       if (bareTitle !== paper.title) {
         await this.papersRepository.updateTitle(paper.id, bareTitle);
-        await rebuildSearchUnitsForPaper(paper.id).catch(() => undefined);
+        await paperEmbeddingService.generateEmbeddings(paper.id).catch(() => undefined);
         updated++;
       }
     }
@@ -327,8 +325,7 @@ export class PapersService {
     const existing = await this.papersRepository.findById(id);
     if (!existing) return null;
     try {
-      vecIndex.deleteChunksByPaperId(id);
-      await searchUnitIndex.deleteUnitsByPaperId(id);
+      await paperEmbeddingService.deleteEmbeddings(id);
     } catch {
       // vec cleanup failure should not block deletion
     }
@@ -338,12 +335,11 @@ export class PapersService {
 
   async deleteMany(ids: string[]): Promise<number> {
     try {
-      // Clean up vec index before Prisma deletes the chunks
+      // Clean up embeddings before Prisma deletes the papers
       try {
-        const chunkIds = await this.papersRepository.listChunkIdsForPapers(ids);
-        vecIndex.deleteChunksByIds(chunkIds);
-        const unitIds = await this.papersRepository.listSearchUnitIdsForPapers(ids);
-        searchUnitIndex.deleteUnitsByIds(unitIds);
+        for (const id of ids) {
+          await paperEmbeddingService.deleteEmbeddings(id).catch(() => undefined);
+        }
       } catch {
         // vec cleanup failure should not block deletion
       }

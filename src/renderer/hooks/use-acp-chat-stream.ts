@@ -13,6 +13,19 @@ interface Message {
   createdAt: string;
 }
 
+interface PermissionRequest {
+  requestId: number;
+  request: {
+    options: Array<{ optionId: string; name: string; kind: string }>;
+    toolCall: {
+      toolCallId: string;
+      title: string;
+      kind: string;
+      rawInput?: Record<string, unknown>;
+    };
+  };
+}
+
 /**
  * Hook for ACP chat streaming.
  * Supports both lightweight (direct LLM) and full ACP agent modes.
@@ -24,6 +37,7 @@ export function useAcpChatStream(jobId: string, externalJobIdRef?: MutableRefObj
   const [messages, setMessages] = useState<Message[]>([]);
   const [status, setStatus] = useState<string>('idle');
   const [canSend, setCanSend] = useState<boolean>(true);
+  const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null);
 
   // Internal ref updated synchronously during render
   const internalRef = useRef(jobId);
@@ -136,6 +150,7 @@ export function useAcpChatStream(jobId: string, externalJobIdRef?: MutableRefObj
       setMessages([]);
       setStatus('idle');
       setCanSend(true);
+      setPermissionRequest(null);
       textAccumulatorRef.current = new Map();
       messageMetadataRef.current = new Map();
     }

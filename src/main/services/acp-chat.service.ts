@@ -244,9 +244,176 @@ export class AcpChatService {
     },
     backend: string,
   ) {
-    // TODO: Phase 3 will implement full ACP agent spawning
-    // For now, this is a placeholder that will be filled in Phase 3
-    throw new Error('ACP agent mode not yet implemented (Phase 3)');
+    try {
+      // Get agent config for the backend
+      // TODO: Phase 6 will implement multi-backend support
+      // For now, we'll use a simplified approach with default agent config
+
+      const cwd = input.cwd || process.cwd();
+
+      // Create ACP connection
+      const connection = new AcpConnection();
+      job.connection = connection;
+
+      // Set up event handlers
+      connection.on('session:update', (sessionId: string, update: SessionUpdate) => {
+        this.handleSessionUpdate(job, sessionId, update);
+      });
+
+      connection.on(
+        'session:permission',
+        (requestId: symbol, sessionId: string, request: any, resolve: (response: any) => void) => {
+          this.handlePermissionRequest(job, requestId as unknown as number, request, resolve);
+        },
+      );
+
+      connection.on('session:finished', (sessionId: string) => {
+        console.log('[AcpChatService] Session finished:', sessionId);
+        job.status = 'completed';
+        this.broadcastStatus(job.id, 'completed');
+      });
+
+      connection.on('stderr', (text: string) => {
+        console.log('[AcpChatService] Agent stderr:', text);
+      });
+
+      connection.on('exit', (code: number | null, signal: string | null) => {
+        console.log('[AcpChatService] Agent exited:', code, signal);
+        if (job.status === 'running') {
+          job.status = 'failed';
+          this.broadcastStatus(job.id, 'failed');
+        }
+      });
+
+      // Spawn agent (simplified for Phase 3 - will be enhanced in Phase 6)
+      // For now, we'll use a hardcoded path to claude-code
+      const cliPath = 'npx @zed-industries/claude-agent-acp@latest';
+      await connection.spawn(cliPath, [], cwd);
+
+      // Create ACP session
+      const acpSessionId = await connection.createSession(cwd);
+      job.sessionId = acpSessionId;
+
+      // Update database with ACP session ID
+      await this.repo.updateSessionAcpFields(input.chatSessionId, {
+        acpSessionId,
+        backend,
+      });
+
+      // Build paper context
+      const paperContext = await this.buildPaperContext(input.paperIds);
+
+      // Send prompt with context
+      const fullPrompt = paperContext
+        ? `${paperContext}\n\n---\n\nUser request: ${input.prompt}`
+        : input.prompt;
+
+      await connection.sendPrompt(acpSessionId, fullPrompt);
+    } catch (error) {
+      console.error('[AcpChatService] Agent chat error:', error);
+      job.status = 'failed';
+      this.broadcastError(job.id, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  private handleSessionUpdate(job: AcpJobState, sessionId: string, update: SessionUpdate) {
+    // Convert ACP SessionUpdate to our Message format
+    const msgId = `acp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+    let message: any = {
+      id: crypto.randomUUID(),
+      msgId,
+      type: 'text',
+      role: 'assistant',
+      content: update,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Detect message type from update structure
+    if ('text' in update) {
+      message.type = 'text';
+      message.content = { text: update.text };
+    } else if ('thought' in update) {
+      message.type = 'thought';
+      message.content = { text: update.thought };
+    } else if ('toolCall' in update) {
+      message.type = 'tool_call';
+      message.content = update.toolCall;
+    }
+
+    this.broadcastStream(job.id, message);
+
+    // Save to database (only for text messages)
+    if (message.type === 'text') {
+      void this.repo.addMessage({
+        sessionId: job.chatSessionId,
+        role: 'assistant',
+        content: message.content.text,
+        metadataJson: JSON.stringify({ type: 'text' }),
+      });
+    }
+  }
+
+  private handlePermissionRequest(
+    job: AcpJobState,
+    requestId: number,
+    request: any,
+    resolve: (response: any) => void,
+  ) {
+    // Store pending permission for user response
+    job.pendingPermission = { requestId, resolve };
+
+    // Broadcast permission request to renderer
+    const windows = BrowserWindow.getAllWindows();
+    windows.forEach((win) => {
+      win.webContents.send('acp-chat:permission', job.id, {
+        requestId,
+        request,
+      });
+    });
+  }
+
+  async respondToPermission(jobId: string, requestId: number, optionId: string): Promise<void> {
+    const job = this.activeJobs.get(jobId);
+    if (!job || !job.pendingPermission || job.pendingPermission.requestId !== requestId) {
+      throw new Error('Permission request not found or already resolved');
+    }
+
+    const { resolve } = job.pendingPermission;
+    resolve({ outcome: { outcome: 'selected', optionId } });
+    job.pendingPermission = undefined;
+  }
+
+  private async buildPaperContext(paperIds: string[]): Promise<string> {
+    if (paperIds.length === 0) return '';
+
+    const papers = await Promise.all(
+      paperIds.map((id) => this.papersRepo.findById(id).catch(() => null)),
+    );
+    const validPapers = papers.filter(Boolean) as Awaited<
+      ReturnType<PapersRepository['findById']>
+    >[];
+
+    if (validPapers.length === 0) return '';
+
+    let context = 'Available research papers:\n\n';
+    for (const paper of validPapers) {
+      context += `## ${paper!.title}\n`;
+      if (paper!.authors) {
+        const authors =
+          typeof paper!.authors === 'string' ? paper!.authors : JSON.stringify(paper!.authors);
+        context += `**Authors:** ${authors}\n`;
+      }
+      if (paper!.abstract) {
+        context += `**Abstract:** ${paper!.abstract}\n`;
+      }
+      if (paper!.pdfPath) {
+        context += `**PDF:** ${paper!.pdfPath}\n`;
+      }
+      context += '\n';
+    }
+
+    return context;
   }
 
   // ── Job Control ───────────────────────────────────────────────────────────
