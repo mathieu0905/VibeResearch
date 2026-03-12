@@ -190,10 +190,25 @@ export function useAcpChatStream(jobId: string, externalJobIdRef?: MutableRefObj
       setCanSend(true);
     });
 
+    const offPermission = onIpc('acp-chat:permission', (_event: unknown, data: unknown) => {
+      const {
+        jobId: eventJobId,
+        requestId,
+        request,
+      } = data as {
+        jobId: string;
+        requestId: number;
+        request: PermissionRequest['request'];
+      };
+      if (eventJobId !== jobIdRef.current) return;
+      setPermissionRequest({ requestId, request });
+    });
+
     return () => {
       offStream();
       offStatus();
       offError();
+      offPermission();
     };
   }, [processStreamEvent, jobIdRef]);
 
@@ -201,5 +216,7 @@ export function useAcpChatStream(jobId: string, externalJobIdRef?: MutableRefObj
     messages,
     status,
     canSend,
+    permissionRequest,
+    setPermissionRequest,
   };
 }

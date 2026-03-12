@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-03-12 (40)
+
+### feat: ACP chat integration — Phase 3 full ACP agent support
+
+- **Goal**: Implement full ACP agent spawning with tool calls, thoughts, and permissions.
+- **Changes**:
+  - Implemented `runAgentChat()` in AcpChatService - spawns ACP agent via AcpConnection
+  - Added session update handler - converts ACP SessionUpdate to Message format
+  - Added permission request handler - broadcasts to renderer, stores pending response
+  - Implemented `respondToPermission()` - resolves pending permission with user choice
+  - Added `buildPaperContext()` - injects paper metadata into agent prompts
+  - Extended `use-acp-chat-stream` hook with permission request state
+  - Added `respondToAcpChatPermission` IPC method
+- **ACP Flow**:
+  1. Spawn agent via `npx @zed-industries/claude-agent-acp@latest`
+  2. Create ACP session with working directory
+  3. Build paper context from paperIds
+  4. Send prompt with context to agent
+  5. Handle streaming updates (text, thoughts, tool calls)
+  6. Handle permission requests (broadcast to UI, wait for response)
+  7. Save messages to database
+- **Event Handlers**:
+  - `session:update` → convert to Message, broadcast, save to DB
+  - `session:permission` → store pending, broadcast to renderer
+  - `session:finished` → mark job completed
+  - `stderr` / `exit` → logging and error handling
+- **Next**: Phase 4 will add session management UI (backend selector, session history).
+
 ## 2026-03-12 (39)
 
 ### feat: ACP chat integration — Phase 2 service layer and IPC

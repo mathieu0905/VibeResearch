@@ -1,4 +1,5 @@
 import { BrowserWindow } from 'electron';
+import crypto from 'crypto';
 import { ChatRepository, PapersRepository } from '@db';
 import {
   generateWithModelKind,
