@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-03-12 (48)
+
+### fix: Fix semantic search dimension mismatch and missing repository method
+
+**Summary**: Fixed two critical bugs preventing semantic search from working:
+
+1. Vector store was initializing with hardcoded 768 dimensions instead of reading from embedding model settings (1536 for OpenAI models)
+2. PapersRepository was missing the `findByIds()` method required by semantic search
+
+**Changes:**
+
+- `src/main/services/vec-index.service.ts`: Read embedding model from app settings and get correct dimension from OPENAI_EMBEDDING_MODELS config
+- `src/db/repositories/papers.repository.ts`: Added `findByIds()` method for batch paper queries
+
+**Impact**: Semantic search now works correctly with OpenAI embedding models (text-embedding-3-small, text-embedding-ada-002, etc.)
+
+---
+
 ## 2026-03-12 (47)
 
 ### feat: Complete i18n coverage across all UI components
