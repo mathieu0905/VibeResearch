@@ -1697,6 +1697,7 @@ export function ProjectDetailPage() {
 // ── ProjectsPage (list view) ──────────────────────────────────────────────────
 
 export function ProjectsPage() {
+  const { t } = useTranslation();
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -1778,10 +1779,10 @@ export function ProjectsPage() {
             animate={{ opacity: 1, y: 0 }}
           >
             <div className="flex-1">
-              <h1 className="text-3xl font-bold tracking-tight text-notion-text">Projects</h1>
-              <p className="mt-1 text-sm text-notion-text-secondary">
-                Manage your research projects, tasks, code repos, and paper-linked ideas
-              </p>
+              <h1 className="text-3xl font-bold tracking-tight text-notion-text">
+                {t('projects.title')}
+              </h1>
+              <p className="mt-1 text-sm text-notion-text-secondary">{t('projects.description')}</p>
             </div>
             <motion.button
               onClick={() => setShowForm(true)}
