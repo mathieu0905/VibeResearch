@@ -334,10 +334,10 @@ function createWindow() {
     win.loadFile(path.join(__dirname, '../renderer/index.html'));
   }
 
-  // Open DevTools in development mode
-  if (isDev) {
-    win.webContents.openDevTools();
-  }
+  // Open DevTools in development mode (disabled by default)
+  // if (isDev) {
+  //   win.webContents.openDevTools();
+  // }
 
   // Intercept navigation from PDF viewer iframes - open external links in browser
   const isInternalUrl = (url: string) =>
