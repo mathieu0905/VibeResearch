@@ -58,12 +58,10 @@ export function PdfViewerNative({ path, onFileNotFound }: PdfViewerNativeProps) 
         const blob = new Blob([bytes], { type: 'application/pdf' });
         const url = URL.createObjectURL(blob);
 
-        // Keep Chrome's native toolbar (includes search, zoom, navigation)
-        // Hide left navigation panel, set initial view to fit width
-        const urlWithSettings = `${url}#toolbar=1&navpanes=0&view=FitH`;
-
+        // Use Chrome's full PDF viewer with all features (search, zoom, annotations)
+        // No URL parameters - let Chrome show its complete toolbar
         cleanupRef.current = () => URL.revokeObjectURL(url);
-        setPdfUrl(urlWithSettings);
+        setPdfUrl(url);
         setLoading(false);
       } catch (err) {
         if (!isMounted) return;
