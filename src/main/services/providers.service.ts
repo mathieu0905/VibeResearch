@@ -242,7 +242,7 @@ export class ProvidersService {
       if (modelChanged || providerChanged) {
         console.log('[providers] Model/provider changed, resetting vec index');
         try {
-          vecIndex.resetIndex();
+          vecIndex.clear();
         } catch (err) {
           console.warn('[providers] Failed to reset vec index:', err);
         }
@@ -307,7 +307,7 @@ export class ProvidersService {
       // Only reset vec index if model or provider changed (dimension may differ)
       if (modelChanged || providerChanged) {
         try {
-          vecIndex.resetIndex();
+          vecIndex.clear();
         } catch (err) {
           console.warn('[providers] Failed to reset vec index:', err);
         }

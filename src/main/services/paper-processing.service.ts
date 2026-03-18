@@ -2,6 +2,7 @@ import { BrowserWindow } from 'electron';
 import { PapersRepository } from '@db';
 import { getSemanticSearchSettings } from '../store/app-settings-store';
 import * as paperEmbeddingService from './paper-embedding.service';
+import * as vecIndex from './vec-index.service';
 
 export type PaperProcessingStatus =
   | 'idle'
@@ -231,7 +232,7 @@ export async function rebuildAllEmbeddings(
     const currentModel = indexStatus.model;
     const newModel = settings.embeddingModel;
 
-    if (currentModel && currentModel === newModel && indexStatus.rowCount > 0) {
+    if (currentModel && currentModel === newModel && indexStatus.count > 0) {
       console.log(
         `[paper-processing] Model unchanged (${currentModel}), rebuild may not be needed`,
       );

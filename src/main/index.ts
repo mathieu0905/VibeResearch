@@ -522,9 +522,14 @@ app.whenReady().then(async () => {
     const vecStatus = vecIndex.getStatus();
     if (vecStatus.model && vecStatus.model !== activeEmbedConfig.embeddingModel) {
       console.log(
-        `[startup] VecStore model mismatch: "${vecStatus.model}" → "${activeEmbedConfig.embeddingModel}", resetting index`,
+        `[startup] VecStore model mismatch: "${vecStatus.model}" → "${activeEmbedConfig.embeddingModel}", resetting index and clearing old embeddings`,
       );
-      vecIndex.resetIndex();
+      // Clear and reinitialize VecStore with the new model's dimension
+      vecIndex.clearAndReinitialize(activeEmbedConfig.embeddingModel);
+      // Clear old embeddings from DB so they get re-generated with the new model
+      const repo = new PapersRepository();
+      await repo.clearAllIndexedAt();
+      await paperEmbeddingService.rebuildAllEmbeddings();
     }
 
     console.log(
