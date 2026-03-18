@@ -8,6 +8,7 @@ import { HttpsProxyAgent } from 'https-proxy-agent';
 import type { Agent } from 'node:http';
 import { proxyFetch } from './proxy-fetch';
 import { schedulePaperProcessing } from './paper-processing.service';
+import { getPaperOverview, getBestSummary } from './alphaxiv.service';
 
 /** Minimum size for a valid PDF (arXiv PDFs are typically > 50KB) */
 const MIN_PDF_SIZE = 1024; // 1KB
@@ -146,6 +147,20 @@ export class DownloadService {
       abstract = metadata.abstract;
       submittedAt = metadata.submittedAt;
       pdfUrl = `https://arxiv.org/pdf/${arxivId}.pdf`;
+
+      // Try to enhance with AlphaXiv AI-generated overview
+      try {
+        const alphaxivData = await getPaperOverview(arxivId);
+        if (alphaxivData?.overview) {
+          const aiSummary = getBestSummary(alphaxivData.overview);
+          if (aiSummary) {
+            // Prepend AI summary to the abstract
+            abstract = `**AI-Generated Summary (AlphaXiv):**\n\n${aiSummary}\n\n---\n\n**Original Abstract:**\n${abstract}`;
+          }
+        }
+      } catch {
+        // AlphaXiv lookup failed, continue with original abstract
+      }
     } else {
       throw new Error('Invalid input: must be an arXiv ID, arXiv URL, DOI, or PDF URL');
     }

@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-19 (session 41)
+
+### feat: AlphaXiv integration for AI-generated paper summaries
+
+- **Scope**: `src/main/services/alphaxiv.service.ts`, `src/main/services/download.service.ts`
+- **AlphaXiv service**: New service to fetch AI-generated paper overviews from [alphaxiv.org](https://alphaxiv.org) API.
+  - `resolvePaper(paperId)` — resolve arXiv ID to versionId
+  - `fetchOverview(versionId, lang)` — get AI summary (supports en/zh/ja/etc.)
+  - `fetchFullText(paperId)` — get full markdown text
+  - `getPaperOverview(arxivId)` — combined helper
+- **Enhanced arXiv import**: When importing arXiv papers, automatically fetch AlphaXiv AI summary and prepend to abstract. Falls back gracefully if paper not indexed.
+- **API**: Uses public AlphaXiv API at `api.alphaxiv.org/papers/v3/` — no authentication required.
+- **No trending tab**: AlphaXiv does not have a public trending API, so tab-based discovery feature was not implemented.
+
 ## 2026-03-17 (session 40)
 
 ### feat: Zotero integration + non-arXiv paper import
