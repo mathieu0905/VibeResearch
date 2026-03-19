@@ -565,6 +565,8 @@
     "relevanceScore": "与您文献库的相关性",
     "readPdf": "阅读 PDF",
     "downloading": "下载中...",
+    "importing": "导入中...",
+    "imported": "已导入",
     "noPaperData": "无论文数据",
     "qualityScore": "质量",
     "aiSummary": "AI 摘要 (AlphaXiv)",

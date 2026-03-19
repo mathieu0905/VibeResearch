@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { ipc, type DiscoveredPaper } from '../../../hooks/use-ipc';
@@ -67,24 +67,25 @@ export function DiscoveryPreviewPage() {
     }
   }, [paper, navigate]);
 
-  // Fetch AlphaXiv summary
-  const handleFetchAlphaXiv = useCallback(async () => {
-    if (!paper || fetchingAlphaXiv) return;
-
-    console.log('[preview] Fetching AlphaXiv for:', paper.arxivId);
+  // Auto-fetch AlphaXiv summary when page loads (skip if already embedded in abstract)
+  const hasEmbeddedSummary = paper?.abstract.includes('**AI-Generated Summary (AlphaXiv):**');
+  useEffect(() => {
+    if (!paper || hasEmbeddedSummary || alphaXivSummary) return;
+    let cancelled = false;
     setFetchingAlphaXiv(true);
-    try {
-      const summary = await ipc.getAlphaXivData(paper.arxivId);
-      console.log('[preview] AlphaXiv response:', summary ? 'received' : 'null');
-      if (summary) {
-        setAlphaXivSummary(summary);
-      }
-    } catch (e) {
-      console.error('Failed to fetch AlphaXiv:', e);
-    } finally {
-      setFetchingAlphaXiv(false);
-    }
-  }, [paper, fetchingAlphaXiv]);
+    ipc
+      .getAlphaXivData(paper.arxivId)
+      .then((summary) => {
+        if (!cancelled && summary) setAlphaXivSummary(summary);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setFetchingAlphaXiv(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [paper?.arxivId]);
 
   if (!paper) {
     return (
@@ -213,33 +214,25 @@ export function DiscoveryPreviewPage() {
 
           {/* AI Summary (from AlphaXiv) */}
           {(aiSummary || alphaXivSummary) && (
-            <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-4">
+            <div className="rounded-xl border border-purple-100 bg-purple-50/30 p-4">
               <div className="flex items-center gap-2 text-purple-700 mb-2">
                 <Sparkles size={16} />
                 <span className="font-medium">
                   {t('discovery.aiSummary', 'AI Summary (AlphaXiv)')}
                 </span>
               </div>
-              <div className="text-sm text-purple-900/80 leading-relaxed">
+              <div className="max-h-[300px] overflow-y-auto">
                 <MarkdownContent content={alphaXivSummary || aiSummary} />
               </div>
             </div>
           )}
 
-          {/* Get AI Summary Button - only show if no summary yet */}
-          {!aiSummary && !alphaXivSummary && (
-            <button
-              onClick={handleFetchAlphaXiv}
-              disabled={fetchingAlphaXiv}
-              className="flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-600 transition-colors hover:bg-purple-100 disabled:opacity-50"
-            >
-              {fetchingAlphaXiv ? (
-                <Loader2 size={16} className="animate-spin" />
-              ) : (
-                <Sparkles size={16} />
-              )}
-              {t('paper.fetchAlphaXiv', 'Get AI Summary')}
-            </button>
+          {/* Loading indicator for AlphaXiv fetch */}
+          {fetchingAlphaXiv && !aiSummary && !alphaXivSummary && (
+            <div className="flex items-center gap-2 text-purple-500 text-sm">
+              <Loader2 size={14} className="animate-spin" />
+              {t('paper.alphaXivLoading', 'Loading AI summary...')}
+            </div>
           )}
 
           {/* AI Evaluation Reason */}
@@ -272,9 +265,9 @@ export function DiscoveryPreviewPage() {
             <h2 className="text-sm font-medium text-notion-text mb-2">
               {t('discovery.abstract', 'Abstract')}
             </h2>
-            <p className="text-sm text-notion-text-secondary leading-relaxed whitespace-pre-wrap">
-              {originalAbstract}
-            </p>
+            <div className="text-sm text-notion-text-secondary leading-relaxed">
+              <MarkdownContent content={originalAbstract} />
+            </div>
           </div>
 
           {/* Authors */}

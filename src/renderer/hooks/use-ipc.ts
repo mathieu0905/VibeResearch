@@ -710,6 +710,7 @@ export const ipc = {
   fetchAlphaXiv: (paperId: string, shortId: string) =>
     invoke<string | null>('papers:fetchAlphaXiv', paperId, shortId),
   getAlphaXivData: (arxivId: string) => invoke<string | null>('papers:getAlphaXivData', arxivId),
+  refreshAllAlphaXiv: () => invoke<{ updated: number; total: number }>('papers:refreshAllAlphaXiv'),
 
   // Zotero import
   zoteroDetect: (customDbPath?: string) =>

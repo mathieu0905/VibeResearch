@@ -565,6 +565,8 @@
     "relevanceScore": "Relevance to your library",
     "readPdf": "Read PDF",
     "downloading": "Downloading...",
+    "importing": "Importing...",
+    "imported": "Imported",
     "noPaperData": "No paper data",
     "qualityScore": "Quality",
     "aiSummary": "AI Summary (AlphaXiv)",

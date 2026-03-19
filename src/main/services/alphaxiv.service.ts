@@ -193,10 +193,12 @@ export async function getPaperOverview(
 
 /**
  * Get the best available summary text for display
- * Priority: intermediateReport > summary fields > overview
+ * Priority: overview (markdown) > summary fields > intermediateReport
+ * Note: overview is a human-readable markdown blog post with proper formatting;
+ *       intermediateReport is machine-readable plain text for LLM consumption.
  */
 export function getBestSummary(data: AlphaXivOverview): string | null {
-  if (data.intermediateReport) return data.intermediateReport;
+  if (data.overview) return data.overview;
 
   if (data.summary) {
     const parts: string[] = [];
@@ -208,7 +210,7 @@ export function getBestSummary(data: AlphaXivOverview): string | null {
     if (parts.length > 0) return parts.join('\n\n');
   }
 
-  if (data.overview) return data.overview;
+  if (data.intermediateReport) return data.intermediateReport;
 
   return null;
 }

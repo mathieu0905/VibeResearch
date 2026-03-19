@@ -517,6 +517,55 @@ Rules:
     },
   );
 
+  // Bulk refresh AlphaXiv summaries for all arXiv papers
+  ipcMain.handle(
+    'papers:refreshAllAlphaXiv',
+    async (): Promise<IpcResult<{ updated: number; total: number }>> => {
+      try {
+        const all = await getPapersService().list({});
+        const arxivPapers = all.filter((p) => /^\d{4}\.\d{4,5}/.test(p.shortId));
+        let updated = 0;
+
+        for (const paper of arxivPapers) {
+          try {
+            const arxivId = paper.shortId.match(/^(\d{4}\.\d{4,5})/)![1];
+            const alphaxivData = await getPaperOverview(arxivId);
+            if (!alphaxivData?.overview) continue;
+
+            const aiSummary = getBestSummary(alphaxivData.overview);
+            if (!aiSummary) continue;
+
+            // Extract original abstract
+            let originalAbstract = paper.abstract;
+            const marker = '**AI-Generated Summary (AlphaXiv):**';
+            const divider = '\n\n---\n\n**Original Abstract:**';
+            if (paper.abstract.includes(marker)) {
+              const dividerIndex = paper.abstract.indexOf(divider);
+              if (dividerIndex !== -1) {
+                originalAbstract = paper.abstract.slice(dividerIndex + divider.length).trim();
+              }
+            }
+
+            const newAbstract = `**AI-Generated Summary (AlphaXiv):**\n\n${aiSummary}\n\n---\n\n**Original Abstract:**\n${originalAbstract}`;
+            await getPapersService().updateAbstract(paper.id, newAbstract);
+            updated++;
+            console.log(
+              `[refreshAllAlphaXiv] Updated ${paper.shortId} (${updated}/${arxivPapers.length})`,
+            );
+          } catch {
+            // Skip individual failures
+          }
+        }
+
+        console.log(`[refreshAllAlphaXiv] Done: ${updated}/${arxivPapers.length} updated`);
+        return ok({ updated, total: arxivPapers.length });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(msg);
+      }
+    },
+  );
+
   // Get AlphaXiv summary for an arXiv paper (without saving to database)
   ipcMain.handle(
     'papers:getAlphaXivData',

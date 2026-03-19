@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import i18n from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTabs } from '../../../hooks/use-tabs';
 import {
@@ -50,7 +51,6 @@ import {
   Github,
   FolderDown,
   Lightbulb,
-  Sparkles,
   Target,
   FolderKanban,
   Copy,
@@ -1183,31 +1183,35 @@ function AbstractSection({
   onUpdate: (newAbstract: string) => void;
 }) {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<'alphaxiv' | 'abstract'>('alphaxiv');
+  const [activeTab, setActiveTab] = useState<'alphaxiv' | 'abstract'>('abstract');
   const [fetching, setFetching] = useState(false);
   const parsed = parseAlphaXivAbstract(abstract);
 
   // Check if shortId looks like an arXiv ID
   const isArxivPaper = /^\d{4}\.\d{4,5}/.test(shortId);
 
-  const handleFetchAlphaXiv = async () => {
+  // Auto-fetch AlphaXiv summary on mount for arXiv papers without existing summary
+  useEffect(() => {
+    if (!isArxivPaper || parsed) return;
+    let cancelled = false;
     setFetching(true);
-    try {
-      const newAbstract = await ipc.fetchAlphaXiv(paperId, shortId);
-      if (newAbstract) {
-        onUpdate(newAbstract);
-      } else {
-        // No AlphaXiv data available - show toast
-        console.log('No AlphaXiv data available for this paper');
-      }
-    } catch (err) {
-      console.error('Failed to fetch AlphaXiv:', err);
-    } finally {
-      setFetching(false);
-    }
-  };
+    ipc
+      .fetchAlphaXiv(paperId, shortId)
+      .then((newAbstract) => {
+        if (!cancelled && newAbstract) {
+          onUpdate(newAbstract);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setFetching(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [paperId, shortId]);
 
-  // If no AlphaXiv content, show abstract with option to fetch AlphaXiv
+  // If no AlphaXiv content, show abstract only
   if (!parsed) {
     return (
       <div className="rounded-xl border border-notion-border p-5">
@@ -1215,15 +1219,11 @@ function AbstractSection({
           <h2 className="text-sm font-semibold text-notion-text-secondary uppercase tracking-wider">
             Abstract
           </h2>
-          {isArxivPaper && (
-            <button
-              onClick={handleFetchAlphaXiv}
-              disabled={fetching}
-              className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1 text-xs font-medium text-purple-600 transition-colors hover:bg-purple-100 disabled:opacity-50"
-            >
-              {fetching ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              {t('paper.fetchAlphaXiv', 'Get AI Summary')}
-            </button>
+          {fetching && (
+            <div className="flex items-center gap-1.5 text-purple-500 text-xs">
+              <Loader2 size={12} className="animate-spin" />
+              {t('paper.alphaXivLoading', 'Loading AI summary...')}
+            </div>
           )}
         </div>
         <div className="text-sm text-notion-text leading-relaxed">
@@ -1238,16 +1238,6 @@ function AbstractSection({
       {/* Tab Header */}
       <div className="flex items-center gap-1 mb-3">
         <button
-          onClick={() => setActiveTab('alphaxiv')}
-          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
-            activeTab === 'alphaxiv'
-              ? 'bg-purple-100 text-purple-700'
-              : 'text-notion-text-secondary hover:bg-notion-sidebar'
-          }`}
-        >
-          ✨ AI Summary
-        </button>
-        <button
           onClick={() => setActiveTab('abstract')}
           className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
             activeTab === 'abstract'
@@ -1257,18 +1247,28 @@ function AbstractSection({
         >
           Abstract
         </button>
+        <button
+          onClick={() => setActiveTab('alphaxiv')}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            activeTab === 'alphaxiv'
+              ? 'bg-purple-100 text-purple-700'
+              : 'text-notion-text-secondary hover:bg-notion-sidebar'
+          }`}
+        >
+          ✨ AI Summary
+        </button>
       </div>
 
       {/* Tab Content */}
-      <div className="text-sm text-notion-text leading-relaxed">
-        {activeTab === 'alphaxiv' ? (
-          <div className="prose prose-sm max-w-none">
-            <MarkdownContent content={parsed.alphaXivSummary} />
-          </div>
-        ) : (
-          <div className="whitespace-pre-wrap">{parsed.originalAbstract}</div>
-        )}
-      </div>
+      {activeTab === 'alphaxiv' ? (
+        <div className="max-h-[400px] overflow-y-auto rounded-lg border border-purple-100 bg-purple-50/30 p-4">
+          <MarkdownContent content={parsed.alphaXivSummary} />
+        </div>
+      ) : (
+        <div>
+          <MarkdownContent content={parsed.originalAbstract} />
+        </div>
+      )}
     </div>
   );
 }
