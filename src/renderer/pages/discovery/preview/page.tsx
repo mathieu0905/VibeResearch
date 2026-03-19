@@ -60,8 +60,8 @@ export function DiscoveryPreviewPage() {
 
     try {
       await ipc.downloadPaper(paper.arxivId, [], false);
-      // Navigate to library after import
-      navigate('/papers');
+      // Return to Discovery after import
+      navigate('/discovery');
     } catch (e) {
       console.error('Failed to import:', e);
     }
@@ -93,12 +93,18 @@ export function DiscoveryPreviewPage() {
   }
 
   // Extract AI summary from abstract if present
-  const abstractParts = paper.abstract.split('**Original Abstract:**');
-  const aiSummary = abstractParts[0]
-    .replace('**AI-Generated Summary (AlphaXiv):**\n\n', '')
-    .replace('\n\n---\n\n', '')
-    .trim();
-  const originalAbstract = abstractParts[1]?.trim() || paper.abstract;
+  const hasAlphaXivMarker = paper.abstract.includes('**AI-Generated Summary (AlphaXiv):**');
+  let aiSummary = '';
+  let originalAbstract = paper.abstract;
+
+  if (hasAlphaXivMarker) {
+    const abstractParts = paper.abstract.split('**Original Abstract:**');
+    aiSummary = abstractParts[0]
+      .replace('**AI-Generated Summary (AlphaXiv):**\n\n', '')
+      .replace('\n\n---\n\n', '')
+      .trim();
+    originalAbstract = abstractParts[1]?.trim() || paper.abstract;
+  }
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -204,7 +210,7 @@ export function DiscoveryPreviewPage() {
           )}
 
           {/* AI Summary (from AlphaXiv) */}
-          {(aiSummary || alphaXivSummary) && (aiSummary !== paper.abstract || alphaXivSummary) && (
+          {(aiSummary || alphaXivSummary) && (
             <div className="rounded-xl border border-purple-100 bg-purple-50/50 p-4">
               <div className="flex items-center gap-2 text-purple-700 mb-2">
                 <Sparkles size={16} />
