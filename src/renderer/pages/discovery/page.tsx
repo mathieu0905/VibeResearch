@@ -194,15 +194,20 @@ export function DiscoveryPage() {
   // Read PDF - imports as temporary (24h), then opens in app reader
   const handleReadPdf = useCallback(
     async (paper: DiscoveredPaper) => {
+      console.log('[handleReadPdf] Starting for paper:', paper.arxivId);
       try {
         // Import as temporary (will be cleaned up after 24h unless made permanent)
         const result = await ipc.downloadPaper(paper.arxivId, [], true);
+        console.log('[handleReadPdf] downloadPaper result:', result);
         if (result && result.paper) {
           // Navigate to in-app reader
+          console.log('[handleReadPdf] Opening tab:', `/papers/${result.paper.shortId}/reader`);
           openTab(`/papers/${result.paper.shortId}/reader`);
+        } else {
+          console.warn('[handleReadPdf] No paper in result:', result);
         }
       } catch (e) {
-        console.error('Failed to read PDF:', e);
+        console.error('[handleReadPdf] Failed to read PDF:', e);
       }
     },
     [openTab],
@@ -433,23 +438,24 @@ export function DiscoveryPage() {
               </button>
             )}
 
-            {/* Sort toggle - show once relevance scores exist */}
-            {papers.some((p) => p.relevanceScore !== null && p.relevanceScore !== undefined) && (
-              <button
-                onClick={() => setSortByRelevance(!sortByRelevance)}
-                className={clsx(
-                  'flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
-                  sortByRelevance
-                    ? 'border-green-300 bg-green-50 text-green-600'
-                    : 'border-blue-300 bg-blue-50 text-blue-600',
-                )}
-              >
-                {sortByRelevance
-                  ? t('discovery.sortByRelevance', 'Sort by Relevance')
-                  : t('discovery.sortByQuality', 'Sort by Quality')}
-                {sortByRelevance && <CheckCircle2 size={14} />}
-              </button>
-            )}
+            {/* Sort toggle - only show when BOTH relevance and quality scores exist */}
+            {papers.some((p) => p.relevanceScore !== null && p.relevanceScore !== undefined) &&
+              papers.some((p) => p.qualityScore !== null && p.qualityScore !== undefined) && (
+                <button
+                  onClick={() => setSortByRelevance(!sortByRelevance)}
+                  className={clsx(
+                    'flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors',
+                    sortByRelevance
+                      ? 'border-green-300 bg-green-50 text-green-600'
+                      : 'border-blue-300 bg-blue-50 text-blue-600',
+                  )}
+                >
+                  {sortByRelevance
+                    ? t('discovery.sortByRelevance', 'Sort by Relevance')
+                    : t('discovery.sortByQuality', 'Sort by Quality')}
+                  {sortByRelevance && <CheckCircle2 size={14} />}
+                </button>
+              )}
           </div>
         )}
 
