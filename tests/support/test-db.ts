@@ -7,7 +7,12 @@ import { TEST_DB_PATH, TEST_STORAGE_DIR } from './test-env';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..', '..');
-const prismaBin = path.join(repoRoot, 'node_modules', '.bin', 'prisma');
+const prismaBin = path.join(
+  repoRoot,
+  'node_modules',
+  '.bin',
+  process.platform === 'win32' ? 'prisma.cmd' : 'prisma',
+);
 const testDbPath = TEST_DB_PATH;
 
 let initialized = false;
@@ -34,13 +39,16 @@ export const ensureTestDatabaseSchema = () => {
   rmSync(TEST_STORAGE_DIR, { recursive: true, force: true });
   mkdirSync(TEST_STORAGE_DIR, { recursive: true });
 
-  execFileSync(prismaBin, ['db', 'push', '--schema', 'prisma/schema.prisma', '--skip-generate'], {
+  const env = {
+    ...process.env,
+    DATABASE_URL: `file:${testDbPath}`,
+  };
+  const prismaArgs = ['db', 'push', '--schema', 'prisma/schema.prisma', '--skip-generate'];
+  execFileSync(prismaBin, prismaArgs, {
     cwd: repoRoot,
     stdio: 'pipe',
-    env: {
-      ...process.env,
-      DATABASE_URL: `file:${testDbPath}`,
-    },
+    env,
+    shell: process.platform === 'win32',
   });
 
   initialized = true;
