@@ -57,6 +57,7 @@ interface RecentItem {
 const primaryNavRoutes = [
   { to: '/dashboard', labelKey: 'sidebar.dashboard' as const, icon: LayoutDashboard },
   { to: '/search', labelKey: 'sidebar.search' as const, icon: Search },
+  { to: '/discovery', labelKey: 'sidebar.discovery' as const, icon: Sparkles },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = 'researchclaw-sidebar-collapsed';
@@ -471,15 +472,6 @@ export function AppShell({
           <nav className="mt-2 flex flex-col gap-0.5 px-2">
             {[
               ...primaryNavRoutes,
-              ...(devMode
-                ? [
-                    {
-                      to: '/discovery',
-                      labelKey: 'sidebar.discovery' as const,
-                      icon: Sparkles,
-                    },
-                  ]
-                : []),
               ...(isCollapsed
                 ? [
                     { to: '/papers', labelKey: 'sidebar.library' as const, icon: FileText },
