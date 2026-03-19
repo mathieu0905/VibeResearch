@@ -1,10 +1,12 @@
 /**
  * Paper Quality Scoring Service
- * Uses AI to evaluate paper quality based on abstract analysis
+ * Uses AI to evaluate paper quality based on AlphaXiv summary or PDF introduction
  */
 
 import { generateWithModelKind } from './ai-provider.service';
 import type { DiscoveredPaper } from './arxiv-discovery.service';
+import { getPaperOverview, getBestSummary, type AlphaXivOverview } from './alphaxiv.service';
+import { extractFromArxiv } from './pdf-extractor.service';
 
 export interface QualityScore {
   score: number; // 1-10
@@ -18,12 +20,62 @@ export interface QualityScore {
   recommendation: 'must-read' | 'worth-reading' | 'skimmable' | 'skip';
 }
 
+interface EvaluationContent {
+  source: 'alphaxiv' | 'pdf' | 'abstract';
+  content: string;
+}
+
+/**
+ * Get evaluation content for a paper
+ * Priority: AlphaXiv summary > PDF introduction > Abstract
+ */
+async function getEvaluationContent(paper: DiscoveredPaper): Promise<EvaluationContent> {
+  // Try AlphaXiv first
+  try {
+    const alphaxivData = await getPaperOverview(paper.arxivId, { lang: 'en' });
+    if (alphaxivData?.overview) {
+      const summary = getBestSummary(alphaxivData.overview);
+      if (summary && summary.length > 100) {
+        console.log(`[paper-quality] Using AlphaXiv summary for ${paper.arxivId}`);
+        return { source: 'alphaxiv', content: summary };
+      }
+    }
+  } catch (err) {
+    console.log(`[paper-quality] AlphaXiv not available for ${paper.arxivId}:`, err);
+  }
+
+  // Fallback to PDF introduction
+  try {
+    const extracted = await extractFromArxiv(paper.arxivId, { maxChars: 6000 });
+    if (extracted.text && extracted.text.length > 500) {
+      console.log(`[paper-quality] Using PDF introduction for ${paper.arxivId}`);
+      return { source: 'pdf', content: extracted.text };
+    }
+  } catch (err) {
+    console.log(`[paper-quality] PDF extraction failed for ${paper.arxivId}:`, err);
+  }
+
+  // Final fallback to abstract
+  console.log(`[paper-quality] Using abstract for ${paper.arxivId}`);
+  return { source: 'abstract', content: paper.abstract };
+}
+
 /**
  * Get the system prompt for paper quality evaluation
  */
-function getQualityEvaluationSystemPrompt(language: string): string {
+function getQualityEvaluationSystemPrompt(
+  language: string,
+  source: 'alphaxiv' | 'pdf' | 'abstract',
+): string {
+  const sourceDescription =
+    source === 'alphaxiv'
+      ? 'AlphaXiv AI-generated summary (comprehensive analysis)'
+      : source === 'pdf'
+        ? 'PDF introduction content (first few pages)'
+        : 'paper abstract (brief summary)';
+
   if (language === 'zh') {
-    return `你是一位资深的学术研究员，擅长快速评估论文质量。你的任务是分析论文摘要并给出质量评估。
+    return `你是一位资深的学术研究员，擅长快速评估论文质量。你的任务是基于${sourceDescription}分析论文并给出质量评估。
 
 评估维度：
 1. 新颖性 (novelty): 研究问题的创新程度和原创性
@@ -51,7 +103,9 @@ function getQualityEvaluationSystemPrompt(language: string): string {
 }`;
   }
 
-  return `You are a senior academic researcher skilled at quickly evaluating paper quality. Your task is to analyze paper abstracts and provide quality assessments.
+  return `You are a senior academic researcher skilled at quickly evaluating paper quality. Your task is to analyze the following content and provide a quality assessment.
+
+Content source: ${sourceDescription}
 
 Evaluation dimensions:
 1. Novelty: How novel/original is the contribution?
@@ -86,7 +140,13 @@ export async function evaluatePaperQuality(
   paper: DiscoveredPaper,
   language: string = 'en',
 ): Promise<QualityScore> {
-  const systemPrompt = getQualityEvaluationSystemPrompt(language);
+  // Get the best available content for evaluation
+  const { source, content } = await getEvaluationContent(paper);
+
+  const systemPrompt = getQualityEvaluationSystemPrompt(language, source);
+
+  const sourceLabel =
+    source === 'alphaxiv' ? 'AlphaXiv Summary' : source === 'pdf' ? 'PDF Introduction' : 'Abstract';
 
   const userPrompt = `Please evaluate this paper:
 
@@ -94,7 +154,8 @@ Title: ${paper.title}
 
 Authors: ${paper.authors.join(', ')}
 
-Abstract: ${paper.abstract}
+${sourceLabel}:
+${content}
 
 Categories: ${paper.categories.join(', ')}
 
@@ -175,9 +236,9 @@ export async function batchEvaluatePapers(
 
     onProgress?.(i + 1, papers.length);
 
-    // Rate limiting: small delay between evaluations
+    // Rate limiting: delay between evaluations (longer for PDF extraction)
     if (i < papers.length - 1) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
   }
 

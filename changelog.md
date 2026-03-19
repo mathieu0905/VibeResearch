@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-19 (session 52)
+
+### feat: Enhanced AI evaluation with AlphaXiv/PDF support
+
+- **Scope**: `src/main/services/paper-quality.service.ts`
+- **Improved evaluation content source**:
+  - Priority 1: AlphaXiv AI-generated summary (if available)
+  - Priority 2: PDF introduction (first few pages)
+  - Priority 3: Abstract (fallback)
+- **Better evaluation quality**: Based on richer content instead of just abstract
+- **Rate limiting**: Increased delay to 800ms between evaluations (PDF extraction takes time)
+
 ## 2026-03-19 (session 51)
 
 ### feat: Discovery page pagination + Smart Filter improvements
