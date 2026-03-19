@@ -43,6 +43,7 @@ const EXCLUDED_TAGS = ['arxiv', 'chrome', 'manual', 'pdf'];
 const MAX_VISIBLE_CHIPS = 8;
 
 type ImportTimeFilter = 'all' | 'today' | 'week' | 'month';
+type SortOption = 'lastRead' | 'importDate' | 'title';
 type CategoryFilter = 'all' | TagCategory;
 
 // Filter options will be generated inside the component with i18n
@@ -242,6 +243,7 @@ export function PapersByTag({
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [importTimeFilter, setImportTimeFilter] = useState<ImportTimeFilter>('all');
+  const [sortBy, setSortBy] = useState<SortOption>('lastRead');
   const [yearFilter, setYearFilter] = useState<number | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
@@ -256,6 +258,12 @@ export function PapersByTag({
     { value: 'today', label: t('papersByTag.timeFilter.today') },
     { value: 'week', label: t('papersByTag.timeFilter.week') },
     { value: 'month', label: t('papersByTag.timeFilter.month') },
+  ];
+
+  const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+    { value: 'lastRead', label: t('papersByTag.sort.lastRead') },
+    { value: 'importDate', label: t('papersByTag.sort.importDate') },
+    { value: 'title', label: t('papersByTag.sort.title') },
   ];
 
   const CATEGORY_FILTER_OPTIONS: { value: CategoryFilter; label: string }[] = [
@@ -298,6 +306,8 @@ export function PapersByTag({
   } | null>(null);
 
   // Selection mode state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
@@ -482,7 +492,7 @@ export function PapersByTag({
   }, [importTimeFilter]);
 
   const visiblePapers = useMemo(() => {
-    return papers.filter((paper) => {
+    const filtered = papers.filter((paper) => {
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const matchesTitle = paper.title.toLowerCase().includes(q);
@@ -511,7 +521,21 @@ export function PapersByTag({
 
       return true;
     });
-  }, [papers, searchQuery, selectedTag, importTimeCutoff, yearFilter]);
+
+    // Sort based on selected sort option
+    if (sortBy === 'importDate') {
+      filtered.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+    } else if (sortBy === 'title') {
+      filtered.sort((a, b) => a.title.localeCompare(b.title));
+    }
+    // 'lastRead' keeps the default DB order (lastReadAt desc, then createdAt desc)
+
+    return filtered;
+  }, [papers, searchQuery, selectedTag, importTimeCutoff, yearFilter, sortBy]);
 
   const tagList = useMemo(() => {
     const untaggedCount = papers.filter(
@@ -538,6 +562,15 @@ export function PapersByTag({
       return a.name.localeCompare(b.name);
     });
   }, [allTags, papers, categoryFilter]);
+
+  // Reset to page 1 when filters or sort change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedTag, importTimeFilter, yearFilter, sortBy]);
+
+  // Pagination
+  const totalPages = Math.ceil(visiblePapers.length / pageSize);
+  const paginatedPapers = visiblePapers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const untaggedCount = useMemo(() => {
     return papers.filter(
@@ -1091,6 +1124,7 @@ export function PapersByTag({
             ))}
           </div>
           <div className="flex items-center gap-2">
+            <PillDropdown options={SORT_OPTIONS} selected={sortBy} onSelect={setSortBy} />
             <PillDropdown
               options={TIME_FILTER_OPTIONS}
               selected={importTimeFilter}
@@ -1408,35 +1442,96 @@ export function PapersByTag({
             <p className="text-sm text-notion-text-tertiary">{t('papersByTag.noMatch')}</p>
           </div>
         ) : (
-          <div className="rounded-xl border border-notion-border bg-white overflow-hidden">
-            {visiblePapers.map((paper) => (
-              <PaperCard
-                key={paper.id}
-                paper={paper}
-                deleting={deleting}
-                downloadingPdf={downloadingPdf}
-                retryingPaperId={retryingPaperId}
-                autoTaggingPaperId={autoTaggingPaperId}
-                indexingPaperId={indexingPaperId}
-                analyzingPaperId={analyzingPaperId}
-                extractingMetadataPaperId={extractingMetadataPaperId}
-                canAutoTag={canAutoTag}
-                canIndex={canIndex}
-                onDelete={handleDelete}
-                onDownload={handleDownloadPdf}
-                onRetry={handleRetryProcessing}
-                onAutoTag={handleAutoTagPaper}
-                onIndex={handleIndexPaper}
-                onAnalyze={handleAnalyzePaper}
-                onExtractMetadata={handleExtractPaperMetadata}
-                onOpen={(shortId, state) => navigate(`/papers/${shortId}`, { state })}
-                isSelectMode={isSelectMode}
-                isSelected={selectedIds.has(paper.id)}
-                onToggleSelect={toggleSelect}
-                t={t}
-              />
-            ))}
-          </div>
+          <>
+            <div className="rounded-xl border border-notion-border bg-white overflow-hidden">
+              {paginatedPapers.map((paper) => (
+                <PaperCard
+                  key={paper.id}
+                  paper={paper}
+                  deleting={deleting}
+                  downloadingPdf={downloadingPdf}
+                  retryingPaperId={retryingPaperId}
+                  autoTaggingPaperId={autoTaggingPaperId}
+                  indexingPaperId={indexingPaperId}
+                  analyzingPaperId={analyzingPaperId}
+                  extractingMetadataPaperId={extractingMetadataPaperId}
+                  canAutoTag={canAutoTag}
+                  canIndex={canIndex}
+                  onDelete={handleDelete}
+                  onDownload={handleDownloadPdf}
+                  onRetry={handleRetryProcessing}
+                  onAutoTag={handleAutoTagPaper}
+                  onIndex={handleIndexPaper}
+                  onAnalyze={handleAnalyzePaper}
+                  onExtractMetadata={handleExtractPaperMetadata}
+                  onOpen={(shortId, state) => navigate(`/papers/${shortId}`, { state })}
+                  isSelectMode={isSelectMode}
+                  isSelected={selectedIds.has(paper.id)}
+                  onToggleSelect={toggleSelect}
+                  t={t}
+                />
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-center gap-2 pb-4">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-notion-border bg-white text-notion-text-secondary transition-colors hover:bg-notion-sidebar disabled:opacity-40 disabled:hover:bg-white"
+                >
+                  <ChevronDown size={16} className="rotate-90" />
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((page) => {
+                      // Show first, last, current, and neighbors
+                      if (page === 1 || page === totalPages) return true;
+                      if (Math.abs(page - currentPage) <= 1) return true;
+                      return false;
+                    })
+                    .map((page, idx, arr) => {
+                      const showEllipsis = idx > 0 && page - arr[idx - 1] > 1;
+                      return (
+                        <span key={page} className="flex items-center gap-1">
+                          {showEllipsis && (
+                            <span className="px-1 text-xs text-notion-text-tertiary">…</span>
+                          )}
+                          <button
+                            onClick={() => setCurrentPage(page)}
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition-colors ${
+                              page === currentPage
+                                ? 'bg-notion-accent text-white'
+                                : 'border border-notion-border bg-white text-notion-text-secondary hover:bg-notion-sidebar'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        </span>
+                      );
+                    })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-notion-border bg-white text-notion-text-secondary transition-colors hover:bg-notion-sidebar disabled:opacity-40 disabled:hover:bg-white"
+                >
+                  <ChevronDown size={16} className="-rotate-90" />
+                </button>
+
+                <span className="ml-2 text-xs text-notion-text-tertiary">
+                  {t('papersByTag.pageInfo', {
+                    current: currentPage,
+                    total: totalPages,
+                    count: visiblePapers.length,
+                  })}
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1635,6 +1730,15 @@ function PaperCard({
                 {authorsSnippet}
                 {hasMoreAuthors ? ' et al.' : ''}
               </span>
+            )}
+            {paper.createdAt && (
+              <>
+                <span className="text-xs text-notion-border">·</span>
+                <span className="text-xs text-notion-text-tertiary">
+                  {t('papersByTag.importedAt', 'Imported')}{' '}
+                  {new Date(paper.createdAt).toLocaleDateString()}
+                </span>
+              </>
             )}
             <ProcessingBadge status={paper.processingStatus} t={t} />
           </div>

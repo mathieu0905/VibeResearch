@@ -490,6 +490,13 @@
       "indexing": "索引中",
       "needsRetry": "需要重试"
     },
+    "sort": {
+      "lastRead": "最近阅读",
+      "importDate": "导入时间",
+      "title": "标题"
+    },
+    "importedAt": "导入于",
+    "pageInfo": "第 {{current}} / {{total}} 页 · 共 {{count}} 篇",
     "manageTags": "管理标签",
     "noPapers": "暂无论文",
     "noMatch": "没有符合当前筛选条件的论文",

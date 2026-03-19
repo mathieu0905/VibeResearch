@@ -490,6 +490,13 @@
       "indexing": "Indexing",
       "needsRetry": "Needs retry"
     },
+    "sort": {
+      "lastRead": "Last Read",
+      "importDate": "Import Date",
+      "title": "Title"
+    },
+    "importedAt": "Imported",
+    "pageInfo": "Page {{current}} / {{total}} · {{count}} papers",
     "manageTags": "Manage Tags",
     "noPapers": "No papers yet",
     "noMatch": "No papers match the current filters",
