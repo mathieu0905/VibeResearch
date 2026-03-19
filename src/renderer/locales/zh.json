@@ -228,8 +228,14 @@
     "title": "导入论文",
     "tabs": {
       "chrome": "Chrome 历史",
-      "local": "PDF · DOI"
+      "local": "PDF · DOI",
+      "zotero": "Zotero",
+      "bibtex": "BibTeX"
     },
+    "importCount": "导入 {{count}} 篇论文",
+    "importing": "导入中...",
+    "imported": "已导入 {{count}} 篇论文",
+    "importFailed": "导入失败",
     "last1Day": "最近 24 小时",
     "last7Days": "最近 7 天",
     "last30Days": "最近 30 天",
