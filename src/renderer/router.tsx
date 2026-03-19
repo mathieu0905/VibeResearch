@@ -9,6 +9,7 @@ import { ProjectsPage, ProjectDetailPage } from './pages/projects/page';
 import { SettingsPage } from './pages/settings/page';
 import { AgentTodosPage } from './pages/agent-todos/page';
 import { AgentTodoDetailPage } from './pages/agent-todos/[id]/page';
+import { DiscoveryPage } from './pages/discovery/page';
 import { TabsProvider } from './hooks/use-tabs';
 import { ChatProvider } from './hooks/use-chat';
 import { AnalysisProvider } from './hooks/use-analysis';
@@ -67,6 +68,7 @@ export const router = createHashRouter([
         element: <AgentTodoDetailPage />,
         handle: { fullWidth: true, hideBackButton: true },
       },
+      { path: 'discovery', element: <DiscoveryPage />, handle: { fullWidth: true } },
       { path: 'settings', element: <SettingsPage /> },
     ],
   },

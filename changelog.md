@@ -4,7 +4,7 @@
 
 ### feat: arXiv daily discovery + AI quality scoring
 
-- **Scope**: `src/main/services/arxiv-discovery.service.ts`, `src/main/services/paper-quality.service.ts`, `src/main/ipc/discovery.ipc.ts`, `src/main/index.ts`, `src/renderer/hooks/use-ipc.ts`
+- **Scope**: `src/main/services/arxiv-discovery.service.ts`, `src/main/services/paper-quality.service.ts`, `src/main/ipc/discovery.ipc.ts`, `src/renderer/pages/discovery/page.tsx`, `src/renderer/components/app-shell.tsx`, `src/renderer/router.tsx`
 - **arXiv Discovery Service**: New service to fetch recent papers from arXiv API by category.
   - `fetchNewPapers(categories, maxResults, daysBack)` — fetch papers from specified categories
   - Supports all major CS categories (cs.AI, cs.LG, cs.CL, cs.CV, etc.)
@@ -15,6 +15,14 @@
   - Overall score 1-10 with recommendation (must-read / worth-reading / skimmable / skip)
   - Brief reason in 2-3 sentences
 - **IPC Handlers**: `discovery:getCategories`, `discovery:fetch`, `discovery:evaluate`, `discovery:evaluateProgress`, `discovery:getLastResult`, `discovery:clear`
+- **Discovery Page UI**: Full-featured page for discovering and evaluating papers
+  - Category multi-select dropdown
+  - Date range filter (1-14 days)
+  - AI quality evaluation with progress indicator
+  - Paper cards with quality score, recommendation badge, and dimensions
+  - One-click import to library
+- **Developer Mode**: Discovery page only visible when dev mode is enabled in Settings
+- **i18n**: Full English and Chinese translations for discovery feature
 - **Design**: Inspired by AlphaXiv's paper discovery and quality assessment features
 
 ## 2026-03-19 (session 41)

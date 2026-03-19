@@ -26,6 +26,7 @@
   "sidebar": {
     "dashboard": "主页",
     "search": "搜索",
+    "discovery": "论文发现",
     "library": "文献库",
     "projects": "项目",
     "tasks": "任务",
@@ -521,5 +522,30 @@
     "callTools": "调用 {{count}} 个工具",
     "operations": "{{count}} 项操作",
     "steps": "{{count}} 步"
+  },
+  "discovery": {
+    "title": "论文发现",
+    "subtitle": "从 arXiv 发现并评估新论文",
+    "categories": "个类别",
+    "last1Day": "最近 1 天",
+    "last3Days": "最近 3 天",
+    "last7Days": "最近 7 天",
+    "last14Days": "最近 14 天",
+    "fetch": "获取论文",
+    "fetching": "正在从 arXiv 获取论文...",
+    "evaluateWithAI": "AI 质量评估",
+    "evaluating": "正在评估论文质量...",
+    "empty": "暂无发现的论文",
+    "emptyHint": "选择类别后点击「获取论文」开始",
+    "import": "导入",
+    "viewAbstract": "查看",
+    "must-read": "必读",
+    "worth-reading": "值得一读",
+    "skimmable": "可略读",
+    "skip": "可跳过",
+    "novelty": "创新性",
+    "methodology": "方法论",
+    "significance": "重要性",
+    "clarity": "清晰度"
   }
 }

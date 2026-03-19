@@ -22,6 +22,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Sparkles,
+  FlaskConical,
 } from 'lucide-react';
 import { useTabs } from '../hooks/use-tabs';
 import {
@@ -465,6 +466,15 @@ export function AppShell({
           <nav className="mt-2 flex flex-col gap-0.5 px-2">
             {[
               ...primaryNavRoutes,
+              ...(devMode
+                ? [
+                    {
+                      to: '/discovery',
+                      labelKey: 'sidebar.discovery' as const,
+                      icon: Sparkles,
+                    },
+                  ]
+                : []),
               ...(isCollapsed
                 ? [
                     { to: '/papers', labelKey: 'sidebar.library' as const, icon: FileText },

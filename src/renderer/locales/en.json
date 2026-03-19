@@ -26,6 +26,7 @@
   "sidebar": {
     "dashboard": "Dashboard",
     "search": "Search",
+    "discovery": "Discovery",
     "library": "Library",
     "projects": "Projects",
     "tasks": "Tasks",
@@ -521,5 +522,30 @@
     "callTools": "Call {{count}} tool(s)",
     "operations": "{{count}} operation(s)",
     "steps": "{{count}} steps"
+  },
+  "discovery": {
+    "title": "Discover Papers",
+    "subtitle": "Find and evaluate new papers from arXiv",
+    "categories": "categories",
+    "last1Day": "Last 1 day",
+    "last3Days": "Last 3 days",
+    "last7Days": "Last 7 days",
+    "last14Days": "Last 14 days",
+    "fetch": "Fetch Papers",
+    "fetching": "Fetching papers from arXiv...",
+    "evaluateWithAI": "Evaluate with AI",
+    "evaluating": "Evaluating papers...",
+    "empty": "No papers discovered yet",
+    "emptyHint": "Select categories and click \"Fetch Papers\" to start",
+    "import": "Import",
+    "viewAbstract": "View",
+    "must-read": "Must Read",
+    "worth-reading": "Worth Reading",
+    "skimmable": "Skimmable",
+    "skip": "Skip",
+    "novelty": "Novelty",
+    "methodology": "Methodology",
+    "significance": "Significance",
+    "clarity": "Clarity"
   }
 }
