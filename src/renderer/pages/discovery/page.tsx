@@ -100,6 +100,9 @@ export function DiscoveryPage() {
   const [isFromToday, setIsFromToday] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
+  const [importingIds, setImportingIds] = useState<Set<string>>(new Set());
+  const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
 
   // Load cached results on mount
   useEffect(() => {
@@ -116,6 +119,15 @@ export function DiscoveryPage() {
           ) {
             setSortByRelevance(true);
           }
+          // Check which papers are already in library
+          const importedSet = new Set<string>();
+          for (const paper of cached.papers) {
+            const existing = await ipc.getPaperByShortId(paper.arxivId);
+            if (existing && !existing.isTemporary) {
+              importedSet.add(paper.arxivId);
+            }
+          }
+          setImportedIds(importedSet);
         }
       } catch (e) {
         console.error('Failed to load cached discovery results:', e);
@@ -181,36 +193,64 @@ export function DiscoveryPage() {
   }, []);
 
   const handleImport = useCallback(async (paper: DiscoveredPaper) => {
+    setImportingIds((prev) => new Set(prev).add(paper.arxivId));
     try {
       // Import permanently (not temporary)
       const result = await ipc.downloadPaper(paper.arxivId, [], false);
+      if (result) {
+        // Mark as imported
+        setImportedIds((prev) => new Set(prev).add(paper.arxivId));
+      }
       return result;
     } catch (e) {
       console.error('Import failed:', e);
       return null;
+    } finally {
+      setImportingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(paper.arxivId);
+        return next;
+      });
     }
   }, []);
 
   // Read PDF - imports as temporary (24h), then opens in app reader
   const handleReadPdf = useCallback(
     async (paper: DiscoveredPaper) => {
-      console.log('[handleReadPdf] Starting for paper:', paper.arxivId);
+      // First check if paper already exists
+      const existing = await ipc.getPaperByShortId(paper.arxivId);
+      if (existing) {
+        openTab(`/papers/${existing.shortId}/reader`, { from: '/discovery' });
+        return;
+      }
+
+      setDownloadingIds((prev) => new Set(prev).add(paper.arxivId));
       try {
         // Import as temporary (will be cleaned up after 24h unless made permanent)
         const result = await ipc.downloadPaper(paper.arxivId, [], true);
-        console.log('[handleReadPdf] downloadPaper result:', result);
         if (result && result.paper) {
           // Navigate to in-app reader
-          console.log('[handleReadPdf] Opening tab:', `/papers/${result.paper.shortId}/reader`);
-          openTab(`/papers/${result.paper.shortId}/reader`);
-        } else {
-          console.warn('[handleReadPdf] No paper in result:', result);
+          openTab(`/papers/${result.paper.shortId}/reader`, { from: '/discovery' });
         }
       } catch (e) {
-        console.error('[handleReadPdf] Failed to read PDF:', e);
+        console.error('Failed to read PDF:', e);
+      } finally {
+        setDownloadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(paper.arxivId);
+          return next;
+        });
       }
     },
     [openTab],
+  );
+
+  // View detail - opens preview page (no download needed)
+  const handleViewDetail = useCallback(
+    (paper: DiscoveredPaper) => {
+      navigate('/discovery/preview', { state: { paper } });
+    },
+    [navigate],
   );
 
   // Calculate relevance scores based on user's library
@@ -537,8 +577,12 @@ export function DiscoveryPage() {
                   key={paper.arxivId}
                   paper={paper}
                   showRelevance={hasRelevanceScores}
+                  isDownloading={downloadingIds.has(paper.arxivId)}
+                  isImporting={importingIds.has(paper.arxivId)}
+                  isImported={importedIds.has(paper.arxivId)}
                   onImport={handleImport}
                   onReadPdf={handleReadPdf}
+                  onViewDetail={handleViewDetail}
                 />
               ))}
             </motion.div>
@@ -597,20 +641,29 @@ export function DiscoveryPage() {
 function PaperCard({
   paper,
   showRelevance,
+  isDownloading,
+  isImporting,
+  isImported,
   onImport,
   onReadPdf,
+  onViewDetail,
 }: {
   paper: DiscoveredPaper;
   showRelevance: boolean;
+  isDownloading: boolean;
+  isImporting: boolean;
+  isImported: boolean;
   onImport: (paper: DiscoveredPaper) => void;
   onReadPdf: (paper: DiscoveredPaper) => void;
+  onViewDetail: (paper: DiscoveredPaper) => void;
 }) {
   const { t } = useTranslation();
 
   return (
     <motion.div
       variants={cardVariants}
-      className="group rounded-xl border border-notion-border bg-white p-4 transition-all hover:border-notion-accent/30 hover:shadow-md"
+      onClick={() => onViewDetail(paper)}
+      className="group cursor-pointer rounded-xl border border-notion-border bg-white p-4 transition-all hover:border-notion-accent/30 hover:shadow-md"
     >
       <div className="flex gap-4">
         {/* Score Badge */}
@@ -702,21 +755,52 @@ function PaperCard({
           )}
 
           {/* Actions */}
-          <div className="mt-3 flex gap-2">
+          <div className="mt-3 flex gap-2" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => onReadPdf(paper)}
-              className="flex items-center gap-1.5 rounded-lg border border-notion-border bg-white px-3 py-1 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+              disabled={isDownloading}
+              className={clsx(
+                'flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-medium transition-colors',
+                isDownloading
+                  ? 'cursor-wait border-notion-accent/50 bg-notion-accent-light text-notion-accent'
+                  : 'border-notion-border bg-white text-notion-text-secondary hover:bg-notion-sidebar',
+              )}
             >
-              <FileSearch size={12} />
-              {t('discovery.readPdf', 'Read PDF')}
+              {isDownloading ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <FileSearch size={12} />
+              )}
+              {isDownloading
+                ? t('discovery.downloading', 'Downloading...')
+                : t('discovery.readPdf', 'Read PDF')}
             </button>
-            <button
-              onClick={() => onImport(paper)}
-              className="flex items-center gap-1.5 rounded-lg bg-notion-accent px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-notion-accent/90"
-            >
-              <Download size={12} />
-              {t('discovery.import', 'Import')}
-            </button>
+            {isImported ? (
+              <span className="flex items-center gap-1.5 rounded-lg bg-green-100 px-3 py-1 text-xs font-medium text-green-700">
+                <CheckCircle2 size={12} />
+                {t('discovery.imported', 'Imported')}
+              </span>
+            ) : (
+              <button
+                onClick={() => onImport(paper)}
+                disabled={isImporting}
+                className={clsx(
+                  'flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium transition-colors',
+                  isImporting
+                    ? 'cursor-wait bg-notion-accent/70 text-white'
+                    : 'bg-notion-accent text-white hover:bg-notion-accent/90',
+                )}
+              >
+                {isImporting ? (
+                  <Loader2 size={12} className="animate-spin" />
+                ) : (
+                  <Download size={12} />
+                )}
+                {isImporting
+                  ? t('discovery.importing', 'Importing...')
+                  : t('discovery.import', 'Import')}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -578,6 +578,10 @@
     "pageInfo": "{{current}} / {{total}} pages"
   },
   "paper": {
-    "fetchAlphaXiv": "Get AI Summary"
+    "fetchAlphaXiv": "Get AI Summary",
+    "alphaXivSuccess": "AI summary loaded",
+    "alphaXivNoData": "No AI summary available for this paper",
+    "alphaXivError": "Failed to fetch AI summary",
+    "alphaXivLoading": "Loading AI summary..."
   }
 }
