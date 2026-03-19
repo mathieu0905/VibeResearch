@@ -310,32 +310,44 @@ export function PapersByTag({
   const toast = useToast();
 
   // Ref to preserve scroll position across updates
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const preservedScrollTopRef = useRef<number>(0);
 
-  const fetchPapers = useCallback(async (preserveScroll = false) => {
-    if (preserveScroll && scrollContainerRef.current) {
-      preservedScrollTopRef.current = scrollContainerRef.current.scrollTop;
-    }
-    setLoading(true);
-    try {
-      const [paperData, tagData] = await Promise.all([ipc.listPapers(), ipc.listAllTags()]);
-      setPapers(paperData);
-      setAllTags(tagData);
-      // Restore scroll position after React renders
-      if (preserveScroll) {
-        requestAnimationFrame(() => {
-          if (scrollContainerRef.current && preservedScrollTopRef.current > 0) {
-            scrollContainerRef.current.scrollTop = preservedScrollTopRef.current;
-          }
-        });
-      }
-    } catch {
-      // silent
-    } finally {
-      setLoading(false);
-    }
+  // Get the scroll container (main element in app-shell)
+  const getScrollContainer = useCallback(() => {
+    // The scroll container is the <main> element in app-shell
+    return document.querySelector('main.overflow-y-auto') as HTMLElement | null;
   }, []);
+
+  const fetchPapers = useCallback(
+    async (preserveScroll = false) => {
+      if (preserveScroll) {
+        const container = getScrollContainer();
+        if (container) {
+          preservedScrollTopRef.current = container.scrollTop;
+        }
+      }
+      setLoading(true);
+      try {
+        const [paperData, tagData] = await Promise.all([ipc.listPapers(), ipc.listAllTags()]);
+        setPapers(paperData);
+        setAllTags(tagData);
+        // Restore scroll position after React renders
+        if (preserveScroll) {
+          requestAnimationFrame(() => {
+            const container = getScrollContainer();
+            if (container && preservedScrollTopRef.current > 0) {
+              container.scrollTop = preservedScrollTopRef.current;
+            }
+          });
+        }
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    },
+    [getScrollContainer],
+  );
 
   const lastRefreshCountRef = useRef(0);
   const lastPapersRefreshCountRef = useRef(0);
@@ -940,7 +952,7 @@ export function PapersByTag({
   }
 
   return (
-    <div ref={scrollContainerRef} className="flex flex-col">
+    <div className="flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-notion-border py-4">
         <div className="flex items-center gap-3">
