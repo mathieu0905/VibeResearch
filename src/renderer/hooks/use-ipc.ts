@@ -709,6 +709,7 @@ export const ipc = {
     invoke<string | null>('papers:extractGithubUrl', input),
   fetchAlphaXiv: (paperId: string, shortId: string) =>
     invoke<string | null>('papers:fetchAlphaXiv', paperId, shortId),
+  getAlphaXivData: (arxivId: string) => invoke<string | null>('papers:getAlphaXivData', arxivId),
 
   // Zotero import
   zoteroDetect: (customDbPath?: string) =>
