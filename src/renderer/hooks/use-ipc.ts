@@ -783,6 +783,11 @@ export const ipc = {
     invoke<{ active: boolean; total: number; completed: number }>(
       'tagging:metadataExtractionStatus',
     ),
+  extractPaperMetadata: (paperId: string) =>
+    invoke<{ success: boolean; title?: string; abstract?: string }>(
+      'tagging:extractPaperMetadata',
+      paperId,
+    ),
 
   // Reading
   listReading: (paperId: string) => invoke<ReadingNote[]>('reading:listByPaper', paperId),

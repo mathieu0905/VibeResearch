@@ -10,6 +10,7 @@ import {
 import {
   extractMissingMetadata,
   extractAllMetadata,
+  extractPaperMetadata,
   getMetadataExtractionStatus,
 } from '../services/auto-paper-enrichment.service';
 import { PapersRepository } from '@db';
@@ -189,6 +190,24 @@ export function setupTaggingIpc() {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[tagging:metadataExtractionStatus] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  // Extract metadata for a single paper
+  ipcMain.handle(
+    'tagging:extractPaperMetadata',
+    async (
+      _,
+      paperId: string,
+    ): Promise<IpcResult<{ success: boolean; title?: string; abstract?: string }>> => {
+      try {
+        const result = await extractPaperMetadata(paperId);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[tagging:extractPaperMetadata] Error:', msg);
         return err(msg);
       }
     },

@@ -264,3 +264,53 @@ export function getMetadataExtractionStatus() {
     ...metadataExtractionProgress,
   };
 }
+
+/**
+ * Extract metadata (title and abstract) from a single paper's PDF.
+ */
+export async function extractPaperMetadata(
+  paperId: string,
+): Promise<{ success: boolean; title?: string; abstract?: string }> {
+  const repo = new PapersRepository();
+  const paper = await repo.findById(paperId);
+
+  if (!paper) {
+    throw new Error('Paper not found');
+  }
+
+  if (!paper.pdfPath && !paper.pdfUrl) {
+    throw new Error('Paper has no PDF');
+  }
+
+  const pdfExcerpt = await getPaperExcerptCached(
+    paper.id,
+    paper.shortId,
+    paper.pdfUrl ?? undefined,
+    paper.pdfPath ?? undefined,
+    6000,
+  );
+
+  if (!pdfExcerpt) {
+    throw new Error('Could not extract text from PDF');
+  }
+
+  const inferred = inferTitleAndAbstractFromExcerpt(pdfExcerpt);
+
+  if (!inferred.abstract && !inferred.title) {
+    throw new Error('Could not infer title or abstract from PDF');
+  }
+
+  await repo.updateMetadata(paper.id, {
+    ...(inferred.title ? { title: inferred.title } : {}),
+    ...(inferred.abstract ? { abstract: inferred.abstract } : {}),
+    metadataSource: 'pdf-extraction',
+  });
+
+  console.log(`[metadata-extraction] Extracted metadata for: ${paper.title}`);
+
+  return {
+    success: true,
+    title: inferred.title,
+    abstract: inferred.abstract,
+  };
+}

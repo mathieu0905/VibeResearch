@@ -269,6 +269,7 @@ export function PapersByTag({
   const [autoTaggingPaperId, setAutoTaggingPaperId] = useState<string | null>(null);
   const [indexingPaperId, setIndexingPaperId] = useState<string | null>(null);
   const [analyzingPaperId, setAnalyzingPaperId] = useState<string | null>(null);
+  const [extractingMetadataPaperId, setExtractingMetadataPaperId] = useState<string | null>(null);
 
   // Batch operation progress state
   const [batchTagProgress, setBatchTagProgress] = useState<{
@@ -786,6 +787,31 @@ export function PapersByTag({
     [toast],
   );
 
+  const handleExtractPaperMetadata = useCallback(
+    async (paper: PaperItem) => {
+      if (!paper.pdfPath && !paper.pdfUrl) {
+        toast.warning('Paper has no PDF to extract metadata from');
+        return;
+      }
+      setExtractingMetadataPaperId(paper.id);
+      try {
+        const result = await ipc.extractPaperMetadata(paper.id);
+        if (result.success) {
+          toast.success('Metadata extracted successfully');
+          void fetchPapers();
+        } else {
+          toast.warning('Could not extract metadata from PDF');
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Metadata extraction failed';
+        toast.error(msg);
+      } finally {
+        setExtractingMetadataPaperId(null);
+      }
+    },
+    [toast, fetchPapers],
+  );
+
   const toggleSelect = useCallback((paperId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -970,41 +996,6 @@ export function PapersByTag({
                       className="absolute left-0 top-0 h-full rounded-full bg-blue-500 transition-[width] duration-200 ease-out"
                       style={{
                         width: `${(batchIndexProgress.current / batchIndexProgress.total) * 100}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-          {/* Extract Metadata */}
-          {papersWithPdfCount > 0 && (
-            <div className="relative">
-              <motion.button
-                onClick={handleExtractMetadata}
-                disabled={metadataProgress?.active}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border bg-white px-3 py-1.5 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <FilePenLine size={14} />
-                {missingAbstractCount > 0
-                  ? `Extract Metadata ${missingAbstractCount}`
-                  : 'Refresh Metadata'}
-              </motion.button>
-              {/* Metadata Progress */}
-              {metadataProgress?.active && (
-                <div className="absolute left-0 right-0 top-full mt-1 z-10 bg-white rounded-lg border border-notion-border shadow-notion p-2">
-                  <div className="flex items-center justify-between text-[10px] text-notion-text-tertiary mb-1">
-                    <span>
-                      {metadataProgress.completed}/{metadataProgress.total}
-                    </span>
-                  </div>
-                  <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
-                    <div
-                      className="absolute left-0 top-0 h-full rounded-full bg-blue-500 transition-[width] duration-200 ease-out"
-                      style={{
-                        width: `${(metadataProgress.completed / metadataProgress.total) * 100}%`,
                       }}
                     />
                   </div>
@@ -1401,6 +1392,7 @@ export function PapersByTag({
                 autoTaggingPaperId={autoTaggingPaperId}
                 indexingPaperId={indexingPaperId}
                 analyzingPaperId={analyzingPaperId}
+                extractingMetadataPaperId={extractingMetadataPaperId}
                 canAutoTag={canAutoTag}
                 canIndex={canIndex}
                 onDelete={handleDelete}
@@ -1409,6 +1401,7 @@ export function PapersByTag({
                 onAutoTag={handleAutoTagPaper}
                 onIndex={handleIndexPaper}
                 onAnalyze={handleAnalyzePaper}
+                onExtractMetadata={handleExtractPaperMetadata}
                 onOpen={(shortId, state) => navigate(`/papers/${shortId}`, { state })}
                 isSelectMode={isSelectMode}
                 isSelected={selectedIds.has(paper.id)}
@@ -1499,6 +1492,7 @@ function PaperCard({
   autoTaggingPaperId,
   indexingPaperId,
   analyzingPaperId,
+  extractingMetadataPaperId,
   canAutoTag,
   canIndex,
   onDelete,
@@ -1507,6 +1501,7 @@ function PaperCard({
   onAutoTag,
   onIndex,
   onAnalyze,
+  onExtractMetadata,
   onOpen,
   isSelectMode,
   isSelected,
@@ -1520,6 +1515,7 @@ function PaperCard({
   autoTaggingPaperId: string | null;
   indexingPaperId: string | null;
   analyzingPaperId: string | null;
+  extractingMetadataPaperId: string | null;
   canAutoTag: boolean;
   canIndex: boolean;
   onDelete: (id: string) => void;
@@ -1528,6 +1524,7 @@ function PaperCard({
   onAutoTag: (id: string) => void;
   onIndex: (id: string) => void;
   onAnalyze: (paper: PaperItem) => void;
+  onExtractMetadata: (paper: PaperItem) => void;
   onOpen: (shortId: string, state?: unknown) => void;
   isSelectMode: boolean;
   isSelected: boolean;
@@ -1723,6 +1720,25 @@ function PaperCard({
                   <Loader2 size={14} className="animate-spin text-amber-600" />
                 ) : (
                   <Sparkles size={14} />
+                )}
+              </button>
+            )}
+            {/* Extract metadata button - show if paper has PDF */}
+            {(paper.pdfPath || paper.pdfUrl) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onExtractMetadata(paper);
+                }}
+                disabled={extractingMetadataPaperId === paper.id}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-secondary hover:bg-purple-50 hover:text-purple-600 disabled:opacity-100"
+                title="Extract title and abstract from PDF"
+              >
+                {extractingMetadataPaperId === paper.id ? (
+                  <Loader2 size={14} className="animate-spin text-purple-600" />
+                ) : (
+                  <FilePenLine size={14} />
                 )}
               </button>
             )}
