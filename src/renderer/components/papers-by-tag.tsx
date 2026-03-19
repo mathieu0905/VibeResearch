@@ -309,12 +309,27 @@ export function PapersByTag({
   const navigate = useNavigate();
   const toast = useToast();
 
-  const fetchPapers = useCallback(async () => {
+  // Ref to preserve scroll position across updates
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const preservedScrollTopRef = useRef<number>(0);
+
+  const fetchPapers = useCallback(async (preserveScroll = false) => {
+    if (preserveScroll && scrollContainerRef.current) {
+      preservedScrollTopRef.current = scrollContainerRef.current.scrollTop;
+    }
     setLoading(true);
     try {
       const [paperData, tagData] = await Promise.all([ipc.listPapers(), ipc.listAllTags()]);
       setPapers(paperData);
       setAllTags(tagData);
+      // Restore scroll position after React renders
+      if (preserveScroll) {
+        requestAnimationFrame(() => {
+          if (scrollContainerRef.current && preservedScrollTopRef.current > 0) {
+            scrollContainerRef.current.scrollTop = preservedScrollTopRef.current;
+          }
+        });
+      }
     } catch {
       // silent
     } finally {
@@ -565,7 +580,7 @@ export function PapersByTag({
         await new Promise((resolve) => setTimeout(resolve, 100));
       }
       toast.success(`Auto-tagged ${untaggedPapers.length} papers`);
-      void fetchPapers();
+      void fetchPapers(true);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Auto-tagging failed';
       toast.error(msg);
@@ -628,7 +643,7 @@ export function PapersByTag({
       const typed = status as { active: boolean; total: number; completed: number };
       setMetadataProgress(typed);
       if (!typed.active && typed.completed > 0) {
-        void fetchPapers();
+        void fetchPapers(true);
       }
     });
     return unsubscribe;
@@ -652,7 +667,7 @@ export function PapersByTag({
             ? `Refreshed metadata for ${result.extracted} papers`
             : `Extracted metadata for ${result.extracted} papers`,
         );
-        void fetchPapers();
+        void fetchPapers(true);
       }
       if (result.failed > 0) {
         toast.warning(`Failed to extract metadata for ${result.failed} papers`);
@@ -721,7 +736,7 @@ export function PapersByTag({
         await ipc.tagPaper(paperId);
         toast.success('Auto-tagging started');
         // Refresh papers after a short delay to show new tags
-        setTimeout(() => void fetchPapers(), 2000);
+        setTimeout(() => void fetchPapers(true), 2000);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Auto-tagging failed';
         const isNoModel =
@@ -798,7 +813,7 @@ export function PapersByTag({
         const result = await ipc.extractPaperMetadata(paper.id);
         if (result.success) {
           toast.success('Metadata extracted successfully');
-          void fetchPapers();
+          void fetchPapers(true);
         } else {
           toast.warning('Could not extract metadata from PDF');
         }
@@ -925,7 +940,7 @@ export function PapersByTag({
   }
 
   return (
-    <div className="flex flex-col">
+    <div ref={scrollContainerRef} className="flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-notion-border py-4">
         <div className="flex items-center gap-3">
