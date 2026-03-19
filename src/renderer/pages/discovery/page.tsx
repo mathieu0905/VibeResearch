@@ -16,6 +16,8 @@ import {
   TrendingUp,
   BookOpen,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Star,
   FileText,
   Target,
@@ -96,6 +98,8 @@ export function DiscoveryPage() {
   const [sortByRelevance, setSortByRelevance] = useState(false);
   const [fetchedAt, setFetchedAt] = useState<string | null>(null);
   const [isFromToday, setIsFromToday] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
 
   // Load cached results on mount
   useEffect(() => {
@@ -239,6 +243,15 @@ export function DiscoveryPage() {
     const scoreB = b.qualityScore ?? 0;
     return scoreB - scoreA;
   });
+
+  // Pagination
+  const totalPages = Math.ceil(sortedPapers.length / pageSize);
+  const paginatedPapers = sortedPapers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  // Reset to page 1 when sort mode changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [sortByRelevance]);
 
   // Format fetch time
   const formatFetchTime = (dateStr: string) => {
@@ -510,7 +523,7 @@ export function DiscoveryPage() {
               animate="visible"
               className="grid gap-4"
             >
-              {sortedPapers.map((paper) => (
+              {paginatedPapers.map((paper) => (
                 <PaperCard
                   key={paper.arxivId}
                   paper={paper}
@@ -522,6 +535,51 @@ export function DiscoveryPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="mt-6 flex items-center justify-center gap-2">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-notion-border bg-white text-notion-text-secondary transition-colors hover:bg-notion-sidebar disabled:opacity-40 disabled:hover:bg-white"
+            >
+              <ChevronLeft size={16} />
+            </button>
+
+            <div className="flex items-center gap-1">
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                <button
+                  key={page}
+                  onClick={() => setCurrentPage(page)}
+                  className={clsx(
+                    'flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition-colors',
+                    page === currentPage
+                      ? 'bg-notion-accent text-white'
+                      : 'border border-notion-border bg-white text-notion-text-secondary hover:bg-notion-sidebar',
+                  )}
+                >
+                  {page}
+                </button>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-notion-border bg-white text-notion-text-secondary transition-colors hover:bg-notion-sidebar disabled:opacity-40 disabled:hover:bg-white"
+            >
+              <ChevronRight size={16} />
+            </button>
+
+            <span className="ml-2 text-xs text-notion-text-tertiary">
+              {t('discovery.pageInfo', '{{current}} / {{total}} pages', {
+                current: currentPage,
+                total: totalPages,
+              })}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

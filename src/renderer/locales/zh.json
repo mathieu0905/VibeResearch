@@ -558,6 +558,7 @@
     "readPdf": "阅读 PDF",
     "fetchedJustNow": "刚刚获取",
     "fetchedHoursAgo": "{{count}}小时前获取",
-    "fetchedDaysAgo": "{{count}}天前获取"
+    "fetchedDaysAgo": "{{count}}天前获取",
+    "pageInfo": "第 {{current}} / {{total}} 页"
   }
 }

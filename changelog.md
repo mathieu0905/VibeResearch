@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-03-19 (session 51)
+
+### feat: Discovery page pagination
+
+- **Scope**: `src/renderer/pages/discovery/page.tsx`, i18n files
+- **Pagination**: Added pagination controls for Discovery results
+  - 15 papers per page
+  - Page number buttons + prev/next navigation
+  - Resets to page 1 when sort mode changes
+- **i18n**: Added `discovery.pageInfo` translation (EN/ZH)
+
 ## 2026-03-19 (session 50)
 
 ### feat: Temporary paper imports from Discovery
