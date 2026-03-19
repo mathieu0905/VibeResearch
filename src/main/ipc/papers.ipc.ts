@@ -521,14 +521,17 @@ Rules:
   ipcMain.handle(
     'papers:getAlphaXivData',
     async (_, arxivId: string): Promise<IpcResult<string | null>> => {
+      console.log('[papers:getAlphaXivData] Called with arxivId:', arxivId);
       try {
         const alphaxivData = await getPaperOverview(arxivId);
+        console.log('[papers:getAlphaXivData] AlphaXiv data:', alphaxivData ? 'received' : 'null');
 
         if (!alphaxivData?.overview) {
           return ok(null);
         }
 
         const aiSummary = getBestSummary(alphaxivData.overview);
+        console.log('[papers:getAlphaXivData] AI summary length:', aiSummary?.length || 0);
         return ok(aiSummary);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

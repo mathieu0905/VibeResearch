@@ -71,9 +71,11 @@ export function DiscoveryPreviewPage() {
   const handleFetchAlphaXiv = useCallback(async () => {
     if (!paper || fetchingAlphaXiv) return;
 
+    console.log('[preview] Fetching AlphaXiv for:', paper.arxivId);
     setFetchingAlphaXiv(true);
     try {
       const summary = await ipc.getAlphaXivData(paper.arxivId);
+      console.log('[preview] AlphaXiv response:', summary ? 'received' : 'null');
       if (summary) {
         setAlphaXivSummary(summary);
       }
