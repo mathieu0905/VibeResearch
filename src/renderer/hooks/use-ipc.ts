@@ -43,6 +43,8 @@ export interface DiscoveredPaper {
     clarity: number;
   } | null;
   qualityRecommendation?: 'must-read' | 'worth-reading' | 'skimmable' | 'skip' | null;
+  /** Relevance score to user's library (0-100) */
+  relevanceScore?: number | null;
 }
 
 /** Zotero scanned item */
@@ -1377,6 +1379,8 @@ export const ipc = {
       categories: string[];
     } | null>('discovery:getLastResult'),
   clearDiscoveryCache: () => invoke<{ success: boolean }>('discovery:clear'),
+  calculateRelevance: () =>
+    invoke<{ success: boolean; papers: DiscoveredPaper[] }>('discovery:calculateRelevance'),
 
   // Window controls (for Windows title bar)
   windowClose: () => {

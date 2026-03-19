@@ -550,6 +550,11 @@
     "novelty": "创新性",
     "methodology": "方法论",
     "significance": "重要性",
-    "clarity": "清晰度"
+    "clarity": "清晰度",
+    "smartFilter": "智能筛选",
+    "sortByQuality": "按质量排序",
+    "calculatingRelevance": "正在计算与您文献库的相关性...",
+    "relevanceScore": "与您文献库的相关性",
+    "readPdf": "阅读 PDF"
   }
 }

@@ -60,6 +60,8 @@ export interface DiscoveredPaper {
   } | null;
   /** Recommendation level */
   qualityRecommendation?: 'must-read' | 'worth-reading' | 'skimmable' | 'skip' | null;
+  /** Relevance score to user's library (0-100), null if not yet calculated */
+  relevanceScore?: number | null;
 }
 
 export interface DiscoveryResult {

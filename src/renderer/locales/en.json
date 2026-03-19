@@ -550,6 +550,11 @@
     "novelty": "Novelty",
     "methodology": "Methodology",
     "significance": "Significance",
-    "clarity": "Clarity"
+    "clarity": "Clarity",
+    "smartFilter": "Smart Filter",
+    "sortByQuality": "Sort by Quality",
+    "calculatingRelevance": "Calculating relevance to your library...",
+    "relevanceScore": "Relevance to your library",
+    "readPdf": "Read PDF"
   }
 }

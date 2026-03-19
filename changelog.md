@@ -1,5 +1,43 @@
 # Changelog
 
+## 2026-03-19 (session 45)
+
+### feat: smart filter + PDF preview for Discovery page
+
+- **Scope**: `src/main/services/discovery-relevance.service.ts`, `src/main/ipc/discovery.ipc.ts`, `src/renderer/pages/discovery/page.tsx`, `src/renderer/hooks/use-ipc.ts`, `src/renderer/locales/en.json`, `src/renderer/locales/zh.json`
+- **Smart Filter**: Relevance scoring based on user's existing library
+  - New service `discovery-relevance.service.ts` calculates cosine similarity between discovered papers and user's paper embeddings
+  - Computes "interest vector" as average of all user paper embeddings
+  - Relevance score (0-100) displayed in green/blue/gray badge
+  - Papers sorted by relevance when smart filter is active
+- **Read PDF Button**: Open PDF directly in new tab without importing
+  - `onReadPdf` callback opens `paper.pdfUrl` in new window
+  - Allows previewing papers before deciding to import
+- **IPC Handler**: `discovery:calculateRelevance` returns papers with relevance scores
+- **UI improvements**:
+  - Smart Filter button with green active state and checkmark
+  - "Sort by Quality" toggle button when sorted by relevance
+  - Relevance percentage badge shown below quality score
+- **i18n**: Added translations for `smartFilter`, `sortByQuality`, `calculatingRelevance`, `relevanceScore`, `readPdf`
+
+### fix: single paper metadata extraction + scroll position
+
+- **Scope**: `src/renderer/components/papers-by-tag.tsx`, `src/main/services/auto-paper-enrichment.service.ts`, `src/main/ipc/tagging.ipc.ts`, `src/renderer/hooks/use-ipc.ts`
+- **Single paper extraction**: Added per-paper "Extract Metadata" button (purple FilePenLine icon)
+  - Only shows for papers with PDF but missing abstract
+  - Uses `extractPaperMetadata()` IPC handler
+  - Preserves scroll position after extraction
+- **Scroll position fix**: Operations no longer jump to top of list
+  - Uses DOM query to find `main.overflow-y-auto` container
+  - Stores scroll position in ref before operation
+  - Restores scroll position after data refresh
+
+### fix: TypeScript declaration for image assets
+
+- **Scope**: `src/renderer/types/assets.d.ts`
+- Added declaration file for `.png` image imports
+- Fixes broken ResearchClaw icon in app
+
 ## 2026-03-19 (session 44)
 
 ### feat: batch metadata extraction for papers missing abstract

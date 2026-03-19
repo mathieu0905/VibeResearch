@@ -10,6 +10,7 @@ import {
   type DiscoveryResult,
 } from '../services/arxiv-discovery.service';
 import { batchEvaluatePapers } from '../services/paper-quality.service';
+import { calculateRelevanceScores } from '../services/discovery-relevance.service';
 import { getLanguage } from '../store/app-settings-store';
 
 // Store for discovery results
@@ -92,6 +93,33 @@ export function setupDiscoveryIpc() {
       }
     },
   );
+
+  // Calculate relevance scores based on user's library
+  ipcMain.handle('discovery:calculateRelevance', async () => {
+    try {
+      const papers = lastDiscoveryResult?.papers ?? [];
+      if (papers.length === 0) {
+        return { success: true, papers: [] };
+      }
+
+      const papersWithRelevance = await calculateRelevanceScores(papers);
+
+      // Update stored papers with relevance scores
+      lastDiscoveryResult = {
+        ...lastDiscoveryResult!,
+        papers: papersWithRelevance,
+      };
+
+      return {
+        success: true,
+        papers: papersWithRelevance,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[discovery:calculateRelevance] Error:', message);
+      return { success: false, error: message };
+    }
+  });
 
   // Get last discovery result
   ipcMain.handle('discovery:getLastResult', () => {

@@ -17,6 +17,8 @@ import {
   ChevronDown,
   Star,
   FileText,
+  Target,
+  FileSearch,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -79,6 +81,7 @@ export function DiscoveryPage() {
   const [papers, setPapers] = useState<DiscoveredPaper[]>([]);
   const [loading, setLoading] = useState(false);
   const [evaluating, setEvaluating] = useState(false);
+  const [calculateRelevance, setCalculateRelevance] = useState(false);
   const [evaluateProgress, setEvaluateProgress] = useState<{
     evaluated: number;
     total: number;
@@ -87,6 +90,7 @@ export function DiscoveryPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['cs.AI', 'cs.LG']);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [daysBack, setDaysBack] = useState(7);
+  const [sortByRelevance, setSortByRelevance] = useState(false);
 
   const handleFetch = useCallback(async () => {
     if (selectedCategories.length === 0) return;
@@ -149,18 +153,46 @@ export function DiscoveryPage() {
     }
   }, []);
 
+  // Calculate relevance scores based on user's library
+  const handleCalculateRelevance = useCallback(async () => {
+    if (papers.length === 0) return;
+
+    setCalculateRelevance(true);
+    try {
+      const result = await ipc.calculateRelevance();
+      if (result.success && result.papers) {
+        setPapers(result.papers);
+        setSortByRelevance(true);
+      }
+    } catch (e) {
+      console.error('Relevance calculation failed:', e);
+    } finally {
+      setCalculateRelevance(false);
+    }
+  }, [papers.length]);
+
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) =>
       prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat],
     );
   };
 
-  // Sort papers by quality score (highest first)
+  // Sort papers by relevance or quality score
   const sortedPapers = [...papers].sort((a, b) => {
+    if (sortByRelevance) {
+      const scoreA = a.relevanceScore ?? 0;
+      const scoreB = b.relevanceScore ?? 0;
+      return scoreB - scoreA;
+    }
     const scoreA = a.qualityScore ?? 0;
     const scoreB = b.qualityScore ?? 0;
     return scoreB - scoreA;
   });
+
+  // Open PDF in new window
+  const handleViewPdf = useCallback((paper: DiscoveredPaper) => {
+    window.open(paper.pdfUrl, '_blank');
+  }, []);
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-notion-sidebar">
@@ -267,7 +299,7 @@ export function DiscoveryPage() {
         )}
 
         {papers.length > 0 && !evaluating && papers.some((p) => !p.qualityScore) && (
-          <div className="mb-4">
+          <div className="mb-4 flex flex-wrap gap-2">
             <button
               onClick={handleEvaluate}
               className="flex items-center gap-2 rounded-lg border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-medium text-purple-600 transition-colors hover:bg-purple-100"
@@ -275,6 +307,44 @@ export function DiscoveryPage() {
               <Sparkles size={16} />
               {t('discovery.evaluateWithAI', 'Evaluate with AI')}
             </button>
+            <button
+              onClick={handleCalculateRelevance}
+              disabled={calculateRelevance}
+              className={clsx(
+                'flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors',
+                sortByRelevance
+                  ? 'border-green-300 bg-green-50 text-green-600'
+                  : 'border-green-200 bg-green-50 text-green-600 hover:bg-green-100',
+              )}
+            >
+              {calculateRelevance ? (
+                <Loader2 size={16} className="animate-spin" />
+              ) : (
+                <Target size={16} />
+              )}
+              {t('discovery.smartFilter', 'Smart Filter')}
+              {sortByRelevance && <CheckCircle2 size={14} />}
+            </button>
+            {sortByRelevance && (
+              <button
+                onClick={() => setSortByRelevance(false)}
+                className="flex items-center gap-1.5 rounded-lg border border-notion-border bg-white px-3 py-2 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+              >
+                {t('discovery.sortByQuality', 'Sort by Quality')}
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Relevance calculation indicator */}
+        {calculateRelevance && (
+          <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+            <div className="flex items-center gap-3">
+              <Loader2 size={16} className="animate-spin text-green-600" />
+              <span className="text-sm text-green-700">
+                {t('discovery.calculatingRelevance', 'Calculating relevance to your library...')}
+              </span>
+            </div>
           </div>
         )}
 
@@ -343,8 +413,10 @@ export function DiscoveryPage() {
                 <PaperCard
                   key={paper.arxivId}
                   paper={paper}
+                  showRelevance={sortByRelevance}
                   onImport={handleImport}
                   onView={() => window.open(paper.absUrl, '_blank')}
+                  onReadPdf={() => window.open(paper.pdfUrl, '_blank')}
                 />
               ))}
             </motion.div>
@@ -357,12 +429,16 @@ export function DiscoveryPage() {
 
 function PaperCard({
   paper,
+  showRelevance,
   onImport,
   onView,
+  onReadPdf,
 }: {
   paper: DiscoveredPaper;
+  showRelevance: boolean;
   onImport: (paper: DiscoveredPaper) => void;
   onView: () => void;
+  onReadPdf: () => void;
 }) {
   const { t } = useTranslation();
 
@@ -372,9 +448,10 @@ function PaperCard({
       className="group rounded-xl border border-notion-border bg-white p-4 transition-all hover:border-notion-accent/30 hover:shadow-md"
     >
       <div className="flex gap-4">
-        {/* Quality Score Badge */}
-        {paper.qualityScore && (
-          <div className="flex flex-col items-center gap-1">
+        {/* Score Badge */}
+        <div className="flex flex-col items-center gap-1">
+          {/* Quality Score */}
+          {paper.qualityScore && (
             <div
               className={clsx(
                 'flex h-12 w-12 flex-col items-center justify-center rounded-lg',
@@ -383,18 +460,34 @@ function PaperCard({
             >
               <span className="text-lg font-bold">{paper.qualityScore}</span>
             </div>
-            {paper.qualityRecommendation && (
-              <span
-                className={clsx(
-                  'rounded px-1.5 py-0.5 text-xs font-medium',
-                  ...Object.values(getRecommendationStyle(paper.qualityRecommendation)),
-                )}
-              >
-                {t(`discovery.${paper.qualityRecommendation}`, paper.qualityRecommendation)}
-              </span>
-            )}
-          </div>
-        )}
+          )}
+          {/* Relevance Score */}
+          {showRelevance && paper.relevanceScore !== null && paper.relevanceScore !== undefined && (
+            <div
+              className={clsx(
+                'flex h-8 w-12 flex-col items-center justify-center rounded-lg',
+                paper.relevanceScore >= 70
+                  ? 'bg-green-100 text-green-700'
+                  : paper.relevanceScore >= 40
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-gray-100 text-gray-600',
+              )}
+              title={t('discovery.relevanceScore', 'Relevance to your library')}
+            >
+              <span className="text-xs font-bold">{paper.relevanceScore}%</span>
+            </div>
+          )}
+          {paper.qualityRecommendation && (
+            <span
+              className={clsx(
+                'rounded px-1.5 py-0.5 text-xs font-medium',
+                ...Object.values(getRecommendationStyle(paper.qualityRecommendation)),
+              )}
+            >
+              {t(`discovery.${paper.qualityRecommendation}`, paper.qualityRecommendation)}
+            </span>
+          )}
+        </div>
 
         {/* Content */}
         <div className="min-w-0 flex-1">
@@ -445,6 +538,13 @@ function PaperCard({
 
           {/* Actions */}
           <div className="mt-3 flex gap-2">
+            <button
+              onClick={onReadPdf}
+              className="flex items-center gap-1.5 rounded-lg border border-notion-border bg-white px-3 py-1 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+            >
+              <FileSearch size={12} />
+              {t('discovery.readPdf', 'Read PDF')}
+            </button>
             <button
               onClick={() => onImport(paper)}
               className="flex items-center gap-1.5 rounded-lg bg-notion-accent px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-notion-accent/90"
