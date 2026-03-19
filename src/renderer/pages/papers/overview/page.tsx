@@ -957,16 +957,7 @@ export function OverviewPage() {
           )}
 
           {/* Abstract */}
-          {paper.abstract && (
-            <div className="rounded-xl border border-notion-border p-5">
-              <h2 className="text-sm font-semibold text-notion-text-secondary uppercase tracking-wider mb-3">
-                Abstract
-              </h2>
-              <p className="text-sm text-notion-text leading-relaxed whitespace-pre-wrap">
-                {paper.abstract}
-              </p>
-            </div>
-          )}
+          {paper.abstract && <AbstractSection abstract={paper.abstract} />}
 
           {/* Chat History */}
           <div>
@@ -1138,6 +1129,95 @@ export function OverviewPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Parse abstract to detect AlphaXiv summary
+ * Returns { alphaXivSummary, originalAbstract } or null if no AlphaXiv content
+ */
+function parseAlphaXivAbstract(abstract: string): {
+  alphaXivSummary: string;
+  originalAbstract: string;
+} | null {
+  const marker = '**AI-Generated Summary (AlphaXiv):**';
+  const divider = '\n\n---\n\n**Original Abstract:**';
+
+  if (!abstract.includes(marker)) {
+    return null;
+  }
+
+  const startIndex = abstract.indexOf(marker) + marker.length;
+  const dividerIndex = abstract.indexOf(divider);
+
+  if (dividerIndex === -1) {
+    return null;
+  }
+
+  const alphaXivSummary = abstract.slice(startIndex, dividerIndex).trim();
+  const originalAbstract = abstract.slice(dividerIndex + divider.length).trim();
+
+  return { alphaXivSummary, originalAbstract };
+}
+
+/**
+ * Abstract section with tabs for AlphaXiv summary vs original abstract
+ */
+function AbstractSection({ abstract }: { abstract: string }) {
+  const [activeTab, setActiveTab] = useState<'alphaxiv' | 'abstract'>('alphaxiv');
+  const parsed = parseAlphaXivAbstract(abstract);
+
+  // If no AlphaXiv content, just show the abstract
+  if (!parsed) {
+    return (
+      <div className="rounded-xl border border-notion-border p-5">
+        <h2 className="text-sm font-semibold text-notion-text-secondary uppercase tracking-wider mb-3">
+          Abstract
+        </h2>
+        <div className="text-sm text-notion-text leading-relaxed">
+          <MarkdownContent content={abstract} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-xl border border-notion-border p-5">
+      {/* Tab Header */}
+      <div className="flex items-center gap-1 mb-3">
+        <button
+          onClick={() => setActiveTab('alphaxiv')}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            activeTab === 'alphaxiv'
+              ? 'bg-purple-100 text-purple-700'
+              : 'text-notion-text-secondary hover:bg-notion-sidebar'
+          }`}
+        >
+          ✨ AI Summary
+        </button>
+        <button
+          onClick={() => setActiveTab('abstract')}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            activeTab === 'abstract'
+              ? 'bg-notion-accent-light text-notion-accent'
+              : 'text-notion-text-secondary hover:bg-notion-sidebar'
+          }`}
+        >
+          Abstract
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      <div className="text-sm text-notion-text leading-relaxed">
+        {activeTab === 'alphaxiv' ? (
+          <div className="prose prose-sm max-w-none">
+            <MarkdownContent content={parsed.alphaXivSummary} />
+          </div>
+        ) : (
+          <div className="whitespace-pre-wrap">{parsed.originalAbstract}</div>
+        )}
+      </div>
     </div>
   );
 }

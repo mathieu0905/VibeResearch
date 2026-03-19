@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-03-19 (session 48)
+
+### feat: Tabbed Abstract section with AlphaXiv AI Summary
+
+- **Scope**: `src/renderer/pages/papers/overview/page.tsx`
+- **New component**: `AbstractSection` with tabs
+  - "✨ AI Summary" tab: Shows AlphaXiv AI-generated summary (rendered as markdown)
+  - "Abstract" tab: Shows original abstract from arXiv
+- **Parsing**: Extracts AlphaXiv content from combined abstract string
+- **Markdown rendering**: Uses `MarkdownContent` component for proper rendering
+- **Fallback**: If no AlphaXiv content, shows abstract as before (with markdown support)
+
 ## 2026-03-19 (session 47)
 
 ### fix: Discovery UI improvements
