@@ -36,6 +36,7 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.15.0",
+    "@floating-ui/dom": "^1.7.6",
     "@nivo/line": "^0.99.0",
     "@prisma/client": "6.4.1",
     "@retorquere/bibtex-parser": "^9.0.29",

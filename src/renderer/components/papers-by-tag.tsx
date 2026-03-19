@@ -455,6 +455,13 @@ export function PapersByTag({
     });
   }, []);
 
+  // Refresh paper when metadata is extracted (e.g. after local PDF upload)
+  useEffect(() => {
+    return onIpc('papers:metadataUpdated', () => {
+      fetchPapers();
+    });
+  }, [fetchPapers]);
+
   // Check if lightweight model is available for auto-tag
   const canAutoTag = useMemo(() => {
     if (!lightweightModel) return false;
