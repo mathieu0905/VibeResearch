@@ -644,6 +644,13 @@
     "alphaXivError": "获取 AI 解读失败",
     "alphaXivLoading": "正在加载 AI 解读..."
   },
+  "reader": {
+    "annotations": "批注",
+    "noAnnotations": "暂无高亮。在 PDF 中选择文本以创建高亮。",
+    "page": "第",
+    "focusMode": "专注模式",
+    "exitFocusMode": "退出专注模式"
+  },
   "pdf": {
     "citation": {
       "searchLocal": "搜索文献库",
