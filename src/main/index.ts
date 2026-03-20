@@ -390,6 +390,7 @@ function setupWindowControls(win: BrowserWindow) {
     }
   });
   ipcMain.handle('window:isMaximized', () => win.isMaximized());
+
   // Open URL in system default browser
   ipcMain.handle('browser:open', (_event, url: string, _title?: string) => {
     shell.openExternal(url);

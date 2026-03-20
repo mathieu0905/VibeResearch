@@ -200,19 +200,6 @@ export interface PaperProcessingInfo {
   metadataSource?: string | null;
 }
 
-export interface HighlightItem {
-  id: string;
-  paperId: string;
-  pageNumber: number;
-  rectsJson: string;
-  text: string;
-  note?: string | null;
-  color: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-
 export interface TaggingStatus {
   active: boolean;
   total: number;
@@ -720,8 +707,6 @@ export const ipc = {
     importedWithin?: 'today' | 'week' | 'month' | 'all';
     temporary?: boolean;
   }) => invoke<PaperItem[]>('papers:list', query ?? {}),
-  importTemporary: (paperId: string) =>
-    invoke<{ success: boolean }>('papers:importTemporary', paperId),
   listTodayPapers: () => invoke<PaperItem[]>('papers:listToday'),
   importTemporary: (paperId: string) =>
     invoke<{ success: boolean }>('papers:importTemporary', paperId),
@@ -756,37 +741,6 @@ export const ipc = {
   updatePaperTags: (id: string, tags: string[]) => invoke<PaperItem>('papers:updateTags', id, tags),
   updatePaperRating: (id: string, rating: number | null) =>
     invoke<PaperItem>('papers:updateRating', id, rating),
-  getExtractedRefs: (paperId: string) =>
-    invoke<
-      Array<{
-        id: string;
-        paperId: string;
-        refNumber: number;
-        text: string;
-        title: string | null;
-        authors: string | null;
-        year: number | null;
-        doi: string | null;
-        arxivId: string | null;
-        venue: string | null;
-        matchedPaperId: string | null;
-      }>
-    >('papers:getExtractedRefs', paperId),
-  matchReference: (ref: { arxivId?: string; doi?: string; title?: string }) =>
-    invoke<PaperItem | null>('papers:matchReference', ref),
-  saveExtractedRefs: (
-    paperId: string,
-    refs: Array<{
-      refNumber: number;
-      text: string;
-      title?: string;
-      authors?: string;
-      year?: number;
-      doi?: string;
-      arxivId?: string;
-      venue?: string;
-    }>,
-  ) => invoke<number>('papers:saveExtractedRefs', paperId, refs),
   updateReadingProgress: (id: string, lastReadPage: number, totalPages: number) =>
     invoke<void>('papers:updateReadingProgress', id, lastReadPage, totalPages),
   listAllTags: () => invoke<TagInfo[]>('papers:listTags'),
@@ -803,6 +757,34 @@ export const ipc = {
     invoke<string | null>('papers:fetchAlphaXiv', paperId, shortId),
   getAlphaXivData: (arxivId: string) => invoke<string | null>('papers:getAlphaXivData', arxivId),
   refreshAllAlphaXiv: () => invoke<{ updated: number; total: number }>('papers:refreshAllAlphaXiv'),
+  matchReference: (ref: { arxivId?: string; doi?: string; title?: string }) =>
+    invoke<PaperItem | null>('papers:matchReference', ref),
+  getExtractedRefs: (paperId: string) =>
+    invoke<
+      Array<{
+        id: string;
+        paperId: string;
+        refNumber: number;
+        text: string;
+        title: string | null;
+        authors: string | null;
+        year: number | null;
+        doi: string | null;
+        arxivId: string | null;
+      }>
+    >('papers:getExtractedRefs', paperId),
+  saveExtractedRefs: (
+    paperId: string,
+    refs: Array<{
+      refNumber: number;
+      text: string;
+      title?: string;
+      authors?: string;
+      year?: number;
+      doi?: string;
+      arxivId?: string;
+    }>,
+  ) => invoke<{ count: number }>('papers:saveExtractedRefs', paperId, refs),
 
   // Zotero import
   zoteroDetect: (customDbPath?: string) =>
@@ -1513,32 +1495,6 @@ export const ipc = {
   calculateRelevance: () =>
     invoke<{ success: boolean; papers: DiscoveredPaper[] }>('discovery:calculateRelevance'),
 
-  scanBrowserDownloads: (days?: number) =>
-    invoke<
-      Array<{
-        filePath: string;
-        fileName: string;
-        browser: string;
-        downloadTime: string;
-        fileSize: number;
-      }>
-    >('ingest:scanDownloads', days ?? 7),
-
-  // Highlights
-  createHighlight: (params: {
-    paperId: string;
-    pageNumber: number;
-    rectsJson: string;
-    text: string;
-    note?: string;
-    color?: string;
-  }) => invoke<HighlightItem>('highlights:create', params),
-  updateHighlight: (id: string, updates: { note?: string; color?: string }) =>
-    invoke<HighlightItem>('highlights:update', id, updates),
-  deleteHighlight: (id: string) => invoke<void>('highlights:delete', id),
-  listHighlights: (paperId: string, pageNumber?: number) =>
-    invoke<HighlightItem[]>('highlights:list', paperId, pageNumber),
-
   // Window controls (for Windows title bar)
   windowClose: () => {
     const api = getElectronAPI();
@@ -1566,10 +1522,11 @@ export const ipc = {
     note?: string;
     color?: string;
   }) => invoke<HighlightItem>('highlights:create', params),
-  updateHighlight: (id: string, params: { note?: string; color?: string }) =>
-    invoke<HighlightItem>('highlights:update', id, params),
+  updateHighlight: (id: string, updates: { note?: string; color?: string }) =>
+    invoke<HighlightItem>('highlights:update', id, updates),
   deleteHighlight: (id: string) => invoke<void>('highlights:delete', id),
-  listHighlights: (paperId: string) => invoke<HighlightItem[]>('highlights:listByPaper', paperId),
+  listHighlights: (paperId: string, pageNumber?: number) =>
+    invoke<HighlightItem[]>('highlights:list', paperId, pageNumber),
 
   // Overleaf Integration
   getOverleafSession: () =>
