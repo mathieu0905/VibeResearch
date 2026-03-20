@@ -720,6 +720,8 @@ export const ipc = {
     importedWithin?: 'today' | 'week' | 'month' | 'all';
     temporary?: boolean;
   }) => invoke<PaperItem[]>('papers:list', query ?? {}),
+  importTemporary: (paperId: string) =>
+    invoke<{ success: boolean }>('papers:importTemporary', paperId),
   listTodayPapers: () => invoke<PaperItem[]>('papers:listToday'),
   importTemporary: (paperId: string) =>
     invoke<{ success: boolean }>('papers:importTemporary', paperId),
@@ -1510,6 +1512,17 @@ export const ipc = {
   clearDiscoveryCache: () => invoke<{ success: boolean }>('discovery:clear'),
   calculateRelevance: () =>
     invoke<{ success: boolean; papers: DiscoveredPaper[] }>('discovery:calculateRelevance'),
+
+  scanBrowserDownloads: (days?: number) =>
+    invoke<
+      Array<{
+        filePath: string;
+        fileName: string;
+        browser: string;
+        downloadTime: string;
+        fileSize: number;
+      }>
+    >('ingest:scanDownloads', days ?? 7),
 
   // Highlights
   createHighlight: (params: {
