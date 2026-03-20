@@ -51,12 +51,18 @@ export async function searchPapers(query: string, limit: number = 20): Promise<S
   // Clean up query: fix PDF line-break hyphens and remove venue/journal suffixes
   query = query
     .replace(/(\w)- (\w)/g, '$1$2') // "Engi- neering" → "Engineering"
+    .replace(/["\u201C\u201D\u201E\u00AB\u00BB\u0022]+/g, '') // Strip quote chars
+    .replace(/["\u201D\u00BB]?\s*[Ii]n\s*:\s*.*$/, '') // "In: arXiv preprint..."
+    .replace(/["\u201D\u00BB]?\s*[Ii]n\s+(?:Proceedings|Proc\b|Advances\b).*$/i, '')
+    .replace(/\s*,?\s*arXiv\s+preprint\s+arXiv[:\s]*\d{4}\.\d{4,5}.*$/i, '')
     .replace(
       /[.,]\s*(?:IEEE|ACM|Springer|Elsevier|In\s+Proceedings|Proceedings|Trans\.|Transactions|Journal|Conference|Workshop|Symposium)\b.*/i,
       '',
     ) // Remove venue suffix
     .replace(/\s*\d+\s*,\s*\d+\s*\(\d{4}\).*$/, '') // Remove "47, 9 (2019)"
     .replace(/\s*\(\d{4}\).*$/, '') // Remove "(2019)..."
+    .replace(/\s*,\s*\d{4}\s*\.?\s*$/, '') // Remove ", 2019."
+    .replace(/[,;.]+\s*$/, '') // Trailing punctuation
     .trim();
 
   // If query looks like a DOI, do direct lookup first

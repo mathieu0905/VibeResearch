@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { Copy, Check, ExternalLink, Library, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
+import { cleanCitationSearchQuery } from '@shared';
 
 interface PdfCitationPopoverProps {
   containerRef: React.RefObject<HTMLDivElement>;
@@ -179,11 +180,8 @@ export function PdfCitationPopover({ containerRef, onSearchPaper }: PdfCitationP
       e.preventDefault();
       e.stopPropagation();
 
-      // Clean up the citation text
-      const cleanQuery = text
-        .replace(/^\[\d+\]\s*/, '') // Remove [1] prefix
-        .replace(/\s+/g, ' ')
-        .trim();
+      // Clean up the citation text — strip venue info, quotes, etc.
+      const cleanQuery = cleanCitationSearchQuery(text);
 
       // Trigger search
       onSearchPaper(cleanQuery);
@@ -238,11 +236,8 @@ export function PdfCitationPopover({ containerRef, onSearchPaper }: PdfCitationP
   const handleSearchOnline = useCallback(() => {
     if (!popover || isSearching) return;
 
-    // Clean up the citation text
-    const cleanQuery = popover.text
-      .replace(/^\[\d+\]\s*/, '') // Remove [1] prefix
-      .replace(/\s+/g, ' ')
-      .trim();
+    // Clean up the citation text — strip venue info, quotes, etc.
+    const cleanQuery = cleanCitationSearchQuery(popover.text);
 
     setIsSearching(true);
     onSearchPaper(cleanQuery);
@@ -255,11 +250,8 @@ export function PdfCitationPopover({ containerRef, onSearchPaper }: PdfCitationP
 
   const handleSearchLocal = useCallback(() => {
     if (!popover || isSearching) return;
-    // For now, use the same search - could be enhanced to filter local library
-    const cleanQuery = popover.text
-      .replace(/^\[\d+\]\s*/, '')
-      .replace(/\s+/g, ' ')
-      .trim();
+    // Clean up the citation text — strip venue info, quotes, etc.
+    const cleanQuery = cleanCitationSearchQuery(popover.text);
 
     setIsSearching(true);
     onSearchPaper(cleanQuery);

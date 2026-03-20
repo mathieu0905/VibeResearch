@@ -14,7 +14,7 @@ import {
 import { useAgentStream } from '../../../hooks/use-agent-stream';
 import { MessageStream } from '../../../components/agent-todo/MessageStream';
 import { AgentLogo } from '../../../components/agent-todo/AgentLogo';
-import { arxivPdfUrl } from '@shared';
+import { arxivPdfUrl, cleanCitationSearchQuery } from '@shared';
 import { useToast } from '../../../components/toast';
 import { PaperPreviewModal, type SearchResult } from '../../../components/PaperPreviewModal';
 import { saveReaderState, loadReaderState } from '../../../utils/reader-state-cache';
@@ -1706,10 +1706,8 @@ export function ReaderPage() {
                 }}
                 onSearchPaper={(query) => {
                   // Search for paper by selected text (title/reference)
-                  const cleanQuery = query
-                    .replace(/^\[\d+\]\s*/, '') // Remove [1] prefix
-                    .replace(/\s+/g, ' ')
-                    .trim();
+                  // Use smart cleaning to strip venue info, author prefixes, etc.
+                  const cleanQuery = cleanCitationSearchQuery(query);
 
                   // Detect input type
                   const arxivMatch = cleanQuery.match(/(\d{4}\.\d{4,5})/);

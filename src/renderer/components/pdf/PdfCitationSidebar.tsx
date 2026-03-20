@@ -17,6 +17,7 @@ import {
   type CitationMarker,
   type Reference,
 } from '../../utils/citation-detector';
+import { cleanCitationSearchQuery } from '@shared';
 import { ipc } from '../../hooks/use-ipc';
 
 interface CachedReference {
@@ -307,12 +308,13 @@ export function PdfCitationSidebar({
     [citationData, onSearchPaper],
   );
 
-  // Build search query from reference — prefer title over DOI
+  // Build search query from reference — prefer arXiv ID, then cleaned title
   const getSearchQuery = useCallback((ref: Reference): string => {
     if (ref.arxivId) return ref.arxivId;
-    if (ref.title) return ref.title;
     if (ref.doi) return ref.doi;
-    return ref.text.slice(0, 100);
+    if (ref.title) return cleanCitationSearchQuery(ref.title);
+    // Fallback: clean the raw text
+    return cleanCitationSearchQuery(ref.text.slice(0, 200));
   }, []);
 
   // Search with reference info (opens PaperPreviewModal)

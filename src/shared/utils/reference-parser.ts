@@ -473,9 +473,10 @@ function createReference(refText: string, number: number): Reference {
   }
 
   // Extract title - look for text in quotes (various quote styles from PDF extraction)
-  // Covers: "title", \u201Ctitle\u201D, \u2018title\u2019, ``title'', "title"
+  // Covers: "title", \u201Ctitle\u201D, \u2018title\u2019, ``title'', "title",
+  // plus additional PDF quote variants: \u00AB\u00BB (guillemets), \u201E\u201C (German), etc.
   const titleMatch = refText.match(
-    /[\u201C"]\s*([^"\u201D]+?)\s*[\u201D"]|[\u2018']\s*([^'\u2019]+?)\s*[\u2019']|``\s*([^'`]+?)\s*''|"\s*([^"]+?)\s*"/,
+    /[\u201C\u201E\u00AB"]\s*([^"\u201D\u00BB]+?)\s*[\u201D\u00BB"]|[\u2018']\s*([^'\u2019]+?)\s*[\u2019']|``\s*([^'`]+?)\s*''|"\s*([^"]+?)\s*"|[\u0022]\s*([^\u0022]+?)\s*[\u0022]/,
   );
   if (titleMatch) {
     const rawTitle = (
@@ -483,6 +484,7 @@ function createReference(refText: string, number: number): Reference {
       titleMatch[2] ||
       titleMatch[3] ||
       titleMatch[4] ||
+      titleMatch[5] ||
       ''
     ).trim();
     let title = rawTitle.replace(/[,;]\s*$/, '');
@@ -536,9 +538,11 @@ function createReference(refText: string, number: number): Reference {
       // - Multi-letter word starting with capital: "Syntax-guided..."
       // - Lowercase word: "understanding..."
       // - Single capital letter followed by space + lowercase word: "A syntax-guided..."
+      // - Quote character followed by a capital letter: "\"Title..." or "\u201CTitle..."
       const looksLikeTitle =
         /^[A-Z\u00C0-\u024F][a-z\u00C0-\u024F]{2,}|^[a-z]{2,}/.test(after) ||
-        /^[A-Z]\s+[a-z]/.test(after);
+        /^[A-Z]\s+[a-z]/.test(after) ||
+        /^["\u201C\u201E\u00AB\u0022]\s*[A-Z]/.test(after);
       if (!looksLikeTitle) continue;
 
       // If before ends with a 4-digit year, this is ACM "Year. Title" boundary — accept it
@@ -593,6 +597,25 @@ function createReference(refText: string, number: number): Reference {
           break;
         }
       }
+    }
+  }
+
+  // Post-process title: strip venue/journal markers that got included
+  if (reference.title) {
+    // Strip trailing quote + venue: '?" In:...' or '" In ...' or '." In ...'
+    reference.title = reference.title
+      .replace(/["\u201D\u00BB]?\s*[Ii]n\s*:\s*.*$/, '')
+      .replace(
+        /["\u201D\u00BB]?\s*[Ii]n\s+(?:Proceedings|Proc\b|Advances\b|ESEC|ICSE|ASE|ISSTA|NeurIPS|ICML|ICLR|AAAI|IJCAI|CVPR|ICCV|ECCV|ACL|EMNLP|IEEE|ACM|Springer|arXiv).*$/i,
+        '',
+      )
+      .replace(/\s*,?\s*arXiv\s+preprint\s+arXiv[:\s]*\d{4}\.\d{4,5}.*$/i, '')
+      .replace(/["\u201C\u201D\u201E\u00AB\u00BB\u0022]+/g, '') // Strip remaining quote chars
+      .replace(/[,;.]\s*$/, '')
+      .trim();
+    // If title became too short after stripping, null it out
+    if (reference.title.length < 5) {
+      reference.title = null;
     }
   }
 
@@ -656,4 +679,49 @@ function createReference(refText: string, number: number): Reference {
   }
 
   return reference;
+}
+
+/**
+ * Clean a citation/reference string for use as a search query.
+ * Strips author prefixes, venue info, arXiv IDs, year suffixes,
+ * and other metadata that would pollute a title search.
+ */
+export function cleanCitationSearchQuery(query: string): string {
+  let cleaned = query.replace(/\s+/g, ' ').trim();
+
+  // Strip leading [N] reference numbers
+  cleaned = cleaned.replace(/^\[\d+\]\s*/, '');
+
+  // Strip author prefix: "Author et al." or "A. Author, B. Author."
+  // Look for "et al." and take everything after it
+  const etAlMatch = cleaned.match(/\bet\s+al\.?\s*[,.]?\s*(.*)/i);
+  if (etAlMatch && etAlMatch[1].length > 10) {
+    cleaned = etAlMatch[1];
+  }
+
+  // Strip surrounding quote characters
+  cleaned = cleaned
+    .replace(/^["\u201C\u201E\u00AB\u0022]+/, '')
+    .replace(/["\u201D\u00BB\u0022]+$/, '');
+
+  // Strip trailing venue markers: "In: ...", "In Proceedings...", "arXiv preprint..."
+  cleaned = cleaned
+    .replace(/["\u201D\u00BB]?\s*[Ii]n\s*:\s*.*$/, '')
+    .replace(/["\u201D\u00BB]?\s*[Ii]n\s+(?:Proceedings|Proc\b|Advances\b).*$/i, '')
+    .replace(/\s*,?\s*arXiv\s+preprint\s+arXiv[:\s]*\d{4}\.\d{4,5}.*$/i, '')
+    .replace(
+      /[.,]\s*(?:IEEE|ACM|Springer|Elsevier|Trans\.|Transactions|Journal|Conference|Workshop|Symposium)\b.*/i,
+      '',
+    )
+    .replace(/\s*\d+\s*,\s*\d+\s*\(\d{4}\).*$/, '') // "47, 9 (2019)"
+    .replace(/\s*\(\d{4}\)\s*\.?\s*$/, '') // "(2019)."
+    .replace(/\s*,\s*\d{4}\s*\.?\s*$/, ''); // ", 2019."
+
+  // Strip remaining quote chars and trailing punctuation
+  cleaned = cleaned
+    .replace(/["\u201C\u201D\u201E\u00AB\u00BB\u0022]+/g, '')
+    .replace(/[,;.]+\s*$/, '')
+    .trim();
+
+  return cleaned;
 }
