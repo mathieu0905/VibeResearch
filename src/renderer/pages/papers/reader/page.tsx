@@ -376,15 +376,6 @@ export function ReaderPage() {
     cachedState?.showCitationSidebar ?? false,
   );
 
-  // Focus mode: hide top toolbar for distraction-free reading
-  const [focusMode, setFocusMode] = useState(false);
-
-  // Annotation sidebar: show highlights grouped by page
-  const [showAnnotationSidebar, setShowAnnotationSidebar] = useState(false);
-
-  // Ref to call goToPage on the PDF viewer from outside (e.g. annotation sidebar)
-  const goToPageRef = useRef<((page: number) => void) | null>(null);
-
   // Save reader state to cache on unmount (preserve state across tab switches)
   const stateRef = useRef({
     layoutMode,
@@ -1640,11 +1631,7 @@ export function ReaderPage() {
                     ? (params) => {
                         ipc
                           .createHighlight({ ...params, paperId: paper.id })
-                          .then((h) => {
-                            setHighlights((prev) => [...prev, h]);
-                            // Auto-open annotation sidebar so user can add a note
-                            setShowAnnotationSidebar(true);
-                          })
+                          .then((h) => setHighlights((prev) => [...prev, h]))
                           .catch(() => undefined);
                       }
                     : undefined
@@ -1813,7 +1800,6 @@ export function ReaderPage() {
                 }}
                 showCitationSidebar={showCitationSidebar}
                 onToggleCitationSidebar={() => setShowCitationSidebar((v) => !v)}
-                goToPageRef={goToPageRef}
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-4">
