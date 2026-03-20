@@ -78,10 +78,8 @@ function NoPdfBanner({
     setImporting(true);
     setImportResult(null);
     try {
-      const paper = await ipc.importLocalPdf(selectedDl, true);
-      setImportResult(
-        `Imported "${paper.title}" to Reading List. You can add it to Library later.`,
-      );
+      const paper = await ipc.importLocalPdf(selectedDl);
+      setImportResult(`Imported "${paper.title}". Auto-tag & index running in background.`);
     } catch (err) {
       setImportResult(`Import failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

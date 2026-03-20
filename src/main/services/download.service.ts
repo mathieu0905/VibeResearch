@@ -11,6 +11,7 @@ import { schedulePaperProcessing } from './paper-processing.service';
 import { scheduleAutoPaperEnrichment } from './auto-paper-enrichment.service';
 import { scheduleCitationExtraction } from './citation-processing.service';
 import { getPaperOverview, getBestSummary } from './alphaxiv.service';
+import { scheduleReferenceExtraction } from './reference-extraction-bg.service';
 
 /** Minimum size for a valid PDF (arXiv PDFs are typically > 50KB) */
 const MIN_PDF_SIZE = 1024; // 1KB
@@ -69,38 +70,41 @@ async function fetchArxivMetadata(arxivId: string): Promise<{
 }
 
 function parseInput(input: string): {
-  type: 'arxiv_id' | 'arxiv_url' | 'pdf_url' | 'doi' | 'url';
+  type: 'arxiv_id' | 'arxiv_url' | 'pdf_url' | 'doi' | 'url' | 'title';
   arxivId: string | null;
   pdfUrl: string | null;
   doi: string | null;
+  title: string | null;
 } {
   const trimmed = input.trim();
   // arXiv ID: 2301.12345 or 2301.12345v2
   if (/^\d{4}\.\d{4,5}(v\d+)?$/.test(trimmed)) {
-    return { type: 'arxiv_id', arxivId: trimmed, pdfUrl: null, doi: null };
+    return { type: 'arxiv_id', arxivId: trimmed, pdfUrl: null, doi: null, title: null };
   }
   // DOI: 10.xxxx/yyyy
   if (isDoi(trimmed)) {
-    return { type: 'doi', arxivId: null, pdfUrl: null, doi: trimmed };
+    return { type: 'doi', arxivId: null, pdfUrl: null, doi: trimmed, title: null };
   }
   // URL handling
   if (trimmed.includes('arxiv.org')) {
     const arxivId = extractArxivId(trimmed);
-    if (arxivId) return { type: 'arxiv_url', arxivId, pdfUrl: null, doi: null };
+    if (arxivId) return { type: 'arxiv_url', arxivId, pdfUrl: null, doi: null, title: null };
   }
   if (trimmed.startsWith('http')) {
     const arxivId = extractArxivId(trimmed);
-    if (arxivId) return { type: 'arxiv_url', arxivId, pdfUrl: null, doi: null };
+    if (arxivId) return { type: 'arxiv_url', arxivId, pdfUrl: null, doi: null, title: null };
     // Check if URL contains a DOI
     const doiFromUrl = extractDoiFromUrl(trimmed);
-    if (doiFromUrl) return { type: 'doi', arxivId: null, pdfUrl: null, doi: doiFromUrl };
+    if (doiFromUrl)
+      return { type: 'doi', arxivId: null, pdfUrl: null, doi: doiFromUrl, title: null };
     // Check if it's a direct PDF URL or a general academic URL
     if (trimmed.match(/\.pdf(\?|$)/i)) {
-      return { type: 'pdf_url', arxivId: null, pdfUrl: trimmed, doi: null };
+      return { type: 'pdf_url', arxivId: null, pdfUrl: trimmed, doi: null, title: null };
     }
-    return { type: 'url', arxivId: null, pdfUrl: null, doi: null };
+    return { type: 'url', arxivId: null, pdfUrl: null, doi: null, title: null };
   }
-  return { type: 'arxiv_id', arxivId: trimmed, pdfUrl: null, doi: null };
+  // Anything else is a title search
+  return { type: 'title', arxivId: null, pdfUrl: null, doi: null, title: trimmed };
 }
 
 export class DownloadService {
@@ -126,6 +130,10 @@ export class DownloadService {
     }
     if (parsed.type === 'url') {
       return this.importByUrl(input.trim(), tags, isTemporary);
+    }
+    // Handle title search via OpenAlex
+    if (parsed.type === 'title' && parsed.title) {
+      return this.importByTitle(parsed.title, tags, isTemporary);
     }
 
     let arxivId: string | null = null;
@@ -307,6 +315,8 @@ export class DownloadService {
         if (isValidPdf(fileBuffer)) {
           await this.papersRepository.updatePdfPath(paperId, filePath);
           schedulePaperProcessing(paperId);
+          scheduleAutoPaperEnrichment(paperId);
+          scheduleReferenceExtraction(paperId);
           return { success: true, size: stats.size, skipped: true };
         }
         // Invalid file — clear DB path, delete file, then re-download
@@ -339,6 +349,8 @@ export class DownloadService {
       await fs.writeFile(filePath, buffer);
       await this.papersRepository.updatePdfPath(paperId, filePath);
       schedulePaperProcessing(paperId);
+      scheduleAutoPaperEnrichment(paperId);
+      scheduleReferenceExtraction(paperId);
 
       return { success: true, size: buffer.length, skipped: false };
     } catch (error) {

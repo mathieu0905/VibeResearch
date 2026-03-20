@@ -106,7 +106,7 @@ export class PapersRepository {
     year?: number;
     tag?: string;
     importedWithin?: 'today' | 'week' | 'month' | 'all';
-    includeTemporary?: boolean;
+    temporary?: boolean;
   }) {
     const conditions: Record<string, unknown>[] = [
       { isTemporary: query?.temporary === true ? true : false },
