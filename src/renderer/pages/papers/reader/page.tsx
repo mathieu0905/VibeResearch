@@ -1,14 +1,23 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams, useBlocker } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useTabs } from '../../../hooks/use-tabs';
 import { PdfViewer } from '../../../components/pdf-viewer';
-import { ipc, onIpc, type PaperItem, type ModelConfig } from '../../../hooks/use-ipc';
+import type { CachedReference } from '../../../components/pdf/PdfDocument';
+import {
+  ipc,
+  onIpc,
+  type PaperItem,
+  type ModelConfig,
+  type HighlightItem,
+} from '../../../hooks/use-ipc';
 import { useAgentStream } from '../../../hooks/use-agent-stream';
 import { MessageStream } from '../../../components/agent-todo/MessageStream';
 import { AgentLogo } from '../../../components/agent-todo/AgentLogo';
 import { arxivPdfUrl } from '@shared';
 import { useToast } from '../../../components/toast';
+import { PaperPreviewModal, type SearchResult } from '../../../components/PaperPreviewModal';
+import { saveReaderState, loadReaderState } from '../../../utils/reader-state-cache';
 import {
   ArrowLeft,
   Loader2,
@@ -177,10 +186,16 @@ export function ReaderPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { updateTabLabel } = useTabs();
-  const { error: showError, warning: showWarning } = useToast();
+  const { updateTabLabel, openTab } = useTabs();
+  const {
+    error: showError,
+    warning: showWarning,
+    info: showInfo,
+    success: showSuccess,
+  } = useToast();
 
   const [paper, setPaper] = useState<PaperItem | null>(null);
+  const [highlights, setHighlights] = useState<HighlightItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{
@@ -188,16 +203,21 @@ export function ReaderPage() {
     total: number;
   } | null>(null);
 
+  // Restore cached state for this reader tab
+  const cachedState = shortId ? loadReaderState(shortId) : null;
+
   // Layout mode: 'split' = chat+pdf side by side, 'chat-only' = chat full, 'pdf-only' = pdf full
-  const [layoutMode, setLayoutMode] = useState<'split' | 'chat-only' | 'pdf-only'>('pdf-only');
-  const [leftWidth, setLeftWidth] = useState(38);
+  const [layoutMode, setLayoutMode] = useState<'split' | 'chat-only' | 'pdf-only'>(
+    cachedState?.layoutMode ?? 'pdf-only',
+  );
+  const [leftWidth, setLeftWidth] = useState(cachedState?.leftWidth ?? 38);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const startXRef = useRef(0);
   const startWidthRef = useRef(38);
 
   // Chat input state
-  const [chatInput, setChatInput] = useState('');
+  const [chatInput, setChatInput] = useState(cachedState?.chatInput ?? '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [paperDir, setPaperDir] = useState<string | null>(null);
   const [chatModel, setChatModel] = useState<ModelConfig | null>(null);
@@ -246,6 +266,58 @@ export function ReaderPage() {
   const [localUserMessages, setLocalUserMessages] = useState<
     { id: string; msgId: string; type: string; role: string; content: unknown; status: null }[]
   >([]);
+
+  // Paper preview modal state
+  const [previewModalOpen, setPreviewModalOpen] = useState(cachedState?.previewModalOpen ?? false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>(
+    (cachedState?.searchResults as SearchResult[]) ?? [],
+  );
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(cachedState?.searchQuery ?? '');
+  const [previewDownloading, setPreviewDownloading] = useState(false);
+  const [previewNoPdfUrl, setPreviewNoPdfUrl] = useState<string | null>(
+    cachedState?.previewNoPdfUrl ?? null,
+  );
+
+  // Citation sidebar state
+  const [showCitationSidebar, setShowCitationSidebar] = useState(
+    cachedState?.showCitationSidebar ?? false,
+  );
+
+  // Save reader state to cache on unmount (preserve state across tab switches)
+  const stateRef = useRef({
+    layoutMode,
+    leftWidth,
+    showCitationSidebar,
+    chatInput,
+    previewModalOpen,
+    searchResults: searchResults as unknown[],
+    searchQuery,
+    previewNoPdfUrl,
+  });
+  // Keep ref in sync without triggering effect
+  stateRef.current = {
+    layoutMode,
+    leftWidth,
+    showCitationSidebar,
+    chatInput,
+    previewModalOpen,
+    searchResults: searchResults as unknown[],
+    searchQuery,
+    previewNoPdfUrl,
+  };
+  useEffect(() => {
+    return () => {
+      if (shortId) {
+        saveReaderState(shortId, stateRef.current);
+      }
+    };
+  }, [shortId]);
+  const [selectedCitation, setSelectedCitation] = useState<{
+    marker: any;
+    reference: any;
+  } | null>(null);
+  const [cachedReferences, setCachedReferences] = useState<CachedReference[]>([]);
 
   // Agent stream (uses MessageStream, same as task detail page)
   const {
@@ -461,6 +533,31 @@ export function ReaderPage() {
         const shortTitle = p.title.replace(/^\[\d{4}\.\d{4,5}\]\s*/, '').slice(0, 30) || p.shortId;
         updateTabLabel(location.pathname, shortTitle);
         ipc.touchPaper(p.id).catch(() => undefined);
+        // Load highlights
+        ipc
+          .listHighlights(p.id)
+          .then(setHighlights)
+          .catch(() => undefined);
+        // Load cached references
+        ipc
+          .getExtractedRefs(p.id)
+          .then((refs) => {
+            setCachedReferences(
+              refs.map((r) => ({
+                id: r.id,
+                refNumber: r.refNumber,
+                text: r.text,
+                title: r.title,
+                authors: r.authors,
+                year: r.year,
+                doi: r.doi,
+                arxivId: r.arxivId,
+                url: (r as any).url ?? null,
+                venue: (r as any).venue ?? null,
+              })),
+            );
+          })
+          .catch(() => undefined);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -1339,9 +1436,198 @@ export function ReaderPage() {
             {pdfPath ? (
               <PdfViewer
                 path={pdfPath}
+                paperId={paper?.id}
+                cachedReferences={cachedReferences}
+                onReferencesExtracted={(refs) => setCachedReferences(refs)}
+                initialPage={paper?.lastReadPage ?? undefined}
                 onFileNotFound={() =>
                   setPaper((prev) => (prev ? { ...prev, pdfPath: undefined } : prev))
                 }
+                onPageChange={(page, total) => {
+                  if (paper) {
+                    ipc.updateReadingProgress(paper.id, page, total).catch(() => undefined);
+                  }
+                }}
+                onAskAI={(text) => {
+                  setChatInput(`Explain this passage:\n\n"${text}"`);
+                  if (layoutMode === 'pdf-only') setLayoutMode('split');
+                  setTimeout(() => textareaRef.current?.focus(), 100);
+                }}
+                highlights={highlights}
+                onCreateHighlight={
+                  paper
+                    ? (params) => {
+                        ipc
+                          .createHighlight({ ...params, paperId: paper.id })
+                          .then((h) => setHighlights((prev) => [...prev, h]))
+                          .catch(() => undefined);
+                      }
+                    : undefined
+                }
+                onDeleteHighlight={(id) => {
+                  ipc
+                    .deleteHighlight(id)
+                    .then(() => setHighlights((prev) => prev.filter((x) => x.id !== id)))
+                    .catch(() => undefined);
+                }}
+                onOpenUrl={(url) => {
+                  // Try to detect arXiv ID from various URL patterns
+                  const arxivMatch = url.match(
+                    /(?:arxiv\.org\/(?:abs|pdf)|alphaxiv\.org\/(?:abs|overview))\/(\d{4}\.\d{4,5})/,
+                  );
+                  if (arxivMatch) {
+                    const arxivId = arxivMatch[1];
+                    ipc
+                      .getPaperByShortId(arxivId)
+                      .then((existing) => {
+                        if (existing) {
+                          openTab(`/papers/${existing.shortId}/reader`);
+                        } else {
+                          showInfo(`Downloading ${arxivId}...`);
+                          ipc
+                            .downloadPaper(arxivId, [], true)
+                            .then((result) => {
+                              if (result?.paper) {
+                                showSuccess('Paper ready');
+                                openTab(`/papers/${result.paper.shortId}/reader`);
+                              }
+                            })
+                            .catch(() => {
+                              showError('Download failed');
+                            });
+                        }
+                      })
+                      .catch(() => showError('Failed to check paper'));
+                  } else {
+                    // For DOI and other URLs, try to import via the download service
+                    // which can resolve DOIs and direct PDF URLs
+                    showInfo('Opening paper...');
+                    ipc
+                      .downloadPaper(url, [], true)
+                      .then((result) => {
+                        if (result?.paper) {
+                          showSuccess('Paper ready');
+                          openTab(`/papers/${result.paper.shortId}/reader`);
+                        } else {
+                          showError('Could not import paper');
+                        }
+                      })
+                      .catch(() => {
+                        showError('Failed to import paper');
+                      });
+                  }
+                }}
+                onSearchPaper={(query) => {
+                  // Search for paper by selected text (title/reference)
+                  const cleanQuery = query
+                    .replace(/^\[\d+\]\s*/, '') // Remove [1] prefix
+                    .replace(/\s+/g, ' ')
+                    .trim();
+
+                  // Detect input type
+                  const arxivMatch = cleanQuery.match(/(\d{4}\.\d{4,5})/);
+                  const arxivId = arxivMatch ? arxivMatch[1] : undefined;
+                  const isDoi = /^10\.\d{4,}\/\S+$/.test(cleanQuery);
+
+                  // Show preview modal with search results
+                  setSearchQuery(cleanQuery);
+                  setSearchLoading(true);
+                  setSearchResults([]);
+                  setPreviewNoPdfUrl(null);
+                  setPreviewModalOpen(true);
+
+                  // If DOI, try to download/import directly instead of text search
+                  if (isDoi) {
+                    ipc
+                      .downloadPaper(cleanQuery, [], true)
+                      .then((result) => {
+                        if (result?.paper) {
+                          const p = result.paper;
+                          setSearchResults([
+                            {
+                              paperId: p.id,
+                              title: p.title,
+                              authors: (p.authors ?? []).map((name: string) => ({ name })),
+                              year: p.submittedAt ? new Date(p.submittedAt).getFullYear() : null,
+                              abstract: p.abstract ?? null,
+                              citationCount: 0,
+                              externalIds: { ArXiv: p.shortId || undefined },
+                              url: p.sourceUrl ?? null,
+                            },
+                          ]);
+                        } else {
+                          showInfo(t('pdf.preview.noResults'));
+                        }
+                      })
+                      .catch(() => {
+                        // DOI resolve failed, fall back to text search
+                        return ipc.searchPapers(cleanQuery, 10).then((response) => {
+                          setSearchResults(response.results);
+                          if (response.results.length === 0) {
+                            showInfo(t('pdf.preview.noResults'));
+                          }
+                        });
+                      })
+                      .finally(() => setSearchLoading(false));
+                    return;
+                  }
+
+                  // First try local DB match, then fall back to OpenAlex search
+                  ipc
+                    .matchReference({ arxivId, title: cleanQuery })
+                    .then((localPaper) => {
+                      if (localPaper) {
+                        // Convert PaperItem to SearchResult format
+                        const localResult: SearchResult = {
+                          paperId: localPaper.id,
+                          title: localPaper.title,
+                          authors: (localPaper.authors ?? []).map((name) => ({ name })),
+                          year:
+                            localPaper.year ??
+                            (localPaper.submittedAt
+                              ? new Date(localPaper.submittedAt).getFullYear()
+                              : null),
+                          abstract: localPaper.abstract ?? null,
+                          citationCount: 0,
+                          externalIds: {
+                            ArXiv: localPaper.shortId || undefined,
+                          },
+                          url: localPaper.sourceUrl ?? null,
+                        };
+                        setSearchResults([localResult]);
+                        setSearchLoading(false);
+                        return;
+                      }
+
+                      // No local match, fall back to OpenAlex search
+                      return ipc.searchPapers(cleanQuery, 10).then((response) => {
+                        setSearchResults(response.results);
+                        if (response.results.length === 0) {
+                          showInfo(t('pdf.preview.noResults'));
+                        }
+                      });
+                    })
+                    .catch((err) => {
+                      // Show error in modal instead of opening browser
+                      setPreviewModalOpen(false);
+                      showError(
+                        `Search failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+                      );
+                    })
+                    .finally(() => {
+                      setSearchLoading(false);
+                    });
+                }}
+                onUpdateHighlight={(id, params) => {
+                  ipc
+                    .updateHighlight(id, params)
+                    .then((updated) =>
+                      setHighlights((prev) => prev.map((x) => (x.id === id ? updated : x))),
+                    )
+                    .catch(() => undefined);
+                }}
+                showCitationSidebar={showCitationSidebar}
+                onToggleCitationSidebar={() => setShowCitationSidebar((v) => !v)}
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-4">
@@ -1409,6 +1695,51 @@ export function ReaderPage() {
         isOpen={showRatingPrompt}
         onRate={handleRatingPromptRate}
         onSkip={handleRatingPromptSkip}
+      />
+
+      {/* Paper Preview Modal */}
+      <PaperPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        results={searchResults}
+        isLoading={searchLoading}
+        query={searchQuery}
+        isDownloading={previewDownloading}
+        noPdfUrl={previewNoPdfUrl}
+        onOpenWebsite={(url) => {
+          window.electronAPI?.openBrowser(url);
+        }}
+        onDownload={async (result) => {
+          setPreviewDownloading(true);
+          setPreviewNoPdfUrl(null);
+          try {
+            // Prefer arXiv ID, then DOI, then title as last resort
+            const downloadInput = result.externalIds.ArXiv
+              ? result.externalIds.ArXiv
+              : result.externalIds.DOI
+                ? result.externalIds.DOI
+                : result.title;
+
+            const downloadResult = await ipc.downloadPaper(downloadInput, [], true);
+            if (downloadResult?.paper) {
+              if (downloadResult.download?.success) {
+                showSuccess(t('pdf.citation.downloaded'));
+                setPreviewModalOpen(false);
+                openTab(`/papers/${downloadResult.paper.shortId}/reader`);
+              } else {
+                // No PDF — stay in modal, show "Open website" option
+                const doi = result.externalIds.DOI;
+                setPreviewNoPdfUrl(doi ? `https://doi.org/${doi}` : (result.url ?? null));
+              }
+            } else {
+              showError('Download failed - paper not found');
+            }
+          } catch (err) {
+            showError(`Download failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          } finally {
+            setPreviewDownloading(false);
+          }
+        }}
       />
     </div>
   );
