@@ -530,6 +530,13 @@
     "operations": "{{count}} operation(s)",
     "steps": "{{count}} steps"
   },
+  "reader": {
+    "annotations": "Annotations",
+    "noAnnotations": "No highlights yet. Select text in the PDF to create one.",
+    "page": "Page",
+    "focusMode": "Focus mode",
+    "exitFocusMode": "Exit focus mode"
+  },
   "pdf": {
     "citation": {
       "searchLocal": "Search Library",

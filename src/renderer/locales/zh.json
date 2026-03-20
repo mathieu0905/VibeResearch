@@ -530,6 +530,13 @@
     "operations": "{{count}} 项操作",
     "steps": "{{count}} 步"
   },
+  "reader": {
+    "annotations": "批注",
+    "noAnnotations": "暂无高亮。在 PDF 中选择文本以创建高亮。",
+    "page": "第",
+    "focusMode": "专注模式",
+    "exitFocusMode": "退出专注模式"
+  },
   "pdf": {
     "citation": {
       "searchLocal": "搜索文献库",
