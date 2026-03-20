@@ -35,6 +35,7 @@ import {
   X,
   Zap,
   History,
+  StickyNote,
 } from 'lucide-react';
 import type { AgentConfigItem } from '@shared';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -164,6 +165,95 @@ function RatingPromptModal({
   );
 }
 
+// ─── Annotation Card ────────────────────────────────────────────────────────
+
+const HIGHLIGHT_COLOR_BG: Record<string, string> = {
+  yellow: 'bg-yellow-100 border-yellow-300',
+  green: 'bg-green-100 border-green-300',
+  blue: 'bg-blue-100 border-blue-300',
+  pink: 'bg-pink-100 border-pink-300',
+  purple: 'bg-purple-100 border-purple-300',
+};
+
+function AnnotationCard({
+  highlight,
+  onUpdateNote,
+  onDelete,
+  onJumpToPage,
+}: {
+  highlight: HighlightItem;
+  onUpdateNote: (note: string) => void;
+  onDelete: () => void;
+  onJumpToPage?: (page: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [noteText, setNoteText] = useState(highlight.note ?? '');
+  const colorClass = HIGHLIGHT_COLOR_BG[highlight.color] ?? 'bg-yellow-100 border-yellow-300';
+
+  return (
+    <div
+      className={`group mx-2 my-1.5 cursor-pointer rounded-md border-l-2 px-2.5 py-2 transition-colors hover:brightness-95 ${colorClass}`}
+      onClick={() => onJumpToPage?.(highlight.pageNumber)}
+    >
+      <p className="line-clamp-3 text-xs leading-relaxed text-notion-text">
+        &ldquo;{highlight.text}&rdquo;
+      </p>
+      {editing ? (
+        <div className="mt-1.5">
+          <textarea
+            autoFocus
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                onUpdateNote(noteText);
+                setEditing(false);
+              }
+              if (e.key === 'Escape') {
+                setNoteText(highlight.note ?? '');
+                setEditing(false);
+              }
+            }}
+            onBlur={() => {
+              onUpdateNote(noteText);
+              setEditing(false);
+            }}
+            placeholder="Add a note…"
+            className="w-full resize-none rounded border border-notion-border bg-white px-2 py-1 text-xs text-notion-text placeholder:text-notion-text-tertiary focus:outline-none focus:ring-1 focus:ring-notion-accent"
+            rows={2}
+          />
+        </div>
+      ) : (
+        <div className="mt-1 flex items-center gap-1">
+          {highlight.note ? (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-left text-[10px] italic text-notion-text-secondary hover:text-notion-text"
+            >
+              {highlight.note}
+            </button>
+          ) : (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-[10px] text-notion-text-tertiary opacity-0 transition-opacity group-hover:opacity-100"
+            >
+              + note
+            </button>
+          )}
+          <button
+            onClick={onDelete}
+            className="ml-auto rounded p-0.5 text-notion-text-tertiary opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+          >
+            <X size={10} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function inferPdfUrl(paper: PaperItem): string | null {
@@ -283,6 +373,12 @@ export function ReaderPage() {
   const [showCitationSidebar, setShowCitationSidebar] = useState(
     cachedState?.showCitationSidebar ?? false,
   );
+
+  // Annotation sidebar: show highlights grouped by page
+  const [showAnnotationSidebar, setShowAnnotationSidebar] = useState(false);
+
+  // Ref to call goToPage on the PDF viewer from outside (e.g. annotation sidebar)
+  const goToPageRef = useRef<((page: number) => void) | null>(null);
 
   // Save reader state to cache on unmount (preserve state across tab switches)
   const stateRef = useRef({
@@ -1459,7 +1555,11 @@ export function ReaderPage() {
                     ? (params) => {
                         ipc
                           .createHighlight({ ...params, paperId: paper.id })
-                          .then((h) => setHighlights((prev) => [...prev, h]))
+                          .then((h) => {
+                            setHighlights((prev) => [...prev, h]);
+                            // Auto-open annotation sidebar so user can add a note
+                            setShowAnnotationSidebar(true);
+                          })
                           .catch(() => undefined);
                       }
                     : undefined
@@ -1628,6 +1728,7 @@ export function ReaderPage() {
                 }}
                 showCitationSidebar={showCitationSidebar}
                 onToggleCitationSidebar={() => setShowCitationSidebar((v) => !v)}
+                goToPageRef={goToPageRef}
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-4">
@@ -1684,6 +1785,74 @@ export function ReaderPage() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Annotation sidebar */}
+        {showAnnotationSidebar && (
+          <div className="flex w-72 flex-shrink-0 flex-col border-l border-notion-border bg-white">
+            <div className="flex items-center justify-between border-b border-notion-border px-3 py-2">
+              <span className="text-xs font-medium text-notion-text">
+                {t('reader.annotations')} ({highlights.length})
+              </span>
+              <button
+                onClick={() => setShowAnnotationSidebar(false)}
+                className="rounded p-1 text-notion-text-tertiary hover:bg-notion-sidebar"
+              >
+                <X size={12} />
+              </button>
+            </div>
+            <div className="notion-scrollbar flex-1 overflow-y-auto">
+              {highlights.length === 0 ? (
+                <div className="px-4 py-8 text-center text-xs text-notion-text-tertiary">
+                  {t('reader.noAnnotations')}
+                </div>
+              ) : (
+                (() => {
+                  // Group highlights by page
+                  const byPage = new Map<number, typeof highlights>();
+                  for (const h of [...highlights].sort((a, b) => a.pageNumber - b.pageNumber)) {
+                    const arr = byPage.get(h.pageNumber) ?? [];
+                    arr.push(h);
+                    byPage.set(h.pageNumber, arr);
+                  }
+                  return Array.from(byPage.entries()).map(([page, items]) => (
+                    <div key={page} className="border-b border-notion-border/50">
+                      <div className="sticky top-0 bg-notion-sidebar/50 px-3 py-1">
+                        <span className="text-[10px] font-medium text-notion-text-tertiary">
+                          {t('reader.page')} {page}
+                        </span>
+                      </div>
+                      {items.map((h) => (
+                        <AnnotationCard
+                          key={h.id}
+                          highlight={h}
+                          onJumpToPage={(page) => goToPageRef.current?.(page)}
+                          onUpdateNote={(note) => {
+                            ipc
+                              .updateHighlight(h.id, { note })
+                              .then((updated) =>
+                                setHighlights((prev) =>
+                                  prev.map((x) => (x.id === h.id ? updated : x)),
+                                ),
+                              )
+                              .catch(() => undefined);
+                          }}
+                          onDelete={() => {
+                            ipc
+                              .deleteHighlight(h.id)
+                              .then(() =>
+                                setHighlights((prev) => prev.filter((x) => x.id !== h.id)),
+                              )
+                              .catch(() => undefined);
+                          }}
+                        />
+                      ))}
+                    </div>
+                  ));
+                })()
+              )}
+            </div>
           </div>
         )}
 
