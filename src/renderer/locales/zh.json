@@ -678,7 +678,12 @@
     "fetchedJustNow": "刚刚获取",
     "fetchedHoursAgo": "{{count}}小时前获取",
     "fetchedDaysAgo": "{{count}}天前获取",
-    "pageInfo": "第 {{current}} / {{total}} 页"
+    "pageInfo": "第 {{current}} / {{total}} 页",
+    "errorNetwork": "无法连接 arXiv，请检查网络连接或代理设置。",
+    "errorTimeout": "请求超时，请尝试减少论文数量后重试。",
+    "errorAI": "AI 评估失败，请在设置中检查模型配置。",
+    "evaluationCancelled": "评估已取消，部分结果已保存。",
+    "relevanceFailed": "相关性计算失败，请重试。"
   },
   "paper": {
     "fetchAlphaXiv": "获取 AI 解读",

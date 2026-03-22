@@ -1530,7 +1530,11 @@ export const ipc = {
     } | null>('discovery:getLastResult'),
   clearDiscoveryCache: () => invoke<{ success: boolean }>('discovery:clear'),
   calculateRelevance: () =>
-    invoke<{ success: boolean; papers: DiscoveredPaper[] }>('discovery:calculateRelevance'),
+    invoke<{ success: boolean; papers: DiscoveredPaper[]; error?: string }>(
+      'discovery:calculateRelevance',
+    ),
+  cancelEvaluation: () => invoke<{ success: boolean }>('discovery:cancelEvaluation'),
+  cancelRelevance: () => invoke<{ success: boolean }>('discovery:cancelRelevance'),
 
   // Window controls (for Windows title bar)
   windowClose: () => {

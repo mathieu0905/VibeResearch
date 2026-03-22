@@ -678,7 +678,12 @@
     "fetchedJustNow": "Fetched just now",
     "fetchedHoursAgo": "Fetched {{count}}h ago",
     "fetchedDaysAgo": "Fetched {{count}}d ago",
-    "pageInfo": "{{current}} / {{total}} pages"
+    "pageInfo": "{{current}} / {{total}} pages",
+    "errorNetwork": "Cannot reach arXiv. Check your internet connection or proxy settings.",
+    "errorTimeout": "Request timed out. Try again with fewer papers.",
+    "errorAI": "AI evaluation failed. Check your model configuration in Settings.",
+    "evaluationCancelled": "Evaluation cancelled. Partial results have been saved.",
+    "relevanceFailed": "Relevance calculation failed. Please try again."
   },
   "paper": {
     "fetchAlphaXiv": "Get AI Summary",

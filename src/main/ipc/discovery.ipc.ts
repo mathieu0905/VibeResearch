@@ -19,6 +19,10 @@ import { getDiscoveryCachePath } from '../store/storage-path';
 let lastDiscoveryResult: DiscoveryResult | null = null;
 let evaluatedPapers: DiscoveredPaper[] = [];
 
+// Abort controllers for cancellable operations
+let evaluationAbortController: AbortController | null = null;
+let relevanceAbortController: AbortController | null = null;
+
 interface CachedDiscovery {
   papers: DiscoveredPaper[];
   evaluatedPapers: DiscoveredPaper[];
@@ -134,6 +138,13 @@ export function setupDiscoveryIpc() {
         paperIds?: string[]; // If provided, only evaluate these papers
       },
     ) => {
+      // Cancel any existing evaluation
+      if (evaluationAbortController) {
+        evaluationAbortController.abort();
+      }
+      evaluationAbortController = new AbortController();
+      const { signal } = evaluationAbortController;
+
       try {
         const papers = lastDiscoveryResult?.papers ?? [];
         const toEvaluate =
@@ -152,7 +163,20 @@ export function setupDiscoveryIpc() {
           event.sender.send('discovery:evaluateProgress', { evaluated, total });
         };
 
-        evaluatedPapers = await batchEvaluatePapers(toEvaluate, language, onProgress);
+        evaluatedPapers = await batchEvaluatePapers(toEvaluate, language, onProgress, signal);
+
+        if (signal.aborted) {
+          // Still update with partial results
+          if (lastDiscoveryResult && evaluatedPapers.length > 0) {
+            const evaluatedMap = new Map(evaluatedPapers.map((p) => [p.arxivId, p]));
+            lastDiscoveryResult.papers = lastDiscoveryResult.papers.map((p) => {
+              const evaluated = evaluatedMap.get(p.arxivId);
+              return evaluated ?? p;
+            });
+            saveCache();
+          }
+          return { success: true, papers: lastDiscoveryResult?.papers ?? [], cancelled: true };
+        }
 
         // Update papers with evaluation results
         if (lastDiscoveryResult) {
@@ -173,19 +197,30 @@ export function setupDiscoveryIpc() {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         return { success: false, error: message };
+      } finally {
+        evaluationAbortController = null;
       }
     },
   );
 
   // Calculate relevance scores based on user's library
   ipcMain.handle('discovery:calculateRelevance', async () => {
+    // Cancel any existing relevance calculation
+    if (relevanceAbortController) {
+      relevanceAbortController.abort();
+    }
+    relevanceAbortController = new AbortController();
+
     try {
       const papers = lastDiscoveryResult?.papers ?? [];
       if (papers.length === 0) {
         return { success: true, papers: [] };
       }
 
-      const papersWithRelevance = await calculateRelevanceScores(papers);
+      const papersWithRelevance = await calculateRelevanceScores(
+        papers,
+        relevanceAbortController.signal,
+      );
 
       // Update stored papers with relevance scores
       lastDiscoveryResult = {
@@ -210,10 +245,36 @@ export function setupDiscoveryIpc() {
         papers: papersWithRelevance,
       };
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('[discovery:calculateRelevance] Cancelled by user');
+        return { success: false, error: 'cancelled' };
+      }
       const message = error instanceof Error ? error.message : String(error);
       console.error('[discovery:calculateRelevance] Error:', message);
       return { success: false, error: message };
+    } finally {
+      relevanceAbortController = null;
     }
+  });
+
+  // Cancel evaluation
+  ipcMain.handle('discovery:cancelEvaluation', () => {
+    if (evaluationAbortController) {
+      evaluationAbortController.abort();
+      console.log('[discovery] Evaluation cancelled by user');
+      return { success: true };
+    }
+    return { success: false };
+  });
+
+  // Cancel relevance calculation
+  ipcMain.handle('discovery:cancelRelevance', () => {
+    if (relevanceAbortController) {
+      relevanceAbortController.abort();
+      console.log('[discovery] Relevance calculation cancelled by user');
+      return { success: true };
+    }
+    return { success: false };
   });
 
   // Get last discovery result

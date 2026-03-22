@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -23,6 +23,8 @@ import {
   Target,
   FileSearch,
   Clock,
+  XCircle,
+  RotateCcw,
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -55,6 +57,52 @@ const COMMON_CATEGORIES = [
   'cs.IR',
   'stat.ML',
 ];
+
+function classifyError(
+  error: unknown,
+  t: (key: string, defaultValue?: string) => string,
+): string {
+  const msg = String(error).toLowerCase();
+  if (
+    msg.includes('fetch') ||
+    msg.includes('econnrefused') ||
+    msg.includes('enotfound') ||
+    msg.includes('network') ||
+    msg.includes('dns') ||
+    msg.includes('socket')
+  ) {
+    return t(
+      'discovery.errorNetwork',
+      'Cannot reach arXiv. Check your internet connection or proxy settings.',
+    );
+  }
+  if (
+    msg.includes('timeout') ||
+    msg.includes('timedout') ||
+    msg.includes('timed out') ||
+    msg.includes('econnaborted')
+  ) {
+    return t('discovery.errorTimeout', 'Request timed out. Try again with fewer papers.');
+  }
+  if (
+    msg.includes('api') ||
+    msg.includes('model') ||
+    msg.includes('401') ||
+    msg.includes('403') ||
+    msg.includes('rate limit') ||
+    msg.includes('quota') ||
+    msg.includes('insufficient')
+  ) {
+    return t(
+      'discovery.errorAI',
+      'AI evaluation failed. Check your model configuration in Settings.',
+    );
+  }
+  // Return original error for anything else
+  const raw = String(error);
+  // Strip "Error: " prefix if present
+  return raw.startsWith('Error: ') ? raw.slice(7) : raw;
+}
 
 function getScoreColor(score: number): string {
   if (score >= 8) return 'text-green-600 bg-green-50';
@@ -92,6 +140,9 @@ export function DiscoveryPage() {
     total: number;
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lastFailedOp, setLastFailedOp] = useState<'fetch' | 'evaluate' | 'relevance' | null>(
+    null,
+  );
   const [selectedCategories, setSelectedCategories] = useState<string[]>(['cs.AI', 'cs.LG']);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [daysBack, setDaysBack] = useState(7);
@@ -150,6 +201,7 @@ export function DiscoveryPage() {
 
     setLoading(true);
     setError(null);
+    setLastFailedOp(null);
     setPapers([]);
 
     try {
@@ -165,33 +217,50 @@ export function DiscoveryPage() {
         setIsFromToday(true);
         setSortByRelevance(false);
       } else {
-        setError(result.error || 'Failed to fetch papers');
+        setError(classifyError(result.error || 'Failed to fetch papers', t));
+        setLastFailedOp('fetch');
       }
     } catch (e) {
-      setError(String(e));
+      setError(classifyError(e, t));
+      setLastFailedOp('fetch');
     } finally {
       setLoading(false);
     }
-  }, [selectedCategories, daysBack]);
+  }, [selectedCategories, daysBack, t]);
 
   const handleEvaluate = useCallback(async () => {
     if (papers.length === 0) return;
 
     setEvaluating(true);
+    setError(null);
+    setLastFailedOp(null);
     setEvaluateProgress({ evaluated: 0, total: papers.length });
 
     try {
       const result = await ipc.evaluateDiscoveryPapers();
       if (result.success && result.papers) {
         setPapers(result.papers);
+      } else if (!result.success && result.error) {
+        setError(classifyError(result.error, t));
+        setLastFailedOp('evaluate');
       }
     } catch (e) {
       console.error('Evaluation failed:', e);
+      setError(classifyError(e, t));
+      setLastFailedOp('evaluate');
     } finally {
       setEvaluating(false);
       setEvaluateProgress(null);
     }
-  }, [papers.length]);
+  }, [papers.length, t]);
+
+  const handleCancelEvaluation = useCallback(async () => {
+    try {
+      await ipc.cancelEvaluation();
+    } catch (e) {
+      console.error('Failed to cancel evaluation:', e);
+    }
+  }, []);
 
   // Subscribe to evaluation progress
   useEffect(() => {
@@ -267,18 +336,40 @@ export function DiscoveryPage() {
     if (papers.length === 0) return;
 
     setCalculateRelevance(true);
+    setError(null);
+    setLastFailedOp(null);
     try {
       const result = await ipc.calculateRelevance();
       if (result.success && result.papers) {
         setPapers(result.papers);
         setSortByRelevance(true);
+      } else if (!result.success && result.error) {
+        setError(classifyError(result.error, t));
+        setLastFailedOp('relevance');
       }
     } catch (e) {
       console.error('Relevance calculation failed:', e);
+      setError(classifyError(e, t));
+      setLastFailedOp('relevance');
     } finally {
       setCalculateRelevance(false);
     }
-  }, [papers.length]);
+  }, [papers.length, t]);
+
+  const handleCancelRelevance = useCallback(async () => {
+    try {
+      await ipc.cancelRelevance();
+    } catch (e) {
+      console.error('Failed to cancel relevance calculation:', e);
+    }
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    if (!lastFailedOp) return;
+    if (lastFailedOp === 'fetch') handleFetch();
+    else if (lastFailedOp === 'evaluate') handleEvaluate();
+    else if (lastFailedOp === 'relevance') handleCalculateRelevance();
+  }, [lastFailedOp, handleFetch, handleEvaluate, handleCalculateRelevance]);
 
   const toggleCategory = (cat: string) => {
     setSelectedCategories((prev) =>
@@ -447,9 +538,31 @@ export function DiscoveryPage() {
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-6">
         {error && (
-          <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-            <AlertCircle size={16} />
-            {error}
+          <div className="mb-4 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            <div className="flex items-center gap-2">
+              <AlertCircle size={16} className="flex-shrink-0" />
+              {error}
+            </div>
+            <div className="ml-2 flex flex-shrink-0 items-center gap-1">
+              {lastFailedOp && (
+                <button
+                  onClick={handleRetry}
+                  className="flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium text-red-700 transition-colors hover:bg-red-100"
+                >
+                  <RotateCcw size={12} />
+                  {t('common.retry')}
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setError(null);
+                  setLastFailedOp(null);
+                }}
+                className="rounded p-1 transition-colors hover:bg-red-100"
+              >
+                <XCircle size={14} />
+              </button>
+            </div>
           </div>
         )}
 
@@ -511,23 +624,41 @@ export function DiscoveryPage() {
         {/* Relevance calculation indicator */}
         {calculateRelevance && (
           <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3">
-            <div className="flex items-center gap-3">
-              <Loader2 size={16} className="animate-spin text-green-600" />
-              <span className="text-sm text-green-700">
-                {t('discovery.calculatingRelevance', 'Calculating relevance to your library...')}
-              </span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Loader2 size={16} className="animate-spin text-green-600" />
+                <span className="text-sm text-green-700">
+                  {t('discovery.calculatingRelevance', 'Calculating relevance to your library...')}
+                </span>
+              </div>
+              <button
+                onClick={handleCancelRelevance}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium text-green-700 transition-colors hover:bg-green-100"
+              >
+                <XCircle size={14} />
+                {t('common.cancel', 'Cancel')}
+              </button>
             </div>
           </div>
         )}
 
         {evaluating && evaluateProgress && (
           <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
-            <div className="flex items-center gap-3">
-              <Loader2 size={16} className="animate-spin text-blue-600" />
-              <span className="text-sm text-blue-700">
-                {t('discovery.evaluating', 'Evaluating papers...')} {evaluateProgress.evaluated}/
-                {evaluateProgress.total}
-              </span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Loader2 size={16} className="animate-spin text-blue-600" />
+                <span className="text-sm text-blue-700">
+                  {t('discovery.evaluating', 'Evaluating papers...')} {evaluateProgress.evaluated}/
+                  {evaluateProgress.total}
+                </span>
+              </div>
+              <button
+                onClick={handleCancelEvaluation}
+                className="flex items-center gap-1.5 rounded-lg px-3 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100"
+              >
+                <XCircle size={14} />
+                {t('common.cancel', 'Cancel')}
+              </button>
             </div>
             <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
               <motion.div
