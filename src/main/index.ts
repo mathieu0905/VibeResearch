@@ -313,8 +313,8 @@ async function ensureDatabase() {
 
 function createWindow() {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
-  const isDev =
-    !!devServerUrl || process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === '1';
+  // Only use ELECTRON_DEV to determine dev mode (not NODE_ENV, which may be set in .env)
+  const isDev = !!devServerUrl || process.env.ELECTRON_DEV === '1';
 
   // __dirname is dist/main/ — go up to assets/
   const iconPath = path.join(__dirname, '../../assets/icon.icns');
