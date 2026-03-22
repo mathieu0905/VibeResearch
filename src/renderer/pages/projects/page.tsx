@@ -1356,6 +1356,7 @@ function RelatedWorksTab({ project }: { project: ProjectItem }) {
 // ── ProjectDetail (internal component) ────────────────────────────────────────
 
 function ProjectDetail({ project, onRefresh }: { project: ProjectItem; onRefresh: () => void }) {
+  const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('related-works');
   const [showEditModal, setShowEditModal] = useState(false);
   const [editName, setEditName] = useState(project.name);

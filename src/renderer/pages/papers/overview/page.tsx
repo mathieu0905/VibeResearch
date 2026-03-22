@@ -601,6 +601,7 @@ export function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [rating, setRating] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [paperDir, setPaperDir] = useState<string | null>(null);
   const [activeAgent, setActiveAgent] = useState<AgentConfigItem | null>(null);
@@ -778,16 +779,26 @@ export function OverviewPage() {
 
   const handleDeletePaper = useCallback(async () => {
     if (!paper) return;
-    if (!confirm(`Delete "${paper.title}"? This action cannot be undone.`)) return;
     setDeleting(true);
     try {
       await ipc.deletePaper(paper.id);
       navigate('/papers');
     } catch {
-      alert('Failed to delete paper');
+      toast.error(t('papers.deleteFailed'));
       setDeleting(false);
+      setShowDeleteConfirm(false);
     }
-  }, [paper, navigate]);
+  }, [paper, navigate, toast, t]);
+
+  // ESC to close delete confirmation modal
+  useEffect(() => {
+    if (!showDeleteConfirm) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDeleteConfirm(false);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [showDeleteConfirm]);
 
   // Auto-detect repo on mount
   useEffect(() => {
@@ -919,12 +930,12 @@ export function OverviewPage() {
               BibTeX
             </button>
             <button
-              onClick={handleDeletePaper}
+              onClick={() => setShowDeleteConfirm(true)}
               disabled={deleting}
               className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 shadow-sm transition-all hover:bg-red-50 disabled:opacity-40"
             >
               {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-              Delete
+              {t('common.delete')}
             </button>
           </div>
 
@@ -1139,6 +1150,58 @@ export function OverviewPage() {
           </div>
         </div>
       )}
+
+      {/* Delete confirmation modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && paper && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={() => setShowDeleteConfirm(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowDeleteConfirm(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="mx-4 max-w-sm rounded-xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-notion-text">
+                {t('papers.deleteConfirmTitle')}
+              </h3>
+              <p className="mt-2 text-sm font-medium text-notion-text">
+                {cleanArxivTitle(paper.title)}
+              </p>
+              <p className="mt-2 text-sm text-notion-text-secondary">
+                {t('papers.deleteConfirmMessage')}
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleDeletePaper}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting && <Loader2 size={14} className="animate-spin" />}
+                  {t('common.delete')}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

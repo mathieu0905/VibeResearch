@@ -1395,17 +1395,18 @@ export function PapersByTag({
               className="rounded-xl bg-white p-6 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-semibold text-notion-text">Delete Papers</h3>
+              <h3 className="text-lg font-semibold text-notion-text">
+                {t('papers.deleteConfirmBatchTitle')}
+              </h3>
               <p className="mt-2 text-sm text-notion-text-secondary">
-                Are you sure you want to delete {selectedIds.size} paper
-                {selectedIds.size !== 1 ? 's' : ''}? This action cannot be undone.
+                {t('papers.deleteConfirmBatchMessage', { count: selectedIds.size })}
               </p>
               <div className="mt-4 flex justify-end gap-2">
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
                   className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleBatchDelete}
@@ -1413,7 +1414,7 @@ export function PapersByTag({
                   className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
                 >
                   {isBatchDeleting && <Loader2 size={14} className="animate-spin" />}
-                  Delete
+                  {t('common.delete')}
                 </button>
               </div>
             </motion.div>
@@ -1963,31 +1964,54 @@ function PaperCard({
         {isNew && <span className="h-2 w-2 flex-shrink-0 rounded-full bg-red-500" />}
       </div>
 
-      {/* Delete confirmation row */}
+      {/* Delete confirmation modal */}
       <AnimatePresence>
         {showDeleteConfirm && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="overflow-hidden"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={() => setShowDeleteConfirm(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowDeleteConfirm(false);
+            }}
           >
-            <div className="flex items-center justify-end gap-2 bg-red-50/40 px-4 py-2">
-              <span className="text-xs text-red-600">Delete this paper?</span>
-              <button
-                onClick={handleConfirmDelete}
-                className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-red-700"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="rounded px-2 py-0.5 text-xs font-medium text-notion-text-secondary hover:bg-notion-sidebar"
-              >
-                Cancel
-              </button>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="mx-4 max-w-sm rounded-xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-notion-text">
+                {t('papers.deleteConfirmTitle')}
+              </h3>
+              <p className="mt-2 text-sm font-medium text-notion-text">
+                {cleanArxivTitle(paper.title)}
+              </p>
+              <p className="mt-2 text-sm text-notion-text-secondary">
+                {t('papers.deleteConfirmMessage')}
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={deleting === paper.id}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting === paper.id && <Loader2 size={14} className="animate-spin" />}
+                  {t('common.delete')}
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

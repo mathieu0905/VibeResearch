@@ -718,8 +718,10 @@ Rules:
   // Active generation controllers for cancellation support
   const activeAiSummaryControllers = new Map<string, AbortController>();
 
-  // Generate AI summary using pure event-based streaming (no invoke/handle)
-  // This avoids Electron batching send() events with the invoke response.
+  // Generate AI summary using MessagePort-based streaming.
+  // Electron's standard IPC (webContents.send) batches messages at the Chromium
+  // layer, causing all chunks to arrive in a single batch. MessageChannelMain
+  // creates a direct port pair that bypasses this batching for true streaming.
   ipcMain.on(
     'papers:generateAiSummary:start',
     (

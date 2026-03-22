@@ -89,9 +89,6 @@ declare global {
       once: (channel: string, listener: (...args: unknown[]) => void) => void;
       readLocalFile: (path: string) => Promise<string>;
       openBrowser: (url: string, title?: string) => Promise<boolean>;
-      onStreamingPort: (
-        callback: (tag: string, port: MessagePort) => void,
-      ) => () => void;
       // Window controls
       windowClose: () => Promise<void>;
       windowMinimize: () => Promise<void>;
@@ -1653,10 +1650,9 @@ export function onIpc(channel: string, listener: (...args: unknown[]) => void): 
 }
 
 /**
- * Subscribe to a streaming MessagePort from main process.
- *
- * Uses Electron's MessageChannelMain → MessagePort transfer, bypassing
- * IPC batching so chunks arrive individually (not all-at-once).
+ * Subscribe to MessagePort streaming from the main process.
+ * MessagePorts bypass Electron's IPC batching at the Chromium layer,
+ * enabling true chunk-by-chunk delivery for LLM streaming.
  *
  * @param tag - The tag to filter ports by (e.g. paperId)
  * @param onChunk - Called for each text chunk

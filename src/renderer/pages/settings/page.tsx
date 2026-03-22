@@ -2727,12 +2727,7 @@ const SITE_ICONS: Record<string, React.ElementType> = {
   YouTube: YouTubeIcon,
 };
 
-const PROXY_SCOPE_OPTIONS: Array<{
-  key: keyof ProxyScope;
-  label: string;
-  desc: string;
-  Icon: React.ElementType;
-}> = [
+const PROXY_SCOPE_OPTIONS = [
   { key: 'pdfDownload' as keyof ProxyScope, labelKey: 'settings.proxy.scopePdfDownloads' as const, descKey: 'settings.proxy.scopePdfDownloadsDesc' as const, Icon: HardDrive },
   { key: 'aiApi' as keyof ProxyScope, labelKey: 'settings.proxy.scopeAiApi' as const, descKey: 'settings.proxy.scopeAiApiDesc' as const, Icon: Cpu },
   { key: 'cliTools' as keyof ProxyScope, labelKey: 'settings.proxy.scopeAgents' as const, descKey: 'settings.proxy.scopeAgentsDesc' as const, Icon: Bot },
@@ -3241,7 +3236,6 @@ function EmbeddingCard({
   onDelete: () => void;
   readOnly?: boolean;
 }) {
-  const { t } = useTranslation();
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<SemanticEmbeddingTestResult | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
@@ -3286,7 +3280,7 @@ function EmbeddingCard({
             <span className="text-sm font-semibold text-notion-text truncate">{config.name}</span>
             {isActive && (
               <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-medium text-blue-700">
-                {t('settings.models.active')}
+                Active
               </span>
             )}
           </div>
@@ -3302,10 +3296,10 @@ function EmbeddingCard({
             {testing ? (
               <span className="flex items-center gap-1">
                 <Loader2 size={12} className="animate-spin" />
-                {t('settings.models.testing')}
+                Testing...
               </span>
             ) : (
-              t('settings.models.test')
+              'Test'
             )}
           </button>
           {!isActive && (
@@ -3313,7 +3307,7 @@ function EmbeddingCard({
               onClick={onSetActive}
               className="rounded-lg border border-notion-border px-3 py-1.5 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar hover:text-notion-text"
             >
-              {t('settings.models.activate')}
+              Activate
             </button>
           )}
           {!readOnly && (

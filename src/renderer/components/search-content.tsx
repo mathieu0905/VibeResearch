@@ -214,11 +214,11 @@ export function SearchContent() {
   const [searchMode, setSearchMode] = useState<SearchMode>('search');
   const [agenticSteps, setAgenticSteps] = useState<AgenticSearchStep[]>([]);
   const [agenticError, setAgenticError] = useState<string | null>(null);
-  const [agenticFallbackMessage, setAgenticFallbackMessage] = useState<string | null>(null);
   const [agenticModelMissing, setAgenticModelMissing] = useState(false);
+  const [agenticFallbackMessage, setAgenticFallbackMessage] = useState<string | null>(null);
   const [semanticFallbackReason, setSemanticFallbackReason] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const agenticAbortRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const fuseRef = useRef<Fuse<PaperItem> | null>(null);
   const navigate = useNavigate();
 
@@ -285,8 +285,8 @@ export function SearchContent() {
       }
       setLoading(true);
       setHasSearched(true);
-      setAgenticPapers([]);
       setAgenticSteps([]);
+      setAgenticPapers([]);
       setAgenticError(null);
       setAgenticFallbackMessage(null);
 
@@ -436,6 +436,16 @@ export function SearchContent() {
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+      doSearch(query);
+    }
+  };
+
+  const handleSearch = () => {
+    doSearch(query);
+  };
+
   const handleCancelAgenticSearch = useCallback(() => {
     agenticAbortRef.current?.abort();
     agenticAbortRef.current = null;
@@ -447,16 +457,6 @@ export function SearchContent() {
     setHasSearched(false);
     inputRef.current?.focus();
   }, []);
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-      doSearch(query);
-    }
-  };
-
-  const handleSearch = () => {
-    doSearch(query);
-  };
 
   const handleClear = () => {
     agenticAbortRef.current?.abort();
@@ -476,8 +476,8 @@ export function SearchContent() {
   const handleSearchModeChange = (mode: SearchMode) => {
     agenticAbortRef.current?.abort();
     agenticAbortRef.current = null;
-    setLoading(false);
     setSearchMode(mode);
+    setLoading(false);
     setHasSearched(false);
     setPapers([]);
     setAgenticPapers([]);

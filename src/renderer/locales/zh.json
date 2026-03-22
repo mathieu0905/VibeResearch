@@ -308,7 +308,12 @@
     "analyze": "智能标签",
     "extractMetadata": "提取元数据",
     "retryProcessing": "重试处理",
-    "downloadPdf": "下载 PDF"
+    "downloadPdf": "下载 PDF",
+    "deleteConfirmTitle": "删除论文",
+    "deleteConfirmMessage": "这将永久删除该论文及所有相关笔记。",
+    "deleteConfirmBatchTitle": "删除论文",
+    "deleteConfirmBatchMessage": "确定要删除 {{count}} 篇论文吗？此操作无法撤销。",
+    "deleteFailed": "删除论文失败"
   },
   "importModal": {
     "title": "导入论文",
@@ -324,6 +329,7 @@
     "importing": "导入中...",
     "imported": "已导入 {{count}} 篇论文",
     "importFailed": "导入失败",
+    "retryImport": "重试",
     "last1Day": "最近 24 小时",
     "last7Days": "最近 7 天",
     "last30Days": "最近 30 天",
@@ -610,7 +616,11 @@
     "noMatch": "没有符合当前筛选条件的论文",
     "library": "文献库",
     "import": "导入",
-    "importHint": "从 Chrome 历史记录导入或手动添加"
+    "importHint": "从 Chrome 历史记录导入或手动添加",
+    "autoTagFailed": "自动标签失败",
+    "indexingFailed": "索引失败",
+    "analysisFailed": "分析失败",
+    "metadataFailed": "元数据提取失败"
   },
   "searchContent": {
     "noMatch": "未找到匹配的论文"
@@ -695,7 +705,7 @@
     "today": "今天",
     "yesterday": "昨天",
     "noHistory": "暂无历史记录",
-    "viewingHistory": "正在查看 {{date}} 的结果",
+    "viewingHistory": "查看 {{date}} 的结果",
     "backToToday": "回到今天"
   },
   "paper": {
