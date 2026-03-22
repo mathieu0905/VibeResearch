@@ -24,6 +24,7 @@ import { setupUserProfileIpc } from './ipc/user-profile.ipc';
 import { setupAcpChatIpc } from './ipc/acp-chat.ipc';
 import { setupZoteroIpc } from './ipc/zotero.ipc';
 import { setupDiscoveryIpc } from './ipc/discovery.ipc';
+import { setupBackupIpc } from './ipc/backup.ipc';
 import { setupReaderAiIpc } from './ipc/reader-ai.ipc';
 import { ensureStorageDir, getDbPath, getStorageDir } from './store/storage-path';
 import {
@@ -494,6 +495,7 @@ app.whenReady().then(async () => {
     .initialize()
     .catch((err) => console.error('[AgentTodo] Failed to initialize scheduler:', err));
   setupCitationsIpc();
+  setupBackupIpc();
   setupUserProfileIpc();
   setupAcpChatIpc();
   setupFileIpc();
