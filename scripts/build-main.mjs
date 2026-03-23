@@ -67,6 +67,11 @@ const external = [
   // SSH2 + cpu-features: contain .node native addons
   'ssh2',
   'cpu-features',
+  // archiver + adm-zip: file compression/archiving with native dependencies
+  'archiver',
+  'adm-zip',
+  // node-edge-tts: TTS with native audio processing
+  'node-edge-tts',
 ];
 
 const alias = {

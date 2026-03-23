@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.0.4 (2026-03-23)
+
+### fix: Fix esbuild external dependencies for TTS and backup features
+
+**Summary**: Fixed development build errors by adding missing external dependencies (`archiver`, `adm-zip`, `node-edge-tts`) to the esbuild configuration. These packages were added in recent features (TTS, backup) but not properly marked as external in the build script.
+
+**Changes**:
+
+1. Added `archiver`, `adm-zip`, and `node-edge-tts` to the external list in `scripts/build-main.mjs`
+2. These packages are now correctly loaded from node_modules at runtime instead of being bundled
+
+**Test validation**: Passed `npm run lint`, development server starts successfully, Electron app launches without module resolution errors.
+
+**Modified**: `scripts/build-main.mjs`
+
 ## 2026-03-23 (68)
 
 ### fix: Remove high-severity flatted audit finding
