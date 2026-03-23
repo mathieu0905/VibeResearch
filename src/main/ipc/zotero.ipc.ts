@@ -2,12 +2,14 @@ import { ipcMain } from 'electron';
 import fs from 'fs/promises';
 import {
   detectZotero,
+  listZoteroCollections,
   scanZoteroLibrary,
   importZoteroPapers,
   cancelZoteroImport,
   getZoteroImportStatus,
   type ZoteroScannedItem,
   type ZoteroDetectResult,
+  type ZoteroCollection,
   type ZoteroScanResult,
   type ZoteroImportStatus,
 } from '../services/zotero.service';
@@ -31,6 +33,21 @@ export function setupZoteroIpc() {
       return err(e instanceof Error ? e.message : String(e));
     }
   });
+
+  // ── Zotero list collections (lightweight) ───────────────────────────
+  ipcMain.handle(
+    'zotero:collections',
+    async (_, dbPath?: string): Promise<IpcResult<ZoteroCollection[]>> => {
+      try {
+        const result = await listZoteroCollections(dbPath);
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[zotero:collections] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
 
   // ── Zotero scan ──────────────────────────────────────────────────────
   ipcMain.handle(

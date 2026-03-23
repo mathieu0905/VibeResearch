@@ -152,6 +152,9 @@ export function ImportModal({
   const [zoteroDbPath, setZoteroDbPath] = useState<string>('');
   const [zoteroDetected, setZoteroDetected] = useState<boolean | null>(null);
   const [zoteroCollectionFilter, setZoteroCollectionFilter] = useState<string>('');
+  const [zoteroCollections, setZoteroCollections] = useState<
+    Array<{ name: string; itemCount: number }>
+  >([]);
 
   // BibTeX state
   const [bibtexEntries, setBibtexEntries] = useState<ParsedPaperEntry[]>([]);
@@ -264,7 +267,14 @@ export function ImportModal({
         .zoteroDetect()
         .then((result) => {
           setZoteroDetected(result.found);
-          if (result.found && result.dbPath) setZoteroDbPath(result.dbPath);
+          if (result.found && result.dbPath) {
+            setZoteroDbPath(result.dbPath);
+            // Pre-load collections list (lightweight query)
+            ipc
+              .zoteroCollections(result.dbPath)
+              .then(setZoteroCollections)
+              .catch(() => setZoteroCollections([]));
+          }
         })
         .catch(() => setZoteroDetected(false));
     }
@@ -1573,6 +1583,28 @@ export function ImportModal({
                           <p className="text-xs text-notion-text-tertiary truncate">
                             {zoteroDbPath}
                           </p>
+
+                          {/* Collection selector before scan */}
+                          {zoteroCollections.length > 0 && (
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-notion-text-secondary">
+                                {t('importModal.zotero.selectCollection')}
+                              </label>
+                              <select
+                                value={zoteroCollectionFilter}
+                                onChange={(e) => setZoteroCollectionFilter(e.target.value)}
+                                className="w-full rounded-lg border border-notion-border bg-notion-sidebar px-3 py-1.5 text-sm text-notion-text outline-none"
+                              >
+                                <option value="">{t('importModal.zotero.allCollections')}</option>
+                                {zoteroCollections.map((c) => (
+                                  <option key={c.name} value={c.name}>
+                                    {c.name} ({c.itemCount})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
                           <p className="text-sm text-notion-text-secondary">
                             {t('importModal.zotero.scanDesc')}
                           </p>

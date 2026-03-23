@@ -48,6 +48,7 @@ export interface ZoteroImportStatus {
   skipped: number;
   phase: 'idle' | 'importing' | 'completed' | 'cancelled' | 'failed';
   message: string;
+  failedItems?: Array<{ title: string; error: string }>;
 }
 
 // ── State ────────────────────────────────────────────────────────────────
@@ -123,6 +124,56 @@ export function detectZotero(customDbPath?: string): ZoteroDetectResult {
     dbPath,
     storageDir: path.join(zoteroDir, 'storage'),
   };
+}
+
+// ── Collections (lightweight) ────────────────────────────────────────────
+
+export interface ZoteroCollection {
+  name: string;
+  itemCount: number;
+}
+
+export async function listZoteroCollections(dbPath?: string): Promise<ZoteroCollection[]> {
+  const detection = detectZotero(dbPath);
+  if (!detection.found) {
+    throw new Error(`Zotero database not found at: ${detection.dbPath}`);
+  }
+
+  const tmpPath = path.join(os.tmpdir(), `zotero-cols-${Date.now()}.sqlite`);
+  copyFileSync(detection.dbPath, tmpPath);
+  const walPath = detection.dbPath + '-wal';
+  const shmPath = detection.dbPath + '-shm';
+  if (existsSync(walPath)) copyFileSync(walPath, tmpPath + '-wal');
+  if (existsSync(shmPath)) copyFileSync(shmPath, tmpPath + '-shm');
+
+  try {
+    const SQL = await initSqlJs({
+      locateFile: (file: string) => require.resolve(`sql.js/dist/${file}`),
+    });
+    const dbBuffer = readFileSync(tmpPath);
+    const db = new SQL.Database(dbBuffer);
+
+    const result = db.exec(`
+      SELECT c.collectionName, COUNT(ci.itemID) as cnt
+      FROM collections c
+      LEFT JOIN collectionItems ci ON c.collectionID = ci.collectionID
+      GROUP BY c.collectionID, c.collectionName
+      ORDER BY c.collectionName
+    `);
+
+    db.close();
+
+    if (!result.length || !result[0].values.length) return [];
+
+    return result[0].values.map((row) => ({
+      name: String(row[0]),
+      itemCount: Number(row[1]),
+    }));
+  } finally {
+    await fs.unlink(tmpPath).catch(() => undefined);
+    await fs.unlink(tmpPath + '-wal').catch(() => undefined);
+    await fs.unlink(tmpPath + '-shm').catch(() => undefined);
+  }
 }
 
 // ── Scanning ─────────────────────────────────────────────────────────────
@@ -359,7 +410,29 @@ function getShortIdForZoteroItem(zoteroKey: string, doi?: string, url?: string):
 
 // ── Import ───────────────────────────────────────────────────────────────
 
-const CONCURRENCY = 8;
+// SQLite is single-writer; high concurrency causes SQLITE_BUSY errors.
+// Use sequential imports with retry logic instead.
+const CONCURRENCY = 1;
+const MAX_RETRIES = 3;
+const RETRY_BASE_MS = 200;
+
+async function withRetry<T>(fn: () => Promise<T>, label: string): Promise<T> {
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRetryable = msg.includes('SQLITE_BUSY') || msg.includes('database is locked');
+      if (!isRetryable || attempt === MAX_RETRIES - 1) throw err;
+      const delay = RETRY_BASE_MS * Math.pow(2, attempt);
+      console.warn(
+        `[zotero] Retrying "${label}" (attempt ${attempt + 1}) after ${delay}ms: ${msg}`,
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw new Error('unreachable');
+}
 
 export async function importZoteroPapers(
   items: ZoteroScannedItem[],
@@ -388,6 +461,7 @@ export async function importZoteroPapers(
   let success = 0;
   let failed = 0;
   let skipped = 0;
+  const failedItems: Array<{ title: string; error: string }> = [];
 
   let idx = 0;
   async function worker() {
@@ -427,22 +501,29 @@ export async function importZoteroPapers(
           await fs.copyFile(item.pdfPath, localPdfPath);
         }
 
-        await papersService.upsertFromIngest({
-          title: item.title,
-          source,
-          sourceUrl,
-          tags: [],
-          authors: item.authors,
-          abstract: item.abstract,
-          submittedAt: item.year ? new Date(`${item.year}-01-01T00:00:00Z`) : undefined,
-          doi: item.doi,
-          pdfPath: localPdfPath,
-        });
+        await withRetry(
+          () =>
+            papersService.upsertFromIngest({
+              title: item.title,
+              source,
+              sourceUrl,
+              tags: [],
+              authors: item.authors,
+              abstract: item.abstract,
+              submittedAt: item.year ? new Date(`${item.year}-01-01T00:00:00Z`) : undefined,
+              doi: item.doi,
+              pdfPath: localPdfPath,
+              shortId,
+            }),
+          item.title,
+        );
 
         existingShortIds.add(shortId);
         success++;
       } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
         console.error('[zotero] Failed to import:', item.title, err);
+        failedItems.push({ title: item.title, error: errMsg });
         failed++;
       }
 
@@ -463,6 +544,7 @@ export async function importZoteroPapers(
       active: false,
       phase: 'cancelled',
       message: `Cancelled: ${success} imported, ${skipped} skipped`,
+      failedItems: failedItems.length > 0 ? failedItems.slice(0, 20) : undefined,
     };
   } else {
     zoteroStatus = {
@@ -470,6 +552,7 @@ export async function importZoteroPapers(
       active: false,
       phase: 'completed',
       message: `Done: ${success} new, ${skipped} skipped${failed > 0 ? `, ${failed} failed` : ''}`,
+      failedItems: failedItems.length > 0 ? failedItems.slice(0, 20) : undefined,
     };
   }
   broadcastZoteroStatus();

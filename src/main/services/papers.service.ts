@@ -27,6 +27,8 @@ export interface CreatePaperInput {
   pdfUrl?: string;
   pdfPath?: string;
   doi?: string;
+  /** Optional explicit shortId (e.g. from Zotero import) to keep dedup consistent */
+  shortId?: string;
 }
 
 export class PapersService {
@@ -111,7 +113,7 @@ export class PapersService {
   }
 
   async create(input: CreatePaperInput) {
-    const shortId = await this.generateShortId(input.sourceUrl, input.doi);
+    const shortId = input.shortId ?? (await this.generateShortId(input.sourceUrl, input.doi));
     await this.ensurePaperFolder(shortId);
 
     const submittedAt =
@@ -161,7 +163,15 @@ export class PapersService {
     submittedAt?: Date;
     doi?: string;
     pdfPath?: string;
+    /** Optional explicit shortId to keep dedup consistent (e.g. from Zotero import) */
+    shortId?: string;
   }) {
+    // Deduplicate by explicit shortId first
+    if (input.shortId) {
+      const existing = await this.papersRepository.findByShortId(input.shortId);
+      if (existing) return existing;
+    }
+
     // Deduplicate by shortId (arxiv ID extracted from sourceUrl)
     if (input.sourceUrl) {
       const arxivMatch = input.sourceUrl.match(/arxiv\.org\/(?:abs|pdf)\/([0-9]+\.[0-9v]+)/i);
@@ -197,6 +207,7 @@ export class PapersService {
       submittedAt: input.submittedAt,
       doi: input.doi,
       pdfPath: input.pdfPath,
+      shortId: input.shortId,
     });
   }
 
