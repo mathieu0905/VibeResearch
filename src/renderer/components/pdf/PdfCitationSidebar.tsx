@@ -112,6 +112,10 @@ export function PdfCitationSidebar({
   const [showAllCitations, setShowAllCitations] = useState(true);
   const [selectedRef, setSelectedRef] = useState<Reference | null>(null);
 
+  // Track current jump position for cycling through citation occurrences
+  const [activeRefNumber, setActiveRefNumber] = useState<number | null>(null);
+  const [jumpIndex, setJumpIndex] = useState<number>(0);
+
   // Track document to prevent re-extraction on same PDF
   const extractedDocRef = useRef<PDFDocumentProxy | null>(null);
   const isExtractingRef = useRef(false);
@@ -351,10 +355,6 @@ export function PdfCitationSidebar({
   // Map of ref number -> matched paper shortId (null = checked but not found)
   const [localMatches, setLocalMatches] = useState<Map<number, string | null>>(new Map());
   const [checkingRef, setCheckingRef] = useState<number | null>(null);
-
-  // Track current jump position for cycling through citation occurrences
-  const [activeRefNumber, setActiveRefNumber] = useState<number | null>(null);
-  const [jumpIndex, setJumpIndex] = useState<number>(0);
 
   useEffect(() => {
     if (!selectedRef) return;
