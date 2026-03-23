@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-03-23 (67)
+
+### fix: Stabilize Windows release packaging
+
+**Summary**: Fixed Windows release failures by rebuilding the invalid ICO asset before packaging, routing Electron Builder downloads through `npmmirror`, and disabling Windows executable resource editing that depends on a legacy `winCodeSign` archive requiring symlink privileges.
+
+**Changes**:
+
+1. Added a script to build `assets/icon.ico` from `assets/icon.iconset` PNG assets
+2. Updated the Windows release script to regenerate the ICO before packaging and use `npm.cmd`/`npx.cmd` plus mirrored binary downloads
+3. Set Windows packaging to skip `signAndEditExecutable`, avoiding `winCodeSign` extraction failures on hosts without symlink privileges
+4. Normalized Windows path assertions in release-related tests so repository validation passes on Windows
+
+**Test validation**: Passed `npm run lint`, `npm run test`, and `npm run release:win` (generated `release/ResearchClaw Setup 0.0.3.exe`).
+
 ## 2026-03-15 v0.0.3
 
 ### Release: v0.0.3 - i18n improvements
