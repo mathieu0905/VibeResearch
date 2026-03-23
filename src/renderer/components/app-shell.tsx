@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { useScrollRestore } from '../hooks/use-scroll-restore';
 import { useTranslation } from 'react-i18next';
+// @ts-ignore asset import
 import appIcon from '../../../assets/icon.png';
 import { Link, useLocation, useNavigate, useMatches } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -22,6 +24,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Sparkles,
+  FlaskConical,
+  Highlighter,
 } from 'lucide-react';
 import { useTabs } from '../hooks/use-tabs';
 import {
@@ -30,8 +34,17 @@ import {
   type PaperItem,
   type ProjectItem,
   type ProviderConfig,
-  type BuiltinModelDownloadProgress,
 } from '../hooks/use-ipc';
+
+interface BuiltinModelDownloadProgress {
+  percent: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  stage?: string;
+  phase?: string;
+  fileIndex?: number;
+  totalFiles?: number;
+}
 import { useAnalysis } from '../hooks/use-analysis';
 import { useMainReady } from '../hooks/use-main-ready';
 import {
@@ -56,6 +69,8 @@ interface RecentItem {
 const primaryNavRoutes = [
   { to: '/dashboard', labelKey: 'sidebar.dashboard' as const, icon: LayoutDashboard },
   { to: '/search', labelKey: 'sidebar.search' as const, icon: Search },
+  { to: '/discovery', labelKey: 'sidebar.discovery' as const, icon: Sparkles },
+  { to: '/highlights', labelKey: 'sidebar.highlights' as const, icon: Highlighter },
 ];
 
 const SIDEBAR_COLLAPSED_KEY = 'researchclaw-sidebar-collapsed';
@@ -123,10 +138,10 @@ function BuiltinModelDownloadToast() {
 
   useEffect(() => {
     // Check if the IPC method exists (may not be available in all versions)
-    if (typeof ipc.getBuiltinModelDownloadStatus !== 'function') return;
-    ipc
+    if (typeof (ipc as any).getBuiltinModelDownloadStatus !== 'function') return;
+    (ipc as any)
       .getBuiltinModelDownloadStatus()
-      .then((res) => {
+      .then((res: { downloading: boolean; progress: BuiltinModelDownloadProgress | null }) => {
         if (res.downloading && res.progress) {
           setDownloading(true);
           setProgress(res.progress);
@@ -205,6 +220,7 @@ export function AppShell({
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
+  const mainScrollRef = useScrollRestore<HTMLElement>();
   const pathname = location.pathname;
   const { tabs, activeId, activateTab, closeTab } = useTabs();
   const { jobs: analysisJobs } = useAnalysis();
@@ -257,6 +273,17 @@ export function AppShell({
     setIsCollapsed(next);
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
   };
+
+  // Auto-collapse sidebar when entering the reader page (needs screen space)
+  const isReaderPage = pathname.includes('/reader');
+  const prevIsReaderRef = useRef(false);
+  useEffect(() => {
+    if (isReaderPage && !prevIsReaderRef.current && !isCollapsed) {
+      setIsCollapsed(true);
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'true');
+    }
+    prevIsReaderRef.current = isReaderPage;
+  }, [isReaderPage]);
 
   const recentLoadedRef = useRef(false);
 
@@ -312,7 +339,13 @@ export function AppShell({
     loadData();
   }, [pathname, isMainReady, loadData]);
 
-  const isLibraryRoute = pathname === '/papers' || pathname.startsWith('/papers/');
+  // Check if we're viewing a paper from Discovery (don't highlight Library in that case)
+  const fromDiscovery =
+    (location.state as { from?: string })?.from === '/discovery' ||
+    (location.state as { from?: string })?.from === '/discovery/preview';
+
+  const isLibraryRoute =
+    !fromDiscovery && (pathname === '/papers' || pathname.startsWith('/papers/'));
   const isProjectsRoute = pathname === '/projects' || pathname.startsWith('/projects/');
 
   const matches = useMatches();
@@ -440,8 +473,7 @@ export function AppShell({
                 <img
                   src={appIcon}
                   alt="ResearchClaw"
-                  className="h-9 w-9 flex-shrink-0"
-                  style={{ mixBlendMode: 'multiply' }}
+                  className="h-9 w-9 flex-shrink-0 rounded-lg"
                 />
                 <span className="text-sm font-semibold text-notion-text whitespace-nowrap">
                   ResearchClaw
@@ -807,7 +839,7 @@ export function AppShell({
         </AnimatePresence>
 
         {/* Page content */}
-        <main className="notion-scrollbar flex-1 overflow-y-auto h-full">
+        <main ref={mainScrollRef} className="notion-scrollbar flex-1 overflow-y-auto h-full">
           {fullWidth ? (
             <div className="relative h-full">
               {canGoBack && (

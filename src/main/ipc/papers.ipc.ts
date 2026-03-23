@@ -1,5 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
+import { createStreamingPort } from '../services/streaming-port.service';
 import path from 'path';
+import { PapersRepository } from '@db';
 import { PapersService } from '../services/papers.service';
 import { DownloadService } from '../services/download.service';
 import { AgenticSearchService, type AgenticSearchStep } from '../services/agentic-search.service';
@@ -10,8 +12,15 @@ import {
 } from '../services/paper-processing.service';
 import { type IpcResult, ok, err } from '@shared';
 import { getBibtexBatch } from '../services/bibtex.service';
+import { findDuplicates } from '../services/dedup.service';
 import { searchPapers } from '../services/paper-search.service';
 import { generateWithActiveProvider } from '../services/ai-provider.service';
+import { getPaperOverview, getBestSummary } from '../services/alphaxiv.service';
+import {
+  getCachedAiSummary,
+  generateAiSummary,
+  deleteCachedAiSummary,
+} from '../services/paper-summary.service';
 
 // Lazy instantiation to ensure DATABASE_URL is set before Prisma initializes
 let papersService: PapersService | null = null;
@@ -42,9 +51,14 @@ function getSemanticSearchService() {
 export function setupPapersIpc() {
   ipcMain.handle(
     'papers:download',
-    async (_, input: string, tags?: string[]): Promise<IpcResult<unknown>> => {
+    async (
+      _,
+      input: string,
+      tags?: string[],
+      isTemporary?: boolean,
+    ): Promise<IpcResult<unknown>> => {
       try {
-        const result = await getDownloadService().downloadFromInput(input, tags ?? []);
+        const result = await getDownloadService().downloadFromInput(input, tags ?? [], isTemporary);
         return ok(result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -53,6 +67,23 @@ export function setupPapersIpc() {
       }
     },
   );
+
+  // Make a temporary paper permanent
+  ipcMain.handle(
+    'papers:makePermanent',
+    async (_, paperId: string): Promise<IpcResult<unknown>> => {
+      try {
+        const { makePaperPermanent } = await import('../services/temporary-papers.service');
+        const success = await makePaperPermanent(paperId);
+        return ok({ success });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[papers:makePermanent] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
   ipcMain.handle(
     'papers:list',
     async (
@@ -62,6 +93,7 @@ export function setupPapersIpc() {
         year?: number;
         tag?: string;
         importedWithin?: 'today' | 'week' | 'month' | 'all';
+        temporary?: boolean;
       } = {},
     ): Promise<IpcResult<unknown>> => {
       try {
@@ -71,6 +103,65 @@ export function setupPapersIpc() {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[papers:list] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  ipcMain.handle('papers:findDuplicates', async (): Promise<IpcResult<unknown>> => {
+    try {
+      const result = await findDuplicates();
+      return ok(result);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[papers:findDuplicates] Error:', msg);
+      return err(msg);
+    }
+  });
+
+  ipcMain.handle('papers:counts', async (): Promise<IpcResult<unknown>> => {
+    try {
+      const result = await getPapersService().getCounts();
+      return ok(result);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[papers:counts] Error:', msg);
+      return err(msg);
+    }
+  });
+
+  ipcMain.handle(
+    'papers:listPaginated',
+    async (
+      _,
+      query: {
+        q?: string;
+        year?: number;
+        tag?: string;
+        importedWithin?: 'today' | 'week' | 'month' | 'all';
+        temporary?: boolean;
+        page?: number;
+        pageSize?: number;
+        sortBy?: 'lastRead' | 'importDate' | 'title';
+        readingStatus?: 'all' | 'unread' | 'reading' | 'finished';
+      } = {},
+    ): Promise<IpcResult<unknown>> => {
+      try {
+        const result = await getPapersService().listPaginated(query);
+        console.log(
+          '[papers:listPaginated] page:',
+          result.page,
+          'pageSize:',
+          result.pageSize,
+          'total:',
+          result.total,
+          'returned:',
+          result.papers.length,
+        );
+        return ok(result);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[papers:listPaginated] Error:', msg);
         return err(msg);
       }
     },
@@ -101,9 +192,9 @@ export function setupPapersIpc() {
 
   ipcMain.handle(
     'papers:importLocalPdf',
-    async (_, filePath: string): Promise<IpcResult<unknown>> => {
+    async (_, filePath: string, isTemporary?: boolean): Promise<IpcResult<unknown>> => {
       try {
-        const result = await getPapersService().importLocalPdf(filePath);
+        const result = await getPapersService().importLocalPdf(filePath, { isTemporary });
         return ok(result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -263,6 +354,36 @@ export function setupPapersIpc() {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[papers:updateRating] Error:', msg);
         return err(msg);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'papers:updateReadingProgress',
+    async (
+      _,
+      id: string,
+      lastReadPage: number,
+      totalPages: number,
+    ): Promise<IpcResult<unknown>> => {
+      try {
+        await new PapersRepository().updateReadingProgress(id, lastReadPage, totalPages);
+        return ok(null);
+      } catch (e) {
+        return err(e instanceof Error ? e.message : String(e));
+      }
+    },
+  );
+
+  // Convert temporary paper to permanent (import to library)
+  ipcMain.handle(
+    'papers:importTemporary',
+    async (_, paperId: string): Promise<IpcResult<unknown>> => {
+      try {
+        await new PapersRepository().updateTemporaryStatus(paperId, false);
+        return ok({ success: true });
+      } catch (e) {
+        return err(e instanceof Error ? e.message : String(e));
       }
     },
   );
@@ -434,6 +555,392 @@ Rules:
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[papers:extractGithubUrl] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  // Fetch AlphaXiv summary for a paper and update its abstract
+  ipcMain.handle(
+    'papers:fetchAlphaXiv',
+    async (_, paperId: string, shortId: string): Promise<IpcResult<string | null>> => {
+      try {
+        // Check if shortId looks like an arXiv ID
+        const arxivIdMatch = shortId.match(/^(\d{4}\.\d{4,5})/);
+        if (!arxivIdMatch) {
+          return ok(null); // Not an arXiv paper
+        }
+
+        const arxivId = arxivIdMatch[1];
+        const alphaxivData = await getPaperOverview(arxivId);
+
+        if (!alphaxivData?.overview) {
+          return ok(null); // No AlphaXiv data available
+        }
+
+        const aiSummary = getBestSummary(alphaxivData.overview);
+        if (!aiSummary) {
+          return ok(null);
+        }
+
+        // Get current paper to preserve original abstract
+        const paper = await getPapersService().getById(paperId);
+        if (!paper) {
+          return err('Paper not found');
+        }
+
+        // Extract original abstract if already has AlphaXiv marker
+        let originalAbstract = paper.abstract;
+        const marker = '**AI-Generated Summary (AlphaXiv):**';
+        const divider = '\n\n---\n\n**Original Abstract:**';
+        if (paper.abstract.includes(marker)) {
+          const dividerIndex = paper.abstract.indexOf(divider);
+          if (dividerIndex !== -1) {
+            originalAbstract = paper.abstract.slice(dividerIndex + divider.length).trim();
+          }
+        }
+
+        // Build new abstract with AlphaXiv summary
+        const newAbstract = `**AI-Generated Summary (AlphaXiv):**\n\n${aiSummary}\n\n---\n\n**Original Abstract:**\n${originalAbstract}`;
+
+        // Update paper in database
+        await getPapersService().updateAbstract(paperId, newAbstract);
+
+        return ok(newAbstract);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[papers:fetchAlphaXiv] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  // Bulk refresh AlphaXiv summaries for all arXiv papers
+  ipcMain.handle(
+    'papers:refreshAllAlphaXiv',
+    async (): Promise<IpcResult<{ updated: number; total: number }>> => {
+      try {
+        const all = await getPapersService().list({});
+        const arxivPapers = all.filter((p) => /^\d{4}\.\d{4,5}/.test(p.shortId));
+        let updated = 0;
+
+        for (const paper of arxivPapers) {
+          try {
+            const arxivId = paper.shortId.match(/^(\d{4}\.\d{4,5})/)![1];
+            const alphaxivData = await getPaperOverview(arxivId);
+            if (!alphaxivData?.overview) continue;
+
+            const aiSummary = getBestSummary(alphaxivData.overview);
+            if (!aiSummary) continue;
+
+            // Extract original abstract
+            let originalAbstract = paper.abstract;
+            const marker = '**AI-Generated Summary (AlphaXiv):**';
+            const divider = '\n\n---\n\n**Original Abstract:**';
+            if (paper.abstract.includes(marker)) {
+              const dividerIndex = paper.abstract.indexOf(divider);
+              if (dividerIndex !== -1) {
+                originalAbstract = paper.abstract.slice(dividerIndex + divider.length).trim();
+              }
+            }
+
+            const newAbstract = `**AI-Generated Summary (AlphaXiv):**\n\n${aiSummary}\n\n---\n\n**Original Abstract:**\n${originalAbstract}`;
+            await getPapersService().updateAbstract(paper.id, newAbstract);
+            updated++;
+            console.log(
+              `[refreshAllAlphaXiv] Updated ${paper.shortId} (${updated}/${arxivPapers.length})`,
+            );
+          } catch {
+            // Skip individual failures
+          }
+        }
+
+        console.log(`[refreshAllAlphaXiv] Done: ${updated}/${arxivPapers.length} updated`);
+        return ok({ updated, total: arxivPapers.length });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(msg);
+      }
+    },
+  );
+
+  // Get AlphaXiv summary for an arXiv paper (without saving to database)
+  ipcMain.handle(
+    'papers:getAlphaXivData',
+    async (_, arxivId: string): Promise<IpcResult<string | null>> => {
+      console.log('[papers:getAlphaXivData] Called with arxivId:', arxivId);
+      try {
+        const alphaxivData = await getPaperOverview(arxivId);
+        console.log('[papers:getAlphaXivData] AlphaXiv data:', alphaxivData ? 'received' : 'null');
+
+        if (!alphaxivData?.overview) {
+          return ok(null);
+        }
+
+        const aiSummary = getBestSummary(alphaxivData.overview);
+        console.log('[papers:getAlphaXivData] AI summary length:', aiSummary?.length || 0);
+        return ok(aiSummary);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[papers:getAlphaXivData] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  // Match a reference against local papers by arXiv ID, DOI, or title
+  ipcMain.handle(
+    'papers:matchReference',
+    async (
+      _,
+      ref: { arxivId?: string; doi?: string; title?: string },
+    ): Promise<IpcResult<unknown>> => {
+      try {
+        const { getPrismaClient } = await import('@db');
+        const prisma = getPrismaClient();
+
+        // Only match papers that have a local PDF
+        const pdfFilter = { pdfPath: { not: null } };
+
+        // 1. Try matching by arXiv ID (stored as shortId)
+        if (ref.arxivId) {
+          const paper = await prisma.paper.findFirst({
+            where: { shortId: ref.arxivId, ...pdfFilter },
+            include: { tags: { include: { tag: true } } },
+          });
+          if (paper) {
+            return ok({
+              id: paper.id,
+              shortId: paper.shortId,
+              title: paper.title,
+              authors: paper.authorsJson ? JSON.parse(paper.authorsJson) : [],
+              submittedAt: paper.submittedAt?.toISOString(),
+              abstract: paper.abstract,
+              pdfUrl: paper.pdfUrl,
+              pdfPath: paper.pdfPath,
+              sourceUrl: paper.sourceUrl,
+              tagNames: paper.tags.map((pt) => pt.tag.name),
+              year: paper.submittedAt ? paper.submittedAt.getFullYear() : null,
+            });
+          }
+        }
+
+        // 2. Try matching by title (case-insensitive contains)
+        if (ref.title) {
+          const paper = await prisma.paper.findFirst({
+            where: {
+              title: { contains: ref.title },
+              ...pdfFilter,
+            },
+            include: { tags: { include: { tag: true } } },
+          });
+          if (paper) {
+            return ok({
+              id: paper.id,
+              shortId: paper.shortId,
+              title: paper.title,
+              authors: paper.authorsJson ? JSON.parse(paper.authorsJson) : [],
+              submittedAt: paper.submittedAt?.toISOString(),
+              abstract: paper.abstract,
+              pdfUrl: paper.pdfUrl,
+              pdfPath: paper.pdfPath,
+              sourceUrl: paper.sourceUrl,
+              tagNames: paper.tags.map((pt) => pt.tag.name),
+              year: paper.submittedAt ? paper.submittedAt.getFullYear() : null,
+            });
+          }
+        }
+
+        return ok(null);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[papers:matchReference] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  // Get cached AI summary for a paper (any paper, not just arXiv)
+  ipcMain.handle(
+    'papers:getAiSummary',
+    async (_, shortId: string): Promise<IpcResult<string | null>> => {
+      try {
+        const summary = await getCachedAiSummary(shortId);
+        return ok(summary);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(msg);
+      }
+    },
+  );
+
+  // Generate AI summary for a paper with streaming output
+  // Active generation controllers for cancellation support
+  const activeAiSummaryControllers = new Map<string, AbortController>();
+
+  // Generate AI summary using MessagePort-based streaming.
+  // Electron's standard IPC (webContents.send) batches messages at the Chromium
+  // layer, causing all chunks to arrive in a single batch. MessageChannelMain
+  // creates a direct port pair that bypasses this batching for true streaming.
+  ipcMain.on(
+    'papers:generateAiSummary:start',
+    (
+      event,
+      input: {
+        paperId: string;
+        shortId: string;
+        title: string;
+        abstract?: string;
+        pdfUrl?: string;
+        pdfPath?: string;
+        language?: 'en' | 'zh';
+      },
+    ) => {
+      console.log('[papers:generateAiSummary] Generating for:', input.shortId);
+
+      // Cancel any previous generation for this paper
+      const prev = activeAiSummaryControllers.get(input.paperId);
+      if (prev) prev.abort();
+
+      const controller = new AbortController();
+      activeAiSummaryControllers.set(input.paperId, controller);
+
+      const sender = event.sender;
+
+      // Create a MessagePort for streaming chunks (bypasses IPC batching)
+      const streamPort = createStreamingPort(sender, input.paperId);
+
+      generateAiSummary(
+        input.paperId,
+        input.shortId,
+        input.title,
+        (chunk) => {
+          // Send each chunk directly through the MessagePort — no batching
+          streamPort.sendChunk(chunk);
+        },
+        {
+          abstract: input.abstract,
+          pdfUrl: input.pdfUrl,
+          pdfPath: input.pdfPath,
+          language: input.language,
+          signal: controller.signal,
+          onPhase: (phase: string) => {
+            if (!sender.isDestroyed()) {
+              sender.send('papers:aiSummaryPhase', { paperId: input.paperId, phase });
+            }
+          },
+        },
+      )
+        .then((summary) => {
+          streamPort.sendDone();
+          streamPort.close();
+          activeAiSummaryControllers.delete(input.paperId);
+          console.log('[papers:generateAiSummary] Generated, length:', summary.length);
+          if (!sender.isDestroyed()) {
+            sender.send('papers:aiSummaryDone', { paperId: input.paperId, summary });
+          }
+        })
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          streamPort.sendError(msg);
+          streamPort.close();
+          activeAiSummaryControllers.delete(input.paperId);
+          console.error('[papers:generateAiSummary] Error:', msg);
+          if (!sender.isDestroyed()) {
+            sender.send('papers:aiSummaryError', { paperId: input.paperId, error: msg });
+          }
+        });
+    },
+  );
+
+  // Delete cached AI summary (for regeneration)
+  ipcMain.handle(
+    'papers:deleteAiSummary',
+    async (_, shortId: string): Promise<IpcResult<boolean>> => {
+      try {
+        await deleteCachedAiSummary(shortId);
+        return ok(true);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return err(msg);
+      }
+    },
+  );
+
+  // Extracted References - save to database for caching
+  ipcMain.handle(
+    'papers:getExtractedRefs',
+    async (_, paperId: string): Promise<IpcResult<unknown[]>> => {
+      try {
+        const { getPrismaClient } = await import('@db');
+        const prisma = getPrismaClient();
+        const refs = await prisma.extractedReference.findMany({
+          where: { paperId },
+          orderBy: { refNumber: 'asc' },
+        });
+        return ok(refs);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[papers:getExtractedRefs] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'papers:saveExtractedRefs',
+    async (
+      _,
+      paperId: string,
+      refs: Array<{
+        refNumber: number;
+        text: string;
+        title?: string;
+        authors?: string;
+        year?: number;
+        doi?: string;
+        arxivId?: string;
+        url?: string;
+        venue?: string;
+      }>,
+    ): Promise<IpcResult<unknown>> => {
+      try {
+        const { getPrismaClient } = await import('@db');
+        const prisma = getPrismaClient();
+
+        // Delete existing refs for this paper
+        await prisma.extractedReference.deleteMany({
+          where: { paperId },
+        });
+
+        // Insert new refs
+        if (refs.length > 0) {
+          await prisma.extractedReference.createMany({
+            data: refs.map((ref) => ({
+              paperId,
+              refNumber: ref.refNumber,
+              text: ref.text,
+              title: ref.title ?? null,
+              authors: ref.authors ?? null,
+              year: ref.year ?? null,
+              doi: ref.doi ?? null,
+              arxivId: ref.arxivId ?? null,
+              url: ref.url ?? null,
+              venue: ref.venue ?? null,
+            })),
+          });
+        }
+
+        // Update citationsExtractedAt on paper
+        await prisma.paper.update({
+          where: { id: paperId },
+          data: { citationsExtractedAt: new Date() },
+        });
+
+        return ok({ count: refs.length });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[papers:saveExtractedRefs] Error:', msg);
         return err(msg);
       }
     },

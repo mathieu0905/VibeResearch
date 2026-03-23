@@ -9,6 +9,10 @@ import { ProjectsPage, ProjectDetailPage } from './pages/projects/page';
 import { SettingsPage } from './pages/settings/page';
 import { AgentTodosPage } from './pages/agent-todos/page';
 import { AgentTodoDetailPage } from './pages/agent-todos/[id]/page';
+import { DiscoveryPage } from './pages/discovery/page';
+import { DiscoveryPreviewPage } from './pages/discovery/preview/page';
+import { BrowserPage } from './pages/browser/page';
+import { HighlightsPage } from './pages/highlights/page';
 import { TabsProvider } from './hooks/use-tabs';
 import { ChatProvider } from './hooks/use-chat';
 import { AnalysisProvider } from './hooks/use-analysis';
@@ -67,6 +71,22 @@ export const router = createHashRouter([
         element: <AgentTodoDetailPage />,
         handle: { fullWidth: true, hideBackButton: true },
       },
+      {
+        path: 'discovery',
+        element: <DiscoveryPage />,
+        handle: { fullWidth: true, hideBackButton: true },
+      },
+      {
+        path: 'discovery/preview',
+        element: <DiscoveryPreviewPage />,
+        handle: { fullWidth: true, hideBackButton: true },
+      },
+      {
+        path: 'browser',
+        element: <BrowserPage />,
+        handle: { fullWidth: true, hideBackButton: true },
+      },
+      { path: 'highlights', element: <HighlightsPage />, handle: { fullWidth: true } },
       { path: 'settings', element: <SettingsPage /> },
     ],
   },

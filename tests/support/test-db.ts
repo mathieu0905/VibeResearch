@@ -57,6 +57,7 @@ export const ensureTestDatabaseSchema = () => {
 };
 
 export const resetTestDatabase = async () => {
+  ensureTestDatabaseSchema();
   ensureDatabaseUrl();
   const prisma = getPrismaClient();
 

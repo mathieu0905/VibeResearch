@@ -29,6 +29,612 @@
 
 **Test validation**: Passed `npm run lint`, `npm run test`, and `npm run release:win` (generated `release/ResearchClaw Setup 0.0.3.exe`).
 
+## 2026-03-23 (62)
+
+### feat: Incremental discovery with persistent scores
+
+- **Default 14 days**: Changed default fetch range from 7 to 14 days, history retention to 14 days
+- **Incremental fetch**: arXiv fetch now merges new papers into existing results instead of replacing — papers with existing quality/relevance scores are preserved
+- **Incremental evaluation**: AI evaluation and relevance calculation skip papers that already have scores, only processing new additions
+- **Same-day skip**: Auto-refresh only triggers if cached data is not from today; manual Fetch button always forces refresh
+- **Persistent scores**: All scores (quality, relevance, AlphaXiv metrics) are saved to disk cache and survive app restarts
+- **Modified**: `discovery.ipc.ts`, `discovery/page.tsx`, `changelog.md`
+
+## 2026-03-22 (61)
+
+### feat: AlphaXiv Trending Papers in Discovery page
+
+- **AlphaXiv Hot source**: Discovery page now has a source tab switcher (arXiv / AlphaXiv Hot) to browse trending papers from AlphaXiv
+- **SSR data extraction**: New `alphaxiv-trending.service.ts` scrapes AlphaXiv's explore page and extracts paper data from SSR-embedded TanStack Router dehydrated state
+- **Trending metrics display**: Paper cards show AlphaXiv-specific metrics (views, votes, GitHub stars) when viewing trending papers
+- **Extended DiscoveredPaper type**: Added optional `alphaxivMetrics` and `source` fields to support both arXiv and AlphaXiv data sources
+- **IPC handler**: New `discovery:fetchTrending` handler in `discovery.ipc.ts`
+- **i18n**: Added `discovery.alphaxivHot`, `discovery.fetchTrending`, `discovery.fetchingTrending`, `discovery.views`, `discovery.votes`, `discovery.githubStars` keys
+- **New files**: `alphaxiv-trending.service.ts`
+- **Modified**: `arxiv-discovery.service.ts`, `discovery.ipc.ts`, `use-ipc.ts`, `discovery/page.tsx`, `en.json`, `zh.json`, `changelog.md`
+
+## 2026-03-22 (60)
+
+### feat: Text-to-Speech (TTS) for PDF reader using Microsoft Edge TTS
+
+- **Edge TTS integration**: Added `node-edge-tts` for high-quality, free text-to-speech — no API key required
+- **Multi-page reading**: Click speaker icon to start reading from current page; automatically advances through all subsequent pages
+- **Karaoke-style word tracking**: Word-level subtitle timing from Edge TTS highlights the currently spoken word in real-time in the player bar
+- **PDF text normalization**: Removes spurious line breaks from PDF text extraction so TTS reads naturally without mid-sentence pauses
+- **Auto page navigation**: PDF automatically scrolls to the page being read aloud
+- **Player bar**: Shows playback controls, page progress (p.X/Y), voice/rate selectors, and scrolling text with active word highlighting
+- **Voice selection**: 10 curated voices (5 English, 5 Chinese), auto-detects language on first use
+- **Speed control**: 6 rate options from 0.5x to 2x
+- **Chunked synthesis**: Text split into ~500 char chunks at sentence boundaries for fast first-chunk playback + pre-synthesis of next chunk
+- **Audio caching**: MP3 + subtitle JSON cached in `~/.researchclaw/tts-cache/` with MD5-based keys; auto-cleanup of files older than 7 days
+- **i18n**: Added `reader.tts.*` keys to both `en.json` and `zh.json`
+- **New files**: `tts.service.ts`, `tts.ipc.ts`, `use-tts.ts`, `TtsPlayerBar.tsx`
+- **Modified**: `PdfToolbar.tsx`, `PdfDocument.tsx`, `use-ipc.ts`, `index.ts`, `en.json`, `zh.json`, `package.json`
+
+## 2026-03-22 (59)
+
+### fix: PDF in-document search now highlights matches and scrolls to exact position
+
+- **Text layer highlighting**: Search matches are now visually highlighted in the PDF text layer with yellow background (active match in orange)
+- **Precise scroll positioning**: Navigating between matches scrolls to the exact position of the matched text, not just the page
+- **Cross-span matching**: Search correctly handles terms that span across multiple text layer spans
+- **Architecture refactor**: Lifted `usePdfSearch` state from `PdfSearchBar` into `PdfDocument`, passing search query + active match info down to each `PdfPage` for per-page highlighting
+- **Modified**: `use-pdf-search.ts`, `PdfSearchBar.tsx`, `PdfPage.tsx`, `PdfDocument.tsx`, `pdf-overrides.css`, `changelog.md`
+
+## 2026-03-22 (58)
+
+### feat: P1 — Reading progress, global highlights, Markdown export, direct reader access
+
+**Reading progress on Library cards + filter**
+
+- PaperCard now shows reading progress badge (e.g., `p.12/45`) — amber for in-progress, green for finished
+- New "Progress" filter dropdown: All / Unread / Reading / Finished (server-side via raw SQL for field-to-field comparison)
+
+**Direct reader access from Library**
+
+- Clicking the file icon on a paper card opens the reader directly (skipping the detail page), if the paper has a PDF
+- Detail page auto-redirects to reader when navigated with `openReader` state flag
+
+**Global Highlights page**
+
+- New sidebar navigation item "Highlights" with dedicated page
+- Search across all highlights in the library by text content
+- Filter by highlight color (yellow/green/blue/pink/purple)
+- Results grouped by paper with click-to-jump to reader
+- Notion-inspired design with color dots and paper headers
+
+**Markdown export**
+
+- Export button (clipboard icon) in reader toolbar
+- Generates Markdown with paper title, authors, highlights grouped by page, and reading notes
+- ProseMirror/TipTap JSON to Markdown converter (paragraphs, headings, lists, bold, italic, code)
+- Copies to clipboard with toast confirmation
+
+**i18n**: Added `papersByTag.readingStatus.*`, `papers.openReader`, `papers.openDetail`, `sidebar.highlights`, `highlights.*`, `reader.exportHighlights/exportCopied/noHighlightsToExport` to both `en.json` and `zh.json`.
+
+**Modified**: `papers.repository.ts`, `papers.service.ts`, `papers.ipc.ts`, `highlights.repository.ts`, `highlights.ipc.ts`, `use-ipc.ts`, `papers-by-tag.tsx`, `app-shell.tsx`, `router.tsx`, `overview/page.tsx`, `reader/page.tsx`, `en.json`, `zh.json`, `changelog.md`
+**New files**: `src/renderer/pages/highlights/page.tsx`
+
+## 2026-03-22 (57)
+
+### feat: P0 — Server-side pagination, paper deduplication, and backup/restore
+
+**Phase 1: Large library performance — server-side pagination**
+
+- **New `listPaginated` repository method**: Prisma `skip`/`take` with server-side filtering (text search, tag, year, import time, sort) and `count()` for total. Supports `__untagged__` special tag value.
+- **New `getCounts` endpoint**: Returns library-wide stats (total, untagged, unindexed, missingAbstract, withPdf, availableYears) in a single query, replacing per-render client-side computation.
+- **Frontend refactored**: `papers-by-tag.tsx` now fetches via `papers:listPaginated` with current filter state. Client-side filtering/sorting removed. Stats from `papers:counts`. Batch auto-tag delegated to server-side `tagging:tagUntagged`.
+
+**Phase 2: Paper deduplication**
+
+- **PDF content-based dedup** in `importLocalPdf`: Extracts DOI, arXiv ID, and title from first 3000 chars of PDF text before creating a new record. Returns existing paper if match found.
+- **Title-based dedup** in `upsertFromIngest`: Third dedup check after arXiv ID and DOI — normalized title `contains` query with bidirectional substring matching.
+- **New `findByNormalizedTitle` repository method**: Case-insensitive substring search with 80-char prefix, returns first high-confidence match.
+- **Duplicate detection service** (`dedup.service.ts`): Scans library for groups of papers with identical normalized titles. Results shown as orange banner in library view with review modal.
+
+**Phase 3: Backup & Restore**
+
+- **New `backup.service.ts`**: Creates zip with `archiver` (DB, papers/, config JSONs, manifest). Restore via `unzipper`. Excludes vec-store.json (regeneratable).
+- **New `backup.ipc.ts`**: `backup:create` (save dialog → zip), `backup:restore` (open dialog → extract), `backup:getInfo` (manifest peek).
+- **Settings UI**: "Backup & Restore" section in Storage settings with create/restore buttons, progress states, and result messages.
+
+**i18n**: Added `papers.duplicates.*` and `settings.backup.*` keys to both `en.json` and `zh.json`.
+
+**Dependencies**: Added `archiver`, `@types/archiver`, `unzipper`, `@types/unzipper`.
+
+**Modified**: `papers.repository.ts`, `papers.service.ts`, `papers.ipc.ts`, `papers-by-tag.tsx`, `use-ipc.ts`, `dedup.service.ts` (new), `backup.service.ts` (new), `backup.ipc.ts` (new), `index.ts`, `settings/page.tsx`, `en.json`, `zh.json`, `changelog.md`
+
+## 2026-03-22 (56)
+
+### fix: Chat session recovery after mid-conversation exit
+
+- **Initial user message now persisted to DB**: `runAgentTodo` in `agent-todo.service.ts` now saves the initial prompt as a user run message before starting the agent. Previously only follow-up messages (via `sendMessage`) were persisted — the first user message was lost on mid-stream exit.
+- **Chat history dropdown recovers active sessions**: `handleLoadChatSession` in `reader/page.tsx` now checks `getActiveAgentTodoStatus` before loading from DB. If the task is still running, live messages are recovered instead of showing stale DB data.
+- **OverviewPage `t is not defined` fix**: Added missing `useTranslation()` hook call to the `OverviewPage` component.
+- **New IPC handlers**: `acp-chat:message:add` and `acp-chat:activeJobs` for UnifiedChatModal (future use).
+- **pushUserMessage stores in-memory**: `AgentTaskRunner.pushUserMessage()` now pushes to `messages` and `mergedMessages` arrays, so `getActiveTodoStatus()` includes user messages for mid-navigation recovery.
+- **Test coverage**: Added `chat-session-recovery.test.ts` (6 tests, DB persistence) and `chat-backend-flow.test.ts` (6 tests, full service chain with mocked AcpConnection) covering initial prompt persistence, mid-stream recovery, follow-up, tool call, history loading, multi-run isolation, and live state recovery.
+- **Modified**: `agent-todo.service.ts`, `agent-task-runner.ts`, `reader/page.tsx`, `overview/page.tsx`, `acp-chat.service.ts`, `acp-chat.ipc.ts`, `use-ipc.ts`, `UnifiedChatModal.tsx`, `changelog.md`
+
+## 2026-03-22 (55)
+
+### feat: Integrate online paper search into main Search page
+
+- **Search mode now searches both local library and online databases in parallel**. When users search in the "Search" tab, semantic search runs against the local library while OpenAlex/Semantic Scholar searches run concurrently for online results.
+- **Result tabs (Library / Online)**: Results area has two tabs — "Library" (default, shows local semantic results) and "Online" (shows papers from OpenAlex/Semantic Scholar). Tab indicator uses spring animation. Online tab shows a loading spinner while results are being fetched.
+- **One-click import**: Online result cards have an "Import" button that downloads the paper to the library via DOI, arXiv ID, or title lookup. Shows importing spinner and "Imported" confirmation state.
+- **Search state persistence**: All search state (query, results, active tab, imported IDs) is cached at module level, so navigating away from the search page and returning preserves results.
+- **i18n**: Added `search.onlineResults`, `search.onlineSearching`, `search.importToLibrary`, `search.importing`, `search.imported`, `search.citations`, `search.noCitations`, `search.onlineNoResults`, `search.libraryResults` to both `en.json` and `zh.json`.
+- **Relevance score badge**: Semantic search results now display a percentage-based relevance score (top-right corner, fades on hover). Color-coded: green (>=80%), blue (>=60%), amber (>=40%), gray (<40%).
+- **Score normalization**: Added sigmoid-based normalization for embedding similarity scores. `text-embedding-3-small` produces low raw cosine similarities (0.25-0.55 typical), now mapped to a perceptual 0-100% scale.
+- **Online search: dual-strategy for better recall**: OpenAlex now runs fulltext search + title-specific search (`filter=title.search:`) in parallel, then merges results with title matches prioritized. This fixes cases where short queries (e.g. "think like human") missed papers whose title contained the query words but ranked poorly in fulltext.
+- **fix: Import from online search broken** — Two bugs: (1) `importByTitle` and `createFromMetadata` called `this.papersService.create()` but `papersService` was undefined — changed to `this.papersRepository.create()`. (2) `importByDoi` was called with an extra `input` arg, causing `tags` param to receive a string instead of array (`tags.map is not a function`) — removed extra arg.
+- **Import error feedback**: Online result cards now show error state with "Retry" button and error message tooltip when import fails.
+- **Modified**: `search-content.tsx`, `semantic-search.service.ts`, `paper-search.service.ts`, `download.service.ts`, `use-ipc.ts`, `en.json`, `zh.json`, `changelog.md`
+
+## 2026-03-21 (54)
+
+### fix: Discovery Smart Filter cancel + 7-day history
+
+- **Smart Filter cancel**: `calculateRelevanceScores()` now accepts an `AbortSignal` parameter. The signal is checked before and after the expensive `embedTexts()` call. Throws `AbortError` on cancellation, which the IPC handler catches and returns `{ success: false, error: 'cancelled' }`.
+- **7-day history**: Discovery cache migrated from single-entry to array-based format. Each fetch is stored by date (upsert on same day, append on new day), pruned to 7 days. Legacy single-entry cache files are auto-migrated on first load.
+- **New IPC handlers**: `discovery:getHistory` (returns date/paperCount/categories summary) and `discovery:loadHistoryEntry` (loads full papers for a specific date).
+- **Frontend**: History dropdown with calendar icon near the fetch timestamp. Shows dates as "Today", "Yesterday", or "Mar 19" style. When viewing historical data, a banner shows "Viewing results from ..." with a "Back to today" link.
+- **i18n**: Added `discovery.history`, `discovery.today`, `discovery.yesterday`, `discovery.noHistory`, `discovery.viewingHistory`, `discovery.backToToday` to both `en.json` and `zh.json`.
+- **Modified**: `discovery-relevance.service.ts`, `discovery.ipc.ts`, `use-ipc.ts`, `discovery/page.tsx`, `en.json`, `zh.json`, `changelog.md`
+
+## 2026-03-21 (53)
+
+### fix: AI streaming display — MessagePort bypass for Electron IPC batching
+
+- **Root cause**: Electron's standard IPC (`webContents.send` / `ipcRenderer.on`) batches messages at the Chromium layer, causing all LLM streaming chunks to arrive in a single batch on the renderer side. Previous attempts (invoke-to-send conversion, RAF rendering, 50ms buffer flush, setImmediate yield) all failed because the batching happens at a layer below standard IPC.
+- **Solution**: Use `MessageChannelMain` to create a direct MessagePort pair per streaming session. Ports bypass Chromium's IPC batching, enabling true chunk-by-chunk delivery.
+- **New service**: `streaming-port.service.ts` — creates a MessagePort pair, transfers one end to the renderer via `webContents.postMessage`, returns a typed interface for the main process to send chunks/done/error.
+- **Main process**: AI summary generation now streams chunks through a MessagePort instead of `sender.send()`. Phase/done/error events remain on standard IPC (one-shot, not affected by batching).
+- **Preload**: Added `onStreamingPort()` to receive transferred MessagePorts via `ipcRenderer.on('streaming:port', ...)`.
+- **Renderer**: New `onStreamingPort()` helper in `use-ipc.ts` listens for MessagePort, routes messages to chunk/done/error callbacks. Paper overview page consumes chunks via port with RAF batching for smooth rendering. Fallback IPC listener retained for backward compatibility.
+- **Modified**: `streaming-port.service.ts` (new), `papers.ipc.ts`, `preload.ts`, `use-ipc.ts`, `overview/page.tsx`, `changelog.md`
+
+## 2026-03-21 (52)
+
+### fix: Import flow robustness — Chrome scan timeout, Zotero detection feedback, BibTeX error messages
+
+- **Chrome scan 30s timeout**: `scanChromeHistory()` now races against a 30-second timeout. If the Chrome DB is locked or stalls, shows a user-friendly message asking to close Chrome and retry.
+- **Zotero not-found hint**: When Zotero detection fails, the yellow banner now includes a helpful sub-message: "Make sure Zotero is installed and has been run at least once."
+- **BibTeX parse error UX**: Parse errors now show a friendly top-level message ("Could not parse BibTeX file. Please check the file format.") with a collapsible detail section exposing the raw parser output.
+- **i18n**: Added `importModal.chromeScanTimeout`, `importModal.zotero.notFoundHint`, `importModal.bibtex.parseFailed` (updated), `importModal.bibtex.parseErrorDetails` to both `en.json` and `zh.json`.
+- **Modified**: `import-modal.tsx`, `en.json`, `zh.json`, `changelog.md`
+
+## 2026-03-21 (51)
+
+### feat: Test API Key button improvements — i18n, latency display, timeout
+
+- **Latency display**: Test connection now measures and displays round-trip latency on success (e.g., "Connected (234ms)").
+- **10s timeout**: API test requests now use `AbortSignal.timeout(10_000)` and `maxOutputTokens: 1` for minimal cost.
+- **i18n for ModelCard**: Replaced hardcoded "Test", "Testing...", "Active", "Activate", "Connection successful!", "Connection failed" strings with `t()` calls using new i18n keys.
+- **i18n for modals**: Updated AddModelModal and EditModelModal test result displays to use i18n keys and show latency.
+- **New i18n keys**: `settings.models.test`, `settings.models.testing`, `settings.models.connected`, `settings.models.connectedWithLatency`, `settings.models.connectionFailed`, `settings.models.activate`, `settings.models.active` in both `en.json` and `zh.json`.
+- **Modified**: `ai-provider.service.ts`, `models.service.ts`, `use-ipc.ts`, `settings/page.tsx`, `en.json`, `zh.json`, `changelog.md`
+
+## 2026-03-21 (50)
+
+### fix: Agentic search timeout, cancel button, and fallback to text search
+
+- **60-second timeout**: Agentic search now times out after 60 seconds instead of spinning forever. Uses `Promise.race` with a timeout promise.
+- **Cancel button**: Added a "Cancel" button next to the loading spinner during agentic search so users can stop it manually.
+- **Fallback to text search**: On timeout or failure, automatically switches to normal text search mode and shows results with an amber warning banner explaining what happened.
+- **AbortController integration**: Cancel button and mode switches properly abort in-flight agentic searches to prevent stale state updates.
+- **i18n**: Added `search.agenticTimeout`, `search.agenticFailed`, `search.agenticSearching`, `search.cancelSearch` keys to both `en.json` and `zh.json`.
+- **Modified**: `search-content.tsx`, `en.json`, `zh.json`, `changelog.md`
+
+## 2026-03-21 (49)
+
+### feat: Delete confirmation dialog and retry buttons for failed operations
+
+- **Delete confirmation modal**: Replaced inline confirmation row in library PaperCard and `confirm()` dialog in paper overview page with a proper framer-motion modal showing paper title and warning text. Uses project's existing modal pattern (backdrop fade + card scale, 150ms, ESC to close).
+- **Batch delete modal**: Updated batch delete confirmation in library to use i18n strings.
+- **Dashboard/Search delete modals**: Replaced browser `confirm()` dialogs in `dashboard-content.tsx` and `search-content.tsx` with proper framer-motion confirmation modals matching the Notion design system.
+- **Discovery retry button**: Added a "Retry" button in the Discovery page error banner. Tracks which operation failed (fetch, evaluate, relevance) and re-triggers it on click.
+- **Retry buttons in import modal**: Error messages now include a "Retry" button that re-invokes the last failed action (scan, import, search, Zotero, BibTeX, Overleaf).
+- **Retry buttons in toast errors**: Extended toast system to support optional action buttons. Auto-tag, indexing, analysis, metadata extraction, and retry processing failures now show a "Retry" button in the error toast.
+- **i18n**: Added `common.retry`, `common.confirm`, `papers.deleteConfirmTitle`, `papers.deleteConfirmMessage`, `papers.deleteConfirmBatchTitle`, `papers.deleteConfirmBatchMessage`, `papers.deleteFailed`, `importModal.retryImport`, and `papersByTag.*Failed` keys to both `en.json` and `zh.json`.
+- **Modified**: `papers-by-tag.tsx`, `overview/page.tsx`, `import-modal.tsx`, `toast.tsx`, `dashboard-content.tsx`, `search-content.tsx`, `discovery/page.tsx`, `en.json`, `zh.json`, `changelog.md`
+
+## 2026-03-21 (48)
+
+### feat: Discovery page — cancel buttons, better error messages, relevance error state
+
+- **Cancel buttons**: Added cancel buttons for both AI evaluation and relevance calculation operations. Wired to AbortController in the main process so operations actually stop.
+- **Better error messages**: Replaced generic `setError(String(e))` with contextual error classification (network, timeout, AI/model issues) for actionable user guidance.
+- **Relevance error state**: `handleCalculateRelevance` now shows error messages on failure instead of silently swallowing errors.
+- **Dismissible errors**: Error banner now has an X button to dismiss.
+- **i18n**: Added error message keys to both `en.json` and `zh.json`.
+- **Modified**: `discovery/page.tsx`, `discovery.ipc.ts`, `paper-quality.service.ts`, `use-ipc.ts`, `en.json`, `zh.json`
+
+### fix: Reader layout — fixed sidebars, mutual exclusion, resizable panels
+
+- **Fixed sidebars**: Left (outline/citation/AI outline) and right (annotations) sidebars now have fixed widths that don't get distorted by PDF zoom. PDF scale calculation accounts for all sidebar types.
+- **Mutual exclusion**: Only one left sidebar can be open at a time — opening outline closes citation/AI outline, and vice versa.
+- **Resizable panels**: Both left and right sidebars can be resized by dragging their edge handles (180–500px range).
+- **Auto-collapse nav**: App navigation sidebar automatically collapses when entering the reader page to maximize reading space.
+- **Modified**: `PdfDocument.tsx`, `PdfOutlineSidebar.tsx`, `PdfCitationSidebar.tsx`, `PdfAIOutlineSidebar.tsx`, `reader/page.tsx`, `app-shell.tsx`
+
+### fix: PDF text extraction character spacing normalization
+
+- **Bug fix**: Some PDFs (e.g. IEEE publications) produce text with character-by-character spacing like "T h i s w o r k" instead of "This work". Added `normalizeSpacedText()` in `pdf-extractor.service.ts` to detect and collapse these spaced-out lines.
+- **Improved**: LLM metadata extraction prompt now explicitly instructs to extract the COMPLETE abstract and clean up PDF artifacts (broken words, extra spaces).
+- **Modified**: `pdf-extractor.service.ts`, `paper-metadata.service.ts`
+
+### fix: Library sort order now persists across navigation
+
+- **Bug fix**: Sort preference (Last Read / Import Date / Title) was stored only in React state and reset to "Last Read" every time the user navigated away and back.
+- Now persisted in `localStorage` under `researchclaw-library-sort`.
+- **Modified**: `papers-by-tag.tsx`
+
+### fix: Local paper shortId race condition causing PDF overwrites
+
+- **Critical bug fix**: When multiple ResearchClaw instances run concurrently, `generateShortId()` used `count + 1` to generate IDs like `local-001`. Two instances could get the same count and generate the same shortId, causing the second import's PDF to overwrite the first's folder — resulting in one paper showing another paper's content.
+- Changed to `local-{timestamp_base36}-{random_hex}` format, which is collision-proof even across concurrent processes.
+- **Modified**: `papers.service.ts`
+
+### feat: AI Summary regenerate + no-abstract support ⚠️ streaming TODO
+
+- **Regenerate**: Added "Regenerate" button (RefreshCw icon) on existing AI summaries — deletes cached summary and re-generates.
+- **No-abstract papers**: AbstractSection now renders even when paper has no abstract (e.g. freshly imported local PDFs before metadata extraction completes). Shows "Generate AI Summary" button with helpful prompt.
+- **Phase indicators**: Shows "Extracting paper text..." / "Waiting for LLM response..." during generation.
+- **Text validation**: `getPaperText()` now falls back to DB lookup when caller doesn't provide pdfPath/pdfUrl. Summary service forces re-extraction if cached text is too short.
+- **New IPC**: `papers:aiSummaryChunk/Phase/Done/Error` (event-based streaming), `papers:deleteAiSummary` (cache cleanup), preload `send()` for fire-and-forget IPC.
+- **New service**: `streamWithActiveProvider()` in `ai-provider.service.ts`, `deleteCachedAiSummary()` in `paper-summary.service.ts`.
+- **Modified**: `paper-summary.service.ts`, `ai-provider.service.ts`, `papers.ipc.ts`, `preload.ts`, `use-ipc.ts`, `overview/page.tsx`, `en.json`, `zh.json`
+- **✅ FIXED** (session 53): Streaming display now works — switched from `webContents.send()` to `MessageChannelMain` MessagePort pair, which bypasses Electron's Chromium-layer IPC batching. Chunks arrive individually for true streaming display.
+
+### fix: Library auto-refreshes on window focus
+
+- **Enhancement**: Library paper list now refreshes when the window regains focus, catching papers imported while the user was on a different page or app.
+- **Modified**: `papers-by-tag.tsx`
+
+## 2026-03-21 (47)
+
+### feat: Select-to-translate using Google Translate
+
+- **New feature**: Select text in PDF reader → click "Translate" button to get instant translation via Google Translate (free, no API key, no quota limits).
+- Auto-detects language: Chinese text → English, other text → Chinese.
+- Uses `google-translate-api-x` package — calls the same free endpoint as Chrome's built-in translator.
+- Translation runs in main process via IPC, result displays in the existing inline popover.
+- **New files**: `translate.service.ts`
+- **Modified**: `reader-ai.ipc.ts`, `use-ipc.ts`, `PdfSelectionPopover.tsx`, `en.json`, `zh.json`
+
+### fix: PDF scroll position preserved when sidebar toggles
+
+- When opening/closing annotation sidebar (or any sidebar), the PDF container width changes, causing `fit-width` mode to recalculate scale. Previously this caused the reading position to jump.
+- Now tracks previous scale and proportionally adjusts `scrollTop` when scale changes, keeping the user at the same reading position.
+- **Modified**: `PdfDocument.tsx`
+
+## 2026-03-21 (46)
+
+### feat: Universal AI Summary generation for all papers
+
+- **New feature**: "Generate AI Summary" button on paper overview page, works for any paper (arXiv or not), not just papers with AlphaXiv data.
+- When AlphaXiv has no overview, users can click to generate a structured AlphaXiv-style summary using their configured LLM provider.
+- Summary is generated from the paper's extracted PDF text and cached locally as `papers/{shortId}/ai-summary.md`.
+- On subsequent visits, cached summary loads instantly without re-calling the LLM.
+- Discovery preview page shows a hint to import papers for AI summary generation when AlphaXiv data is unavailable.
+- Prompt supports both English and Chinese output based on app language setting.
+- **New files**: `paper-summary.prompt.ts`, `paper-summary.service.ts`
+- **Modified**: `papers.ipc.ts`, `use-ipc.ts`, `overview/page.tsx`, `discovery/preview/page.tsx`, `en.json`, `zh.json`
+
+## 2026-03-21 (45)
+
+### ui: UX polish — dashboard, import modal, tags, discovery, metadata
+
+- **Dashboard "Continue Reading" section**: When no new papers today, show recently read papers with progress bars, page counts, and last-read dates. Click to jump directly into the reader.
+- **Import Modal tab label**: Changed "PDF" tab to "PDF · DOI" for clarity.
+- **Library tag bar**: Increased visible tag chips from 8 to 20, reducing the "+N" overflow for most users.
+- **Paper title cleaning**: Added post-processing to strip journal/venue prefixes (e.g. "SCIENCE CHINA Information Sciences . RESEARCH PAPER .") from LLM-extracted titles.
+- **Discovery auto-refresh**: Automatically re-fetches arXiv papers when cached data is older than 6 hours.
+- **i18n**: Added dashboard content strings for EN/ZH.
+- **Scope**: `dashboard-content.tsx`, `import-modal.tsx`, `papers-by-tag.tsx`, `paper-metadata.service.ts`, `discovery/page.tsx`, `en.json`, `zh.json`
+
+## 2026-03-20 (44)
+
+### ui: Recent PDF downloads changed to dropdown
+
+- Replaced the always-expanded "Recent PDF downloads" list in the Local PDF tab with a compact dropdown button.
+- Dropdown shows a trigger button with item count badge, expands on click to reveal the scrollable list with refresh option.
+- Clicking a PDF adds it to selected files and closes the dropdown. Click-outside also closes it.
+- Added i18n key `importModal.recentDownloads` for both EN/ZH.
+- **Scope**: `import-modal.tsx`, `en.json`, `zh.json`
+
+### fix: Overleaf "Has Updates" persists after syncing
+
+- **Root cause**: Update detection compared Overleaf's `lastUpdated` against `paper.createdAt` (first import time). After syncing, `createdAt` never changed, so "Has Updates" reappeared on re-entry.
+- **Fix 1**: `providers.ipc.ts` — use `paper.updatedAt` instead of `paper.createdAt` for the `importedAt` timestamp in the imported map.
+- **Fix 2**: `papers.service.ts` — `importOverleafPdf()` now updates the DB record (title) when syncing an existing paper, which bumps `updatedAt` via Prisma's `@updatedAt` directive.
+- **Fix 3**: `papers.repository.ts` — extended `update()` method to accept `title` field.
+- **Scope**: `providers.ipc.ts`, `papers.service.ts`, `papers.repository.ts`
+
+### fix: citation title extraction includes venue info, search not smart enough
+
+- **Title extraction fix**: Added more Unicode quote variants to regex (guillemets, German quotes). Fixed fallback title detection to recognize quote chars before capitals after `et al.`. Added post-processing to strip `" In:`, `arXiv preprint`, venue names from extracted titles.
+- **Smart search query cleaning**: New `cleanCitationSearchQuery()` shared utility that strips author prefixes (`et al.`), surrounding quotes, venue markers (`In: ...`, `In Proceedings...`), arXiv preprint references, year suffixes, and trailing punctuation.
+- **Applied cleaning everywhere**: PdfCitationSidebar `getSearchQuery`, PdfCitationPopover search handlers, reader page `onSearchPaper` callback, and `paper-search.service.ts` all now use consistent query cleaning.
+- **Scope**: `reference-parser.ts`, `PdfCitationSidebar.tsx`, `PdfCitationPopover.tsx`, `reader/page.tsx`, `paper-search.service.ts`
+
+## 2026-03-20 (43)
+
+### feat: reader experience improvements
+
+- **Reading progress bar**: Thin blue progress bar at bottom of PDF toolbar showing current page percentage
+- **Focus mode**: Press `F` to hide top toolbar for distraction-free reading; `Esc` to exit. Minimal floating control button in corner.
+- **Keyboard shortcuts**: `1`/`2`/`3` to switch layout (chat-only/split/pdf-only), `F` for focus mode
+- **Highlight color picker with semantic labels**: Expanded color selection with labeled categories — Important (yellow), Method (green), Data (blue), Question (pink), Insight (purple)
+- **Quick Explain button**: "Explain" button in text selection popover auto-sends selected text to AI for a brief 2-3 sentence explanation
+- **Annotation sidebar**: New panel (toggle via toolbar icon) showing all highlights grouped by page, with inline note editing support. Notes are persisted via existing `updateHighlight` IPC.
+- **Fix PDF text selection reliability**:
+  - Changed mouseup listener from container-only to document-level (catches selections ending outside the container)
+  - Added `anchorNode` containment check to verify selection belongs to our PDF viewer
+  - Debounced `selectionchange` dismiss (150ms) to avoid race condition with pdf.js text layer adjustments that briefly collapse selection
+  - Improved rect filtering: stricter minimum dimension (3px), page-overlap validation, and proper clamping to page bounds
+  - CSS fix: removed padding from `.textLayer span` to reduce invisible selection areas
+- **Annotation workflow**: Click any color dot → highlight is created → annotation sidebar auto-opens → click highlight to add/edit note
+- **UI fix**: PDF area uses `overflow-hidden` to prevent popover from overlapping annotation sidebar
+- **Scope**: `PdfToolbar.tsx`, `PdfSelectionPopover.tsx`, `PdfDocument.tsx`, `pdf-viewer.tsx`, `reader/page.tsx`, `pdf-overrides.css`, `en.json`, `zh.json`
+
+## 2026-03-19 (session 53)
+
+### feat: Fetch AlphaXiv summary for existing papers
+
+- **Scope**: IPC, UI, Service
+- **Problem**: Existing papers don't have AlphaXiv data (only new imports get it)
+- **Solution**: Added "Get AI Summary" button in paper detail page
+  - Shows for arXiv papers without AlphaXiv content
+  - Fetches AlphaXiv summary on demand
+  - Updates abstract with AI summary
+- **New IPC**: `papers:fetchAlphaXiv` to fetch and update AlphaXiv data
+- **New methods**: `updateAbstract` in PapersService and PapersRepository
+
+## 2026-03-19 (session 52)
+
+### feat: Enhanced AI evaluation with AlphaXiv/PDF support
+
+- **Scope**: `src/main/services/paper-quality.service.ts`
+- **Improved evaluation content source**:
+  - Priority 1: AlphaXiv AI-generated summary (if available)
+  - Priority 2: PDF introduction (first few pages)
+  - Priority 3: Abstract (fallback)
+- **Better evaluation quality**: Based on richer content instead of just abstract
+- **Rate limiting**: Increased delay to 800ms between evaluations (PDF extraction takes time)
+
+## 2026-03-19 (session 51)
+
+### feat: Discovery page pagination + Smart Filter improvements
+
+- **Scope**: `src/renderer/pages/discovery/page.tsx`, i18n files
+- **Pagination**: Added pagination controls for Discovery results
+  - 15 papers per page
+  - Page number buttons + prev/next navigation
+  - Resets to page 1 when sort mode changes
+- **Smart Filter improvements**:
+  - Only show "Smart Filter" button when no relevance scores calculated yet
+  - Once calculated, show sort toggle button instead
+  - Relevance scores always visible (not hidden when sorting by quality)
+  - Fixed sort button labels: "Sort by Relevance" vs "Sort by Quality"
+- **i18n**: Added `discovery.pageInfo`, `discovery.sortByRelevance` translations
+
+## 2026-03-19 (session 50)
+
+### feat: Temporary paper imports from Discovery
+
+- **Schema changes**: Added `isTemporary` and `temporaryImportedAt` fields to Paper model
+- **Temporary storage**: Papers imported via "Read PDF" are marked as temporary
+  - Temporary papers expire after 24 hours
+  - Automatic cleanup on app startup
+- **Discovery page behavior**:
+  - "Read PDF" → Import as temporary + open in reader
+  - "Import" → Import as permanent (added to library)
+- **New service**: `temporary-papers.service.ts` handles cleanup
+- **New IPC handlers**:
+  - `papers:download` now accepts `isTemporary` parameter
+  - `papers:makePermanent` to convert temporary to permanent
+- **New repository methods**:
+  - `updateTemporaryStatus()` for managing temporary state
+  - `listExpiredTemporaryPapers()` for cleanup queries
+
+## 2026-03-19 (session 49)
+
+### fix: Discovery "Read PDF" opens in-app reader
+
+- **Scope**: `src/renderer/pages/discovery/page.tsx`, `src/renderer/components/tooltip.tsx`
+- **Read PDF behavior**: Now imports paper and opens in-app reader (not browser)
+  - Downloads paper via `downloadPaper(arxivId)`
+  - Navigates to `/papers/:shortId/reader` after download
+- **New component**: `Tooltip` component for instant hover tooltips
+  - Shows immediately (no browser delay)
+  - Supports top/bottom/left/right positioning
+  - Uses framer-motion for smooth animation
+
+## 2026-03-19 (session 48)
+
+### feat: Tabbed Abstract section with AlphaXiv AI Summary
+
+## 2026-03-20 (42)
+
+### fix: reference parser bugs (arXiv ID, URL repair, broken URLs)
+
+- **arXiv ID extraction bug**: Fixed `match()` with global regex `/g` flag returning full matches instead of capture groups, causing `arxivId` to always be `undefined`. Now uses non-global regex patterns for correct capture group extraction.
+- **URL repair too aggressive**: Fixed URL fragment joining that consumed `accessed:`, `retrieved:`, and year tokens as URL path segments. Added stop-words for metadata-like fragments.
+- **Broken `https: //` URLs**: Added repair for PDFs that line-wrap after `https:`, producing `https: //` which was not matched by the URL regex.
+- **URL cleanup**: Added stripping of `,accessed...` suffixes that got glued to URLs.
+- **New tests**: Added 16 new test cases covering real PDF edge cases: arXiv IDs, IEEE website/tool references, broken URLs, accented author names, multi-line references, DOI extraction with `[Online]. Available:` prefix, ACM unnumbered style.
+- **Scope**: `src/shared/utils/reference-parser.ts`, `tests/unit/citation-detector.test.ts`
+
+## 2026-03-20 (41)
+
+### feat: DOI support + fix background reference extraction failures
+
+- **DOI Import Support**:
+  - Ported `doi-resolver.service.ts` from `feat/zotero-import` branch — resolves DOI metadata via Crossref API with Semantic Scholar fallback
+  - Updated `download.service.ts` `parseInput` to recognize DOI format (`10.xxxx/yyyy`) and doi.org URLs
+  - Added `importByDoi()`, `importByUrl()`, `createFromMetadata()` methods
+  - Citation sidebar's Download/Import buttons now work for non-arXiv papers with DOI
+- **Fix "Failed to fetch" errors in background extraction**:
+  - Background service now only processes papers with **local PDF files** — no network downloads at startup
+  - Uses `forceRefresh: true` to bypass truncated 8000-char cached `text.txt` files
+  - Added 500ms delay between papers to avoid system overload
+  - `scheduleReferenceExtraction` added to `download.service.ts` after PDF download completes
+- **Scope**: `doi-resolver.service.ts` (new), `download.service.ts`, `reference-extraction-bg.service.ts`
+
+## 2026-03-20 (40)
+
+### feat: Background PDF reference extraction + Import button in citation sidebar
+
+- **Background Reference Extraction**:
+  - New `reference-extraction-bg.service.ts` — automatically extracts references from PDFs in the main process after paper import, without requiring user to open the PDF
+  - Runs at app startup for papers that don't have extracted references yet
+  - Uses shared `parseReferencesFromText()` from `@shared/reference-parser`
+  - Saves results to `ExtractedReference` table — ready when user opens citation sidebar
+  - Integrated into paper creation flow (`papers.service.ts`) and app startup (`index.ts`)
+
+- **Shared Reference Parser** (`src/shared/utils/reference-parser.ts`):
+  - Extracted pure text-based reference parsing from renderer's `citation-detector.ts` into `@shared`
+  - No pdfjs/Node/Electron dependencies — usable in both main process and renderer
+  - Exports: `parseReferencesFromText()`, `findReferenceSection()`, `Reference` type
+  - Refactored `citation-detector.ts` to delegate to shared module
+
+- **Import Button in Citation Sidebar**:
+  - Added "Download & Read" button (temporary, `isTemporary: true`) — opens paper in reader
+  - Added "Import to Library" button (permanent, `isTemporary: false`) — saves to library
+  - Both buttons appear in reference detail panel alongside existing "Search Paper"
+  - i18n: Added translations for both EN and ZH
+
+- **Title Extraction Fix**:
+  - Improved `createReference()` to detect author-to-title boundary using smart period splitting
+  - Old: `split(/\.\s+/)` broke on author initials like "A." "P. R."
+  - New: Splits on `. ` only when followed by a multi-letter word (title start), skipping initials
+  - Extracts venue markers to isolate title from journal/conference info
+  - Auto-extracts authors from text before title
+
+- **Scope**: `reference-parser.ts` (new), `reference-extraction-bg.service.ts` (new), `citation-detector.ts`, `PdfCitationSidebar.tsx`, `papers.service.ts`, `index.ts`, `en.json`, `zh.json`, `shared/index.ts`
+- **Tests**: 25 unit tests + 149 total, all passing
+
+## 2026-03-20 (39)
+
+### fix: Comprehensive citation detection for all common reference formats
+
+- **Problem**: Papers like "SiameseNorm" failed citation detection due to multiple issues: (1) PDF text extraction joined all text items with spaces, losing line structure; (2) reference section header matching required `\n` prefixes; (3) multi-line reference entries were not merged; (4) only line-start numbered patterns were tried, ignoring author-year format.
+- **Solution**:
+  - **PDF text extraction**: Use y-position from pdfjs `transform` matrix to insert proper newlines between text items on different lines
+  - **Reference section finding**: Added 3 new header patterns (page-number separated, sentence-end separated, author-name-following) + broad fallback search in last 40% of document with context validation + inline `[1]` fallback
+  - **Numbered references**: New `parseNumberedReferences()` with multi-line merging — detects `[N]`, `N.`, `(N)`, `N)` entry starts and merges continuation lines until next entry. Also handles inline `[N]` in space-joined text
+  - **Author-year references**: Rewrote `parseAuthorYearReferences()` to join all lines first, then split on year+period+author-name boundaries (avoids false splits on continuation author names like "Subbiah, M.")
+  - **Strategy cascade**: Try numbered first → if < 3 results, also try author-year → keep whichever finds more
+  - Fixed pre-existing TypeScript error with nullable `titleMatch`
+- **Tests**: 25 tests total (7 new), covering: multi-line bracket refs, parenthetical refs, author-year refs, 30-entry numbered refs, space-joined PDF text
+- **Scope**: `citation-detector.ts`, `citation-detector.test.ts`
+
+## 2026-03-20 (38)
+
+### feat: Database caching for PDF citation references
+
+- **Problem**: Citations were re-extracted every time the PDF loaded, causing unnecessary processing and repeated loading.
+- **Solution**:
+  - Added `ExtractedReference` model to Prisma schema for caching extracted references
+  - Added IPC handlers (`getExtractedRefs`, `saveExtractedRefs`) for database operations
+  - Updated `PdfCitationSidebar` to use cached references if available
+  - References are now loaded from database when paper opens (not when clicking sidebar)
+  - Added proper state tracking to prevent duplicate extraction
+  - Props chain: `reader/page.tsx` → `PdfViewer` → `PdfDocument` → `PdfCitationSidebar`
+- **Scope**: `schema.prisma`, `papers.ipc.ts`, `use-ipc.ts`, `PdfCitationSidebar.tsx`, `PdfDocument.tsx`, `pdf-viewer.tsx`, `reader/page.tsx`
+
+### feat: Overleaf integration for importing LaTeX projects
+
+- **Problem**: Users with Overleaf projects wanted to import their compiled PDFs into ResearchClaw.
+- **Solution**:
+  - Created `OverleafService` to communicate with Overleaf's internal API via session cookie
+  - Added settings section for users to configure their Overleaf session cookie (encrypted storage)
+  - Added `overleaf` source type to database schema
+  - Added IPC handlers for session management and project import
+  - Added Overleaf settings component with cookie input, test connection, and help instructions
+- **Scope**: `overleaf.service.ts` (new), `app-settings-store.ts`, `providers.ipc.ts`, `use-ipc.ts`, `settings-nav.ts`, `page.tsx`, `en.json`, `zh.json`, `schema.prisma`, `domain.ts`
+- **Note**: Full import modal tab implementation pending - settings infrastructure is complete
+
+### feat: PDF citation interaction with right-click and double-click
+
+- **Problem**: PDF reference links may be incomplete or non-standard, causing clicks to open in browser instead of app's paper search flow.
+- **Solution**:
+  - Created `PdfCitationPopover` component that detects citation patterns on right-click/double-click
+  - Supports numeric citations `[1]`, `[1-3]`, `[1,2,3]` and author-year `(Author et al., 2023)`
+  - Right-click shows context menu with "Search Library", "Search Online", and "Copy" options
+  - Double-click directly triggers online search
+  - Added i18n translations for menu items
+- **Scope**: `PdfCitationPopover.tsx` (new), `PdfDocument.tsx`, `en.json`, `zh.json`
+
+### feat: Paper preview modal before download
+
+- **Problem**: Searching for cited papers would immediately download PDF without user confirmation.
+- **Solution**:
+  - Created `PaperPreviewModal` component showing search results with title, authors, abstract
+  - User can preview multiple results and select which to download
+  - Keyboard navigation (↑↓ to navigate, Enter to download)
+  - Removed all external browser fallbacks - errors shown in-app instead
+- **Scope**: `PaperPreviewModal.tsx` (new), `reader/page.tsx`, `en.json`, `zh.json`
+
+### feat: Citation sidebar for PDF viewer
+
+- **Problem**: Clicking on PDF citations was not convenient for finding referenced papers.
+- **Solution**:
+  - Created `PdfCitationSidebar` component showing citations on current page
+  - Toggle button in PDF toolbar to show/hide citation sidebar
+  - Click citation to trigger paper search
+  - Scan all pages for citations with refresh button
+  - Added i18n translations for sidebar
+- **Scope**: `PdfCitationSidebar.tsx` (new), `PdfDocument.tsx`, `PdfToolbar.tsx`, `pdf-viewer.tsx`, `reader/page.tsx`
+
+### fix: PDF reference links now open in app instead of browser
+
+- **Problem**: Clicking reference links in PDF opened them in browser instead of handling through app's paper import flow.
+- **Solution**: pdf.js stores some links in `unsafeUrl` (raw URL) instead of `url` (sanitized). Now check both properties to capture all external links.
+- **Scope**: `PdfPage.tsx`
+
+### fix: reading position cache lost when switching papers
+
+- **Problem**: When switching between papers, the reading position cache was lost because React reused the component instance without resetting key refs (`initialPageScrolled`, `savesEnabled`) and state (`restoredState`, `currentPage`).
+- **Solution**: Added `useEffect` to detect `path` changes and properly reset all state, then re-read from `sessionStorage` for the new paper.
+- **Problem 2**: Position had offset because restore used `page` (page number) instead of saved `scrollTop` (pixel-precise).
+- **Solution 2**: Restore now prefers `scrollTop` for exact position, falls back to page-based calculation.
+- **Scope**: `PdfDocument.tsx`
+
+## 2026-03-17 (36)
+
+### feat: batch embedding rebuild after model switch
+
+- **Problem**: Switching embedding models or configuring one for the first time left all papers un-indexed because `resumeAutomaticPaperProcessing()` was a no-op.
+- **Solution**:
+  - Implemented concurrent batch embedding in `paper-processing.service.ts` (5 papers in parallel)
+  - Added "Rebuild All Index" button with progress bar in `EmbeddingSection` (Settings page)
+  - Registered `embedding:rebuildAll`, `embedding:cancelRebuild`, `embedding:getRebuildStatus` IPC handlers
+- **Scope**: `paper-processing.service.ts`, `providers.ipc.ts`, `use-ipc.ts`, `settings/page.tsx`, i18n locales
+
+### feat: auto-extract metadata from local PDF uploads
+
+- **Problem**: Uploading local PDFs only used filename as title, with no abstract or authors extracted.
+- **Solution**: After local PDF upload, asynchronously extract title/authors/abstract using the lightweight LLM model via existing `extractPaperMetadata()`. Frontend auto-refreshes via `papers:metadataUpdated` broadcast.
+- **Scope**: `papers.service.ts`, `papers-by-tag.tsx`
+
+### fix: embedding provider config sync and resilience
+
+- **Problem**: Switching embedding configs didn't refresh the cached provider (stale baseUrl), and embedding API timed out.
+- **Solution**:
+  - Provider refresh on any config field change (baseUrl, apiKey), not just model/provider
+  - Auto-normalize bare host URLs (e.g. `http://localhost:11434` → append `/v1`)
+  - Tolerate non-200 HTTP status if response body contains valid embeddings
+  - Embedding test timeout increased from 5s to 30s
+- **Scope**: `openai-compatible-embedding-provider.ts`, `providers.service.ts`, `local-semantic.service.ts`
+
+### ui: remove analyze button from paper cards
+
+- **Scope**: `papers-by-tag.tsx`
+
 ## 2026-03-15 v0.0.3
 
 ### Release: v0.0.3 - i18n improvements

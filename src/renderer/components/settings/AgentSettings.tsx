@@ -27,6 +27,7 @@ import { ipc, type TokenUsageRecord, type CliTestDiagnostics } from '../../hooks
 import type { AgentConfigItem, AgentToolKind, DetectedAgentItem } from '@shared';
 import { AGENT_TOOL_META, getAgentToolMeta } from '@shared';
 import { AgentLogo } from '../agent-todo/AgentLogo';
+import { useToast } from '../toast';
 
 const AGENT_NAME_SUGGESTIONS = ['Aria', 'Max', 'Nova', 'Echo', 'Sage', 'Orion', 'Luna', 'Finn'];
 
@@ -42,6 +43,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message?: string): Prom
 const AGENT_TEST_TIMEOUT_MS = 20_000;
 
 export function AgentSettings() {
+  const { error: showError, success: showSuccess } = useToast();
   const [agents, setAgents] = useState<AgentConfigItem[]>([]);
   const [activeTab, setActiveTab] = useState<'local' | 'remote'>('local');
   const [showAddForm, setShowAddForm] = useState(false);
@@ -125,6 +127,7 @@ export function AgentSettings() {
       setDetectedAgents(detected as DetectedAgentItem[]);
     } catch (err) {
       console.error(err);
+      showError(`Failed to detect agents: ${(err as Error).message}`);
     } finally {
       setDetecting(false);
       setHasScanned(true);
@@ -163,8 +166,10 @@ export function AgentSettings() {
         isCustom: false,
       });
       await loadAgents();
+      showSuccess(`Agent "${detected.name}" added successfully`);
     } catch (err) {
       console.error(err);
+      showError(`Failed to add agent: ${(err as Error).message}`);
     } finally {
       setSaving(false);
     }
@@ -260,8 +265,10 @@ export function AgentSettings() {
       });
       setShowAddForm(false);
       await loadAgents();
+      showSuccess(`Remote agent "${newRemoteAgent.name}" added successfully`);
     } catch (err) {
       console.error(err);
+      showError(`Failed to add remote agent: ${(err as Error).message}`);
     } finally {
       setSaving(false);
     }
@@ -299,8 +306,10 @@ export function AgentSettings() {
       });
       setShowAddForm(false);
       await loadAgents();
+      showSuccess(`Agent "${newAgent.name}" added successfully`);
     } catch (err) {
       console.error(err);
+      showError(`Failed to add agent: ${(err as Error).message}`);
     } finally {
       setSaving(false);
     }

@@ -1,16 +1,23 @@
 import path from 'path';
 import fs from 'fs/promises';
+import crypto from 'crypto';
+import { BrowserWindow } from 'electron';
 import { PapersRepository, SourceEventsRepository } from '@db';
 import { extractArxivId, type CategorizedTag } from '@shared';
 import { getPapersDir } from '../store/app-settings-store';
-import { schedulePaperProcessing } from './paper-processing.service';
+import { retryPaperProcessing, schedulePaperProcessing } from './paper-processing.service';
 import { scheduleCitationExtraction } from './citation-processing.service';
 import { scheduleAutoPaperEnrichment } from './auto-paper-enrichment.service';
+import { scheduleReferenceExtraction } from './reference-extraction-bg.service';
 import * as paperEmbeddingService from './paper-embedding.service';
+import { getPaperText } from './paper-text.service';
+import { extractTextFromPdf } from './pdf-extractor.service';
+import { extractPaperMetadata } from './paper-metadata.service';
+import { tagPaper } from './tagging.service';
 
 export interface CreatePaperInput {
   title: string;
-  source: 'chrome' | 'manual' | 'arxiv';
+  source: 'chrome' | 'manual' | 'arxiv' | 'zotero' | 'doi' | 'bibtex';
   sourceUrl?: string;
   tags?: string[];
   authors?: string[];
@@ -19,19 +26,77 @@ export interface CreatePaperInput {
   abstract?: string;
   pdfUrl?: string;
   pdfPath?: string;
+  doi?: string;
 }
 
 export class PapersService {
   private papersRepository = new PapersRepository();
   private eventsRepository = new SourceEventsRepository();
 
-  private async generateShortId(sourceUrl?: string): Promise<string> {
+  private async generateShortId(sourceUrl?: string, doi?: string): Promise<string> {
     if (sourceUrl) {
       const arxivId = extractArxivId(sourceUrl);
       if (arxivId) return arxivId;
     }
-    const count = await this.papersRepository.countByShortIdPrefix('local-');
-    return `local-${(count + 1).toString().padStart(3, '0')}`;
+    if (doi) {
+      // Sanitize DOI for use as shortId: replace slashes and special chars
+      const sanitized = doi.replace(/[^a-zA-Z0-9.-]/g, '_').substring(0, 80);
+      return `doi-${sanitized}`;
+    }
+    // Use timestamp + random suffix to avoid race conditions between concurrent imports
+    const ts = Date.now().toString(36);
+    const rand = crypto.randomBytes(3).toString('hex');
+    return `local-${ts}-${rand}`;
+  }
+
+  /**
+   * Try to find an existing paper by extracting DOI or title from PDF content.
+   * Returns the existing paper if a match is found, null otherwise.
+   */
+  private async findExistingByPdfContent(pdfPath: string) {
+    try {
+      const { text } = await extractTextFromPdf(pdfPath, { maxChars: 3000 });
+      if (!text) return null;
+
+      // Try to extract DOI from the first few pages
+      const doiMatch = text.match(/\b(10\.\d{4,}\/[^\s,;]+)/);
+      if (doiMatch) {
+        const doi = doiMatch[1].replace(/[.)]+$/, ''); // strip trailing punctuation
+        const existing = await this.papersRepository.findByDoi(doi);
+        if (existing) {
+          console.log(`[dedup] Found existing paper by DOI: ${doi}`);
+          return existing;
+        }
+      }
+
+      // Try to extract arXiv ID
+      const arxivMatch = text.match(/arXiv:(\d{4}\.\d{4,5})/i);
+      if (arxivMatch) {
+        const arxivId = arxivMatch[1];
+        const existing = await this.papersRepository.findByShortId(arxivId);
+        if (existing) {
+          console.log(`[dedup] Found existing paper by arXiv ID: ${arxivId}`);
+          return existing;
+        }
+      }
+
+      // Try title-based matching: extract first meaningful line as potential title
+      const lines = text.split('\n').filter((l) => l.trim().length > 10);
+      if (lines.length > 0) {
+        // Use first non-trivial line as candidate title
+        const candidateTitle = lines[0].trim().substring(0, 200);
+        const existing = await this.papersRepository.findByNormalizedTitle(candidateTitle);
+        if (existing) {
+          console.log(`[dedup] Found existing paper by title match: "${candidateTitle}"`);
+          return existing;
+        }
+      }
+
+      return null;
+    } catch {
+      // If extraction fails, skip dedup and proceed with import
+      return null;
+    }
   }
 
   private getPaperFolder(shortId: string): string {
@@ -46,7 +111,7 @@ export class PapersService {
   }
 
   async create(input: CreatePaperInput) {
-    const shortId = await this.generateShortId(input.sourceUrl);
+    const shortId = await this.generateShortId(input.sourceUrl, input.doi);
     await this.ensurePaperFolder(shortId);
 
     const submittedAt =
@@ -61,6 +126,7 @@ export class PapersService {
       submittedAt,
       abstract: input.abstract,
       pdfUrl: input.pdfUrl,
+      doi: input.doi,
       tags: input.tags ?? [],
     });
 
@@ -80,18 +146,21 @@ export class PapersService {
     }
     scheduleCitationExtraction(created.id);
     scheduleAutoPaperEnrichment(created.id);
+    scheduleReferenceExtraction(created.id);
 
     return created;
   }
 
   async upsertFromIngest(input: {
     title: string;
-    source: 'chrome' | 'manual' | 'arxiv';
+    source: 'chrome' | 'manual' | 'arxiv' | 'zotero' | 'doi' | 'bibtex';
     sourceUrl?: string;
     tags: string[];
     authors?: string[];
     abstract?: string;
     submittedAt?: Date;
+    doi?: string;
+    pdfPath?: string;
   }) {
     // Deduplicate by shortId (arxiv ID extracted from sourceUrl)
     if (input.sourceUrl) {
@@ -103,6 +172,21 @@ export class PapersService {
       }
     }
 
+    // Deduplicate by DOI
+    if (input.doi) {
+      const existing = await this.papersRepository.findByDoi(input.doi);
+      if (existing) return existing;
+    }
+
+    // Deduplicate by normalized title
+    if (input.title && input.title.length > 10) {
+      const existing = await this.papersRepository.findByNormalizedTitle(input.title);
+      if (existing) {
+        console.log(`[upsertFromIngest] Duplicate detected by title: "${input.title}"`);
+        return existing;
+      }
+    }
+
     return this.create({
       title: input.title,
       source: input.source,
@@ -111,6 +195,8 @@ export class PapersService {
       authors: input.authors ?? [],
       abstract: input.abstract,
       submittedAt: input.submittedAt,
+      doi: input.doi,
+      pdfPath: input.pdfPath,
     });
   }
 
@@ -121,6 +207,24 @@ export class PapersService {
     importedWithin?: 'today' | 'week' | 'month' | 'all';
   }) {
     return this.papersRepository.list(query);
+  }
+
+  async getCounts() {
+    return this.papersRepository.getCounts();
+  }
+
+  async listPaginated(query: {
+    q?: string;
+    year?: number;
+    tag?: string;
+    importedWithin?: 'today' | 'week' | 'month' | 'all';
+    temporary?: boolean;
+    page?: number;
+    pageSize?: number;
+    sortBy?: 'lastRead' | 'importDate' | 'title';
+    readingStatus?: 'all' | 'unread' | 'reading' | 'finished';
+  }) {
+    return this.papersRepository.listPaginated(query);
   }
 
   async listToday() {
@@ -135,7 +239,7 @@ export class PapersService {
     return this.papersRepository.findByShortId(shortId);
   }
 
-  async importLocalPdf(filePath: string) {
+  async importLocalPdf(filePath: string, options?: { isTemporary?: boolean }) {
     const resolvedPath = path.resolve(filePath);
     const extension = path.extname(resolvedPath).toLowerCase();
     if (extension !== '.pdf') {
@@ -145,6 +249,15 @@ export class PapersService {
     const sourceStats = await fs.stat(resolvedPath).catch(() => null);
     if (!sourceStats?.isFile()) {
       throw new Error('Selected PDF file was not found');
+    }
+
+    // Check for duplicates by extracting DOI/title from PDF content
+    const existing = await this.findExistingByPdfContent(resolvedPath);
+    if (existing) {
+      console.log(
+        `[importLocalPdf] Duplicate detected, returning existing paper: ${existing.shortId}`,
+      );
+      return existing;
     }
 
     const title =
@@ -167,6 +280,10 @@ export class PapersService {
       tags: ['pdf'],
     });
 
+    if (options?.isTemporary) {
+      await this.papersRepository.updateTemporaryStatus(created.id, true);
+    }
+
     await this.eventsRepository.create({
       paperId: created.id,
       source: 'manual',
@@ -174,11 +291,125 @@ export class PapersService {
       rawUrl: resolvedPath,
     });
 
-    schedulePaperProcessing(created.id);
+    // Extract metadata from PDF using LLM (async, non-blocking)
+    void this.extractAndUpdateMetadata(created.id, created.shortId, importedPdfPath);
+
     scheduleCitationExtraction(created.id);
-    scheduleAutoPaperEnrichment(created.id);
+    scheduleReferenceExtraction(created.id);
 
     return created;
+  }
+
+  /**
+   * Import a PDF from Overleaf with a specific shortId and title.
+   * If already imported (same shortId), updates the PDF and re-extracts metadata.
+   */
+  async importOverleafPdf(shortId: string, title: string, pdfPath: string, sourceUrl: string) {
+    const resolvedPath = path.resolve(pdfPath);
+    const sourceStats = await fs.stat(resolvedPath).catch(() => null);
+    if (!sourceStats?.isFile()) {
+      throw new Error('PDF file was not found');
+    }
+
+    // Check if already imported
+    const existing = await this.papersRepository.findByShortId(shortId);
+    if (existing) {
+      // Update PDF
+      const folder = this.getPaperFolder(shortId);
+      const importedPdfPath = path.join(folder, 'paper.pdf');
+      await fs.copyFile(resolvedPath, importedPdfPath);
+      // Touch the DB record so updatedAt is bumped (used for "Has Updates" detection)
+      const updated = await this.papersRepository.update(existing.id, { title });
+      // Re-extract metadata
+      void this.extractAndUpdateMetadata(existing.id, shortId, importedPdfPath);
+      scheduleCitationExtraction(existing.id);
+      scheduleReferenceExtraction(existing.id);
+      return updated;
+    }
+
+    const folder = await this.ensurePaperFolder(shortId);
+    const importedPdfPath = path.join(folder, 'paper.pdf');
+    await fs.copyFile(resolvedPath, importedPdfPath);
+
+    const created = await this.papersRepository.create({
+      shortId,
+      title,
+      authors: [],
+      source: 'overleaf',
+      pdfPath: importedPdfPath,
+      sourceUrl,
+      tags: ['pdf'],
+    });
+
+    await this.eventsRepository.create({
+      paperId: created.id,
+      source: 'overleaf',
+      rawTitle: title,
+      rawUrl: sourceUrl,
+    });
+
+    void this.extractAndUpdateMetadata(created.id, shortId, importedPdfPath);
+    scheduleCitationExtraction(created.id);
+    scheduleReferenceExtraction(created.id);
+
+    return created;
+  }
+
+  private async extractAndUpdateMetadata(
+    paperId: string,
+    shortId: string,
+    pdfPath: string,
+  ): Promise<void> {
+    try {
+      const text = await getPaperText(paperId, shortId, undefined, pdfPath, { maxChars: 18000 });
+      if (!text.trim()) {
+        console.warn(`[papers] No text extracted from PDF for ${shortId}`);
+        return;
+      }
+
+      const metadata = await extractPaperMetadata(text);
+      console.log(
+        `[papers] Extracted metadata for ${shortId}: title="${metadata.title?.slice(0, 60) ?? '<none>'}"`,
+      );
+
+      await this.papersRepository.updateMetadata(paperId, {
+        ...(metadata.title && { title: metadata.title }),
+        ...(metadata.authors?.length && { authors: metadata.authors }),
+        ...(metadata.abstract && { abstract: metadata.abstract }),
+        ...(metadata.submittedAt && { submittedAt: metadata.submittedAt }),
+        metadataSource: 'llm',
+      });
+
+      // Notify renderer to refresh paper list
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('papers:metadataUpdated', { paperId });
+      }
+
+      // Auto-tag and index after metadata extraction
+      try {
+        await tagPaper(paperId);
+        console.log(`[papers] Auto-tagged ${shortId}`);
+      } catch (tagErr) {
+        console.warn(
+          `[papers] Auto-tag failed for ${shortId}:`,
+          tagErr instanceof Error ? tagErr.message : String(tagErr),
+        );
+      }
+      try {
+        await retryPaperProcessing(paperId);
+        console.log(`[papers] Indexed ${shortId}`);
+      } catch (idxErr) {
+        console.warn(
+          `[papers] Index failed for ${shortId}:`,
+          idxErr instanceof Error ? idxErr.message : String(idxErr),
+        );
+      }
+      scheduleAutoPaperEnrichment(paperId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[papers] Metadata extraction failed for ${shortId}: ${msg}`);
+      // Non-fatal: paper still exists with filename as title
+    }
   }
 
   async downloadPdf(paperId: string, pdfUrl: string) {
@@ -360,6 +591,10 @@ export class PapersService {
 
   async updateRating(id: string, rating: number | null) {
     return this.papersRepository.updateRating(id, rating);
+  }
+
+  async updateAbstract(id: string, abstract: string) {
+    return this.papersRepository.updateAbstract(id, abstract);
   }
 
   async listAllTags(): Promise<Array<{ name: string; category: string; count: number }>> {

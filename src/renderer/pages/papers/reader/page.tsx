@@ -1,13 +1,24 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams, useBlocker } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import i18n from 'i18next';
 import { useTabs } from '../../../hooks/use-tabs';
 import { PdfViewer } from '../../../components/pdf-viewer';
-import { ipc, onIpc, type PaperItem, type ModelConfig } from '../../../hooks/use-ipc';
+import type { CachedReference } from '../../../components/pdf/PdfDocument';
+import {
+  ipc,
+  onIpc,
+  type PaperItem,
+  type ModelConfig,
+  type HighlightItem,
+} from '../../../hooks/use-ipc';
 import { useAgentStream } from '../../../hooks/use-agent-stream';
 import { MessageStream } from '../../../components/agent-todo/MessageStream';
 import { AgentLogo } from '../../../components/agent-todo/AgentLogo';
-import { arxivPdfUrl } from '@shared';
+import { arxivPdfUrl, cleanCitationSearchQuery } from '@shared';
+import { useToast } from '../../../components/toast';
+import { PaperPreviewModal, type SearchResult } from '../../../components/PaperPreviewModal';
+import { saveReaderState, loadReaderState } from '../../../utils/reader-state-cache';
 import {
   ArrowLeft,
   Loader2,
@@ -25,6 +36,11 @@ import {
   X,
   Zap,
   History,
+  Maximize2,
+  Minimize2,
+  StickyNote,
+  Sparkles,
+  ClipboardCopy,
 } from 'lucide-react';
 import type { AgentConfigItem } from '@shared';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -154,6 +170,95 @@ function RatingPromptModal({
   );
 }
 
+// ─── Annotation Card ────────────────────────────────────────────────────────
+
+const HIGHLIGHT_COLOR_BG: Record<string, string> = {
+  yellow: 'bg-yellow-100 border-yellow-300',
+  green: 'bg-green-100 border-green-300',
+  blue: 'bg-blue-100 border-blue-300',
+  pink: 'bg-pink-100 border-pink-300',
+  purple: 'bg-purple-100 border-purple-300',
+};
+
+function AnnotationCard({
+  highlight,
+  onUpdateNote,
+  onDelete,
+  onJumpToPage,
+}: {
+  highlight: HighlightItem;
+  onUpdateNote: (note: string) => void;
+  onDelete: () => void;
+  onJumpToPage?: (page: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [noteText, setNoteText] = useState(highlight.note ?? '');
+  const colorClass = HIGHLIGHT_COLOR_BG[highlight.color] ?? 'bg-yellow-100 border-yellow-300';
+
+  return (
+    <div
+      className={`group mx-2 my-1.5 cursor-pointer rounded-md border-l-2 px-2.5 py-2 transition-colors hover:brightness-95 ${colorClass}`}
+      onClick={() => onJumpToPage?.(highlight.pageNumber)}
+    >
+      <p className="line-clamp-3 text-xs leading-relaxed text-notion-text">
+        &ldquo;{highlight.text}&rdquo;
+      </p>
+      {editing ? (
+        <div className="mt-1.5">
+          <textarea
+            autoFocus
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                onUpdateNote(noteText);
+                setEditing(false);
+              }
+              if (e.key === 'Escape') {
+                setNoteText(highlight.note ?? '');
+                setEditing(false);
+              }
+            }}
+            onBlur={() => {
+              onUpdateNote(noteText);
+              setEditing(false);
+            }}
+            placeholder="Add a note…"
+            className="w-full resize-none rounded border border-notion-border bg-white px-2 py-1 text-xs text-notion-text placeholder:text-notion-text-tertiary focus:outline-none focus:ring-1 focus:ring-notion-accent"
+            rows={2}
+          />
+        </div>
+      ) : (
+        <div className="mt-1 flex items-center gap-1">
+          {highlight.note ? (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-left text-[10px] italic text-notion-text-secondary hover:text-notion-text"
+            >
+              {highlight.note}
+            </button>
+          ) : (
+            <button
+              onClick={() => setEditing(true)}
+              className="text-[10px] text-notion-text-tertiary opacity-0 transition-opacity group-hover:opacity-100"
+            >
+              + note
+            </button>
+          )}
+          <button
+            onClick={onDelete}
+            className="ml-auto rounded p-0.5 text-notion-text-tertiary opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+          >
+            <X size={10} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function inferPdfUrl(paper: PaperItem): string | null {
@@ -176,9 +281,16 @@ export function ReaderPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { updateTabLabel } = useTabs();
+  const { updateTabLabel, openTab } = useTabs();
+  const {
+    error: showError,
+    warning: showWarning,
+    info: showInfo,
+    success: showSuccess,
+  } = useToast();
 
   const [paper, setPaper] = useState<PaperItem | null>(null);
+  const [highlights, setHighlights] = useState<HighlightItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState<{
@@ -186,16 +298,22 @@ export function ReaderPage() {
     total: number;
   } | null>(null);
 
+  // Restore cached state for this reader tab
+  const cachedState = shortId ? loadReaderState(shortId) : null;
+
   // Layout mode: 'split' = chat+pdf side by side, 'chat-only' = chat full, 'pdf-only' = pdf full
-  const [layoutMode, setLayoutMode] = useState<'split' | 'chat-only' | 'pdf-only'>('pdf-only');
-  const [leftWidth, setLeftWidth] = useState(38);
+  const [layoutMode, setLayoutMode] = useState<'split' | 'chat-only' | 'pdf-only'>(
+    cachedState?.layoutMode ?? 'pdf-only',
+  );
+  const [leftWidth, setLeftWidth] = useState(cachedState?.leftWidth ?? 38);
   const [isDragging, setIsDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const startXRef = useRef(0);
   const startWidthRef = useRef(38);
 
   // Chat input state
-  const [chatInput, setChatInput] = useState('');
+  const [chatInput, setChatInput] = useState(cachedState?.chatInput ?? '');
+  const [attachedQuotes, setAttachedQuotes] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [paperDir, setPaperDir] = useState<string | null>(null);
   const [chatModel, setChatModel] = useState<ModelConfig | null>(null);
@@ -245,6 +363,75 @@ export function ReaderPage() {
     { id: string; msgId: string; type: string; role: string; content: unknown; status: null }[]
   >([]);
 
+  // Paper preview modal state
+  const [previewModalOpen, setPreviewModalOpen] = useState(cachedState?.previewModalOpen ?? false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>(
+    (cachedState?.searchResults as SearchResult[]) ?? [],
+  );
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState(cachedState?.searchQuery ?? '');
+  const [previewDownloading, setPreviewDownloading] = useState(false);
+  const [previewNoPdfUrl, setPreviewNoPdfUrl] = useState<string | null>(
+    cachedState?.previewNoPdfUrl ?? null,
+  );
+
+  // Citation sidebar state
+  const [showCitationSidebar, setShowCitationSidebar] = useState(
+    cachedState?.showCitationSidebar ?? false,
+  );
+
+  // AI Outline sidebar state (mutually exclusive with citation sidebar)
+  const [showAIOutlineSidebar, setShowAIOutlineSidebar] = useState(false);
+
+  // Focus mode: hide top toolbar for distraction-free reading
+  const [focusMode, setFocusMode] = useState(false);
+
+  // Annotation sidebar: show highlights grouped by page
+  const [showAnnotationSidebar, setShowAnnotationSidebar] = useState(false);
+  const [annotationSidebarWidth, setAnnotationSidebarWidth] = useState(288);
+  const annotationResizing = useRef(false);
+
+  // AI reading summary generation state
+  const [generatingSummary, setGeneratingSummary] = useState(false);
+
+  // Ref to call goToPage on the PDF viewer from outside (e.g. annotation sidebar)
+  const goToPageRef = useRef<((page: number) => void) | null>(null);
+
+  // Save reader state to cache on unmount (preserve state across tab switches)
+  const stateRef = useRef({
+    layoutMode,
+    leftWidth,
+    showCitationSidebar,
+    chatInput,
+    previewModalOpen,
+    searchResults: searchResults as unknown[],
+    searchQuery,
+    previewNoPdfUrl,
+  });
+  // Keep ref in sync without triggering effect
+  stateRef.current = {
+    layoutMode,
+    leftWidth,
+    showCitationSidebar,
+    chatInput,
+    previewModalOpen,
+    searchResults: searchResults as unknown[],
+    searchQuery,
+    previewNoPdfUrl,
+  };
+  useEffect(() => {
+    return () => {
+      if (shortId) {
+        saveReaderState(shortId, stateRef.current);
+      }
+    };
+  }, [shortId]);
+  const [selectedCitation, setSelectedCitation] = useState<{
+    marker: any;
+    reference: any;
+  } | null>(null);
+  const [cachedReferences, setCachedReferences] = useState<CachedReference[]>([]);
+
   // Agent stream (uses MessageStream, same as task detail page)
   const {
     messages: agentMessages,
@@ -265,16 +452,24 @@ export function ReaderPage() {
 
   // Use live stream messages if available, otherwise fall back to historic messages
   const streamBased = agentMessages.length > 0 ? agentMessages : historicMessages;
-  // Local user messages are only shown while the stream hasn't received any user messages yet.
-  // Once the stream has user messages, switch to stream data — but keep any local messages
-  // whose msgId hasn't arrived in the stream yet (e.g. a second message sent before the first
-  // one is persisted to DB and echoed back through the stream).
+  // Merge local user messages with stream/historic messages chronologically.
+  // Local user messages have createdAt timestamps; stream messages also have createdAt.
+  // This ensures multi-turn conversations display in correct order:
+  //   user1 → assistant1 → user2 → assistant2 (not user1 → user2 → assistant1 → assistant2)
   const streamMsgIds = new Set(streamBased.map((m: any) => m.msgId as string));
-  const streamHasUserMessages = streamBased.some((m: any) => m.role === 'user');
   const pendingLocalMessages = localUserMessages.filter((m) => !streamMsgIds.has(m.msgId));
-  const displayMessages = streamHasUserMessages
-    ? [...streamBased, ...pendingLocalMessages]
-    : [...localUserMessages, ...streamBased];
+  const displayMessages = (() => {
+    if (pendingLocalMessages.length === 0) return streamBased;
+    if (streamBased.length === 0) return [...pendingLocalMessages];
+    // Merge by createdAt timestamp for correct chronological order
+    const all = [...pendingLocalMessages, ...streamBased];
+    all.sort((a: any, b: any) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return ta - tb;
+    });
+    return all;
+  })();
 
   // Debug logging for message display
   if (localUserMessages.length > 0) {
@@ -284,11 +479,7 @@ export function ReaderPage() {
       historicMessages: historicMessages.length,
       streamBased: streamBased.length,
       streamHasUserMessages,
-      pendingLocalMessages: pendingLocalMessages.length,
       displayMessages: displayMessages.length,
-      localMsgIds: localUserMessages.map((m) => m.msgId),
-      streamMsgIds: Array.from(streamMsgIds),
-      pendingMsgIds: pendingLocalMessages.map((m) => m.msgId),
     });
   }
 
@@ -321,19 +512,56 @@ export function ReaderPage() {
             activeStatus.status === 'initializing' ||
             activeStatus.status === 'waiting_permission')
         ) {
-          // Task is still running - use live messages from runner
-          setHistoricMessages(
-            activeStatus.messages.map((m) => ({
+          // Task is still running — combine DB messages from ALL runs with live runner messages.
+          // Runner memory only has assistant/tool messages (pushUserMessage is a no-op).
+          // User messages come from DB (persisted by createMessage in runTodo/sendMessage).
+          const allDbMsgs: Awaited<ReturnType<typeof ipc.getAgentTodoRunMessages>> = [];
+          for (const run of runs) {
+            const runMsgs = await ipc.getAgentTodoRunMessages(run.id);
+            allDbMsgs.push(...runMsgs);
+          }
+          const dbMsgs = allDbMsgs;
+          const dbUserMsgs = dbMsgs
+            .filter((m) => m.role === 'user')
+            .map((m) => ({
               ...m,
-              content: typeof m.content === 'string' ? JSON.parse(m.content as string) : m.content,
+              content: typeof m.content === 'string' ? JSON.parse(m.content) : m.content,
               status: m.status ?? null,
-            })),
-          );
+            }));
+          const liveMessages = activeStatus.messages.map((m) => ({
+            ...m,
+            content: typeof m.content === 'string' ? JSON.parse(m.content as string) : m.content,
+            status: m.status ?? null,
+          }));
+          // Clean up user messages that may contain paper context
+          for (const m of dbUserMsgs) {
+            if (m.type === 'text') {
+              const text = (m.content as { text: string }).text;
+              const match = text.match(/(?:用户问题:\s*)([\s\S]*?)$/);
+              if (match) {
+                (m.content as { text: string }).text = match[1].trim();
+              }
+            }
+          }
+          const combined = [...dbUserMsgs, ...liveMessages];
+          combined.sort((a: any, b: any) => {
+            const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+            const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+            return ta - tb;
+          });
+          setHistoricMessages(combined);
           return;
         }
 
-        // Task completed/failed - load persisted messages from DB
-        const msgs = await ipc.getAgentTodoRunMessages(latestRun.id);
+        // Task completed/failed - load persisted messages from ALL runs of this todo.
+        // Each follow-up creates a new run, so we need messages from all of them
+        // to reconstruct the full conversation history.
+        const allMsgs: Awaited<ReturnType<typeof ipc.getAgentTodoRunMessages>> = [];
+        for (const run of runs) {
+          const runMsgs = await ipc.getAgentTodoRunMessages(run.id);
+          allMsgs.push(...runMsgs);
+        }
+        const msgs = allMsgs;
         const parsed = msgs.map((m) => ({
           ...m,
           content: typeof m.content === 'string' ? JSON.parse(m.content) : m.content,
@@ -365,6 +593,23 @@ export function ReaderPage() {
             merged.push(m);
           }
         }
+        // Clean up old user messages that may contain injected paper context.
+        // Extract just the user question from "...用户问题: <question>" format.
+        for (const m of merged) {
+          if (m.role === 'user' && m.type === 'text') {
+            const text = (m.content as { text: string }).text;
+            const match = text.match(/(?:用户问题:\s*)([\s\S]*?)$/);
+            if (match) {
+              (m.content as { text: string }).text = match[1].trim();
+            }
+          }
+        }
+        // Sort chronologically — runs are loaded in desc order but messages should display asc
+        merged.sort((a, b) => {
+          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return ta - tb;
+        });
         setHistoricMessages(merged);
       } catch (error) {
         console.error('Failed to load chat session:', error);
@@ -459,6 +704,31 @@ export function ReaderPage() {
         const shortTitle = p.title.replace(/^\[\d{4}\.\d{4,5}\]\s*/, '').slice(0, 30) || p.shortId;
         updateTabLabel(location.pathname, shortTitle);
         ipc.touchPaper(p.id).catch(() => undefined);
+        // Load highlights
+        ipc
+          .listHighlights(p.id)
+          .then(setHighlights)
+          .catch(() => undefined);
+        // Load cached references
+        ipc
+          .getExtractedRefs(p.id)
+          .then((refs) => {
+            setCachedReferences(
+              refs.map((r) => ({
+                id: r.id,
+                refNumber: r.refNumber,
+                text: r.text,
+                title: r.title,
+                authors: r.authors,
+                year: r.year,
+                doi: r.doi,
+                arxivId: r.arxivId,
+                url: (r as any).url ?? null,
+                venue: (r as any).venue ?? null,
+              })),
+            );
+          })
+          .catch(() => undefined);
       })
       .catch(() => undefined)
       .finally(() => setLoading(false));
@@ -546,8 +816,69 @@ export function ReaderPage() {
       agentRunIdRef.current = null;
       agentTodoIdRef.current = '';
 
-      // Load messages from AgentTodoRun
-      const msgs = await ipc.getAgentTodoRunMessages(session.runId);
+      // Set todo/run refs so useAgentStream can pick up live events
+      agentTodoIdRef.current = session.id;
+      setAgentTodoId(session.id);
+      setAgentRunId(session.runId);
+      agentRunIdRef.current = session.runId;
+
+      // Load messages from ALL runs of this todo
+      const allRuns = await ipc.listAgentTodoRuns(session.id);
+
+      // Check if the task is still actively running — recover live state if so
+      const activeStatus = await ipc.getActiveAgentTodoStatus(session.id);
+      if (
+        activeStatus &&
+        (activeStatus.status === 'running' ||
+          activeStatus.status === 'initializing' ||
+          activeStatus.status === 'waiting_permission')
+      ) {
+        // Combine DB messages from ALL runs with live runner messages
+        const allDbMsgs: Awaited<ReturnType<typeof ipc.getAgentTodoRunMessages>> = [];
+        for (const run of allRuns) {
+          const runMsgs = await ipc.getAgentTodoRunMessages(run.id);
+          allDbMsgs.push(...runMsgs);
+        }
+        const dbUserMsgs = allDbMsgs
+          .filter((m) => m.role === 'user')
+          .map((m) => ({
+            ...m,
+            content: typeof m.content === 'string' ? JSON.parse(m.content) : m.content,
+            status: m.status ?? null,
+          }));
+        const liveMessages = activeStatus.messages.map((m) => ({
+          ...m,
+          content: typeof m.content === 'string' ? JSON.parse(m.content as string) : m.content,
+          status: m.status ?? null,
+        }));
+        for (const m of dbUserMsgs) {
+          if (m.type === 'text') {
+            const text = (m.content as { text: string }).text;
+            const match = text.match(/(?:用户问题:\s*)([\s\S]*?)$/);
+            if (match) {
+              (m.content as { text: string }).text = match[1].trim();
+            }
+          }
+        }
+        const combined = [...dbUserMsgs, ...liveMessages];
+        combined.sort((a: any, b: any) => {
+          const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+          const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+          return ta - tb;
+        });
+        setHistoricMessages(combined);
+        setShowChatHistory(false);
+        setTimeout(() => textareaRef.current?.focus(), 0);
+        return;
+      }
+
+      // Task completed/failed — load persisted messages from ALL runs
+      const allMsgs: Awaited<ReturnType<typeof ipc.getAgentTodoRunMessages>> = [];
+      for (const run of allRuns) {
+        const runMsgs = await ipc.getAgentTodoRunMessages(run.id);
+        allMsgs.push(...runMsgs);
+      }
+      const msgs = allMsgs;
       const parsed = msgs.map((m) => ({
         ...m,
         content: typeof m.content === 'string' ? JSON.parse(m.content) : m.content,
@@ -580,11 +911,16 @@ export function ReaderPage() {
         }
       }
 
-      // Set the loaded messages and update state
-      agentTodoIdRef.current = session.id;
-      setAgentTodoId(session.id);
-      setAgentRunId(session.runId);
-      agentRunIdRef.current = session.runId;
+      // Clean up old user messages that may contain injected paper context
+      for (const m of merged) {
+        if (m.role === 'user' && m.type === 'text') {
+          const text = (m.content as { text: string }).text;
+          const match = text.match(/(?:用户问题:\s*)([\s\S]*?)$/);
+          if (match) {
+            (m.content as { text: string }).text = match[1].trim();
+          }
+        }
+      }
       setHistoricMessages(merged);
       setShowChatHistory(false);
       setTimeout(() => textareaRef.current?.focus(), 0);
@@ -630,18 +966,36 @@ export function ReaderPage() {
 
   const handleChatSend = useCallback(async () => {
     const text = chatInput.trim();
-    if (!text || agentRunning || !paper || !chatModel) return;
+    if (!text && attachedQuotes.length === 0) return;
+    if (agentRunning) {
+      showWarning('Agent is still running, please wait');
+      return;
+    }
+    if (!paper) {
+      showError('Paper data not loaded');
+      return;
+    }
+    if (!chatModel) {
+      showError('Please select an agent first (Settings > Agents)');
+      return;
+    }
 
     setChatInput('');
     if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
-    // Augment prompt with attached papers context
+    // Build full prompt: attached quotes (from PDF selections) + user message + attached papers
     let fullText = text;
+    if (attachedQuotes.length > 0) {
+      const userQuestion = text || 'Explain these passages';
+      const quotesText = attachedQuotes.map((q, i) => `[${i + 1}] "${q}"`).join('\n\n');
+      fullText = `${userQuestion}\n\n--- Selected text from paper ---\n${quotesText}`;
+      setAttachedQuotes([]);
+    }
     if (attachedPapers.length > 0) {
       const ctx = attachedPapers
         .map((p) => `Paper: "${p.title}"\nAbstract: ${p.abstract ?? 'N/A'}`)
         .join('\n\n');
-      fullText = `${text}\n\n--- Attached Papers ---\n${ctx}`;
+      fullText = `${fullText}\n\n--- Attached Papers ---\n${ctx}`;
     }
     setAttachedPapers([]);
 
@@ -653,51 +1007,54 @@ export function ReaderPage() {
       role: 'user' as const,
       content: { text },
       status: null,
+      createdAt: new Date().toISOString(),
     };
     setLocalUserMessages((prev) => [...prev, userMsg]);
 
     const cwd = paperDir ?? undefined;
     const agentId = chatModel.id;
 
-    const runId = agentRunIdRef.current;
-    const isRunning = agentStatus === 'running' || agentStatus === 'initializing';
+    try {
+      const runId = agentRunIdRef.current;
+      const isRunning = agentStatus === 'running' || agentStatus === 'initializing';
 
-    if (!agentTodoId) {
-      // First message: create a new todo and run it.
-      // Inject paper context with file paths so agent can directly access them
-      const paperContext = [
-        `当前文章: "${paper.title}"`,
-        ...(cwd ? [`工作目录: ${cwd}`] : []),
-        ...(cwd ? [`PDF路径: ${cwd}/paper.pdf`] : []),
-        ...(cwd ? [`文本路径: ${cwd}/text.txt`] : []),
-      ].join('\n');
-      const promptWithContext = `${paperContext}\n\n---\n\n用户问题: ${fullText}`;
+      if (!agentTodoId) {
+        // First message: create a new todo and run it.
+        // Inject paper context with file paths so agent can directly access them
+        const paperContext = [
+          `当前文章: "${paper.title}"`,
+          ...(cwd ? [`工作目录: ${cwd}`] : []),
+          ...(cwd ? [`PDF路径: ${cwd}/paper.pdf`] : []),
+          ...(cwd ? [`文本路径: ${cwd}/text.txt`] : []),
+        ].join('\n');
+        const promptWithContext = `${paperContext}\n\n---\n\n用户问题: ${fullText}`;
 
-      // Update agentTodoIdRef synchronously BEFORE runAgentTodo so that
-      // IPC stream callbacks see the correct todoId immediately, without
-      // waiting for React to re-render with the new agentTodoId state.
-      const todo = await ipc.createAgentTodo({
-        title: `Chat: ${paper.title.slice(0, 60)}`,
-        prompt: promptWithContext,
-        cwd: cwd ?? '',
-        agentId,
-      });
-      agentTodoIdRef.current = todo.id;
-      setAgentTodoId(todo.id);
-      const run = await ipc.runAgentTodo(todo.id);
-      setAgentRunId(run.id);
-      agentRunIdRef.current = run.id;
-    } else if (!runId || !isRunning) {
-      // No active run or agent stopped: resume the existing todo with a new run.
-      // Update the prompt to the new user message, then run.
-      // The service layer will automatically find the previous sessionId and resume it.
-      await ipc.updateAgentTodo(agentTodoId, { prompt: fullText });
-      const run = await ipc.runAgentTodo(agentTodoId);
-      setAgentRunId(run.id);
-      agentRunIdRef.current = run.id;
-    } else {
-      // Follow-up message: send to existing active run
-      await ipc.sendAgentMessage(agentTodoId, runId, fullText);
+        // Update agentTodoIdRef synchronously BEFORE runAgentTodo so that
+        // IPC stream callbacks see the correct todoId immediately, without
+        // waiting for React to re-render with the new agentTodoId state.
+        const todo = await ipc.createAgentTodo({
+          title: `Chat: ${paper.title.slice(0, 60)}`,
+          prompt: promptWithContext,
+          cwd: cwd ?? '',
+          agentId,
+        });
+        agentTodoIdRef.current = todo.id;
+        setAgentTodoId(todo.id);
+        const run = await ipc.runAgentTodo(todo.id);
+        setAgentRunId(run.id);
+        agentRunIdRef.current = run.id;
+      } else if (!runId || !isRunning) {
+        // No active run or agent stopped: resume the existing todo with a new run.
+        await ipc.updateAgentTodo(agentTodoId, { prompt: fullText });
+        const run = await ipc.runAgentTodo(agentTodoId);
+        setAgentRunId(run.id);
+        agentRunIdRef.current = run.id;
+      } else {
+        // Follow-up message: send to existing active run
+        await ipc.sendAgentMessage(agentTodoId, runId, fullText);
+      }
+    } catch (err) {
+      showError(`Failed to send message: ${(err as Error).message}`);
     }
   }, [
     chatInput,
@@ -708,6 +1065,8 @@ export function ReaderPage() {
     paperDir,
     attachedPapers,
     agentStatus,
+    showError,
+    showWarning,
   ]);
 
   const handleChatKill = useCallback(async () => {
@@ -729,6 +1088,7 @@ export function ReaderPage() {
         role: 'user' as const,
         content: { text: prompt },
         status: null,
+        createdAt: new Date().toISOString(),
       },
     ]);
     const cwd = paperDir ?? undefined;
@@ -815,6 +1175,44 @@ export function ReaderPage() {
     setIsDragging(true);
   };
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in inputs
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable)
+        return;
+
+      switch (e.key) {
+        case 'f':
+          // F = toggle focus mode
+          e.preventDefault();
+          setFocusMode((v) => !v);
+          break;
+        case '1':
+          // 1 = chat only
+          setLayoutMode('chat-only');
+          break;
+        case '2':
+          // 2 = split
+          setLayoutMode('split');
+          break;
+        case '3':
+          // 3 = pdf only
+          setLayoutMode('pdf-only');
+          break;
+        case 'Escape':
+          // ESC exits focus mode
+          if (focusMode) {
+            setFocusMode(false);
+          }
+          break;
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [focusMode]);
+
   // Rating change handler
   const handleRatingChange = useCallback(
     async (newRating: number) => {
@@ -885,60 +1283,132 @@ export function ReaderPage() {
   const pdfPath = paper.pdfPath;
   return (
     <div className="flex h-full flex-col">
-      {/* Toolbar */}
-      <div className="relative flex flex-shrink-0 items-center border-b border-notion-border px-4 py-2">
-        {/* Left: back + star */}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => navigate(`/papers/${paper.shortId}`)}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <div className="ml-1 flex items-center gap-1">
-            <StarRating rating={rating} onChange={handleRatingChange} size={16} />
+      {/* Toolbar - hidden in focus mode */}
+      {!focusMode && (
+        <div className="relative flex flex-shrink-0 items-center border-b border-notion-border px-4 py-2">
+          {/* Left: back + star */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                // If chat/split view is open, first go back to PDF-only
+                if (layoutMode !== 'pdf-only') {
+                  setLayoutMode('pdf-only');
+                  return;
+                }
+                const from = (location.state as { from?: string })?.from;
+                if (from === '/discovery' || from === '/discovery/preview') {
+                  navigate(from);
+                } else {
+                  navigate(`/papers/${paper.shortId}`);
+                }
+              }}
+              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <div className="ml-1 flex items-center gap-1">
+              <StarRating rating={rating} onChange={handleRatingChange} size={16} />
+            </div>
           </div>
-        </div>
 
-        {/* Center: layout toggle buttons (absolutely centered) */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
-          <div className="flex items-center gap-0.5 rounded-lg border border-notion-border bg-notion-sidebar p-0.5">
+          {/* Center: layout toggle buttons (absolutely centered) */}
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <div className="flex items-center gap-0.5 rounded-lg border border-notion-border bg-notion-sidebar p-0.5">
+              <button
+                onClick={() => setLayoutMode('chat-only')}
+                title="Chat only (1)"
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                  layoutMode === 'chat-only'
+                    ? 'bg-white text-notion-accent shadow-sm'
+                    : 'text-notion-text-secondary hover:bg-white/60 hover:text-notion-text'
+                }`}
+              >
+                <MessageSquare size={14} />
+              </button>
+              <button
+                onClick={() => setLayoutMode('split')}
+                title="Split view (2)"
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                  layoutMode === 'split'
+                    ? 'bg-white text-notion-accent shadow-sm'
+                    : 'text-notion-text-secondary hover:bg-white/60 hover:text-notion-text'
+                }`}
+              >
+                <Columns2 size={14} />
+              </button>
+              <button
+                onClick={() => setLayoutMode('pdf-only')}
+                title="PDF only (3)"
+                className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
+                  layoutMode === 'pdf-only'
+                    ? 'bg-white text-notion-accent shadow-sm'
+                    : 'text-notion-text-secondary hover:bg-white/60 hover:text-notion-text'
+                }`}
+              >
+                <FileText size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* Right: annotations + focus mode + shortcuts hint */}
+          <div className="ml-auto flex items-center gap-1">
             <button
-              onClick={() => setLayoutMode('chat-only')}
-              title="Chat only"
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-                layoutMode === 'chat-only'
-                  ? 'bg-white text-notion-accent shadow-sm'
-                  : 'text-notion-text-secondary hover:bg-white/60 hover:text-notion-text'
+              onClick={() => setShowAnnotationSidebar((v) => !v)}
+              title={t('reader.annotations')}
+              className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
+                showAnnotationSidebar
+                  ? 'bg-notion-accent-light text-notion-accent'
+                  : 'text-notion-text-secondary hover:bg-notion-sidebar/50'
               }`}
             >
-              <MessageSquare size={14} />
+              <StickyNote size={14} />
             </button>
             <button
-              onClick={() => setLayoutMode('split')}
-              title="Split view"
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-                layoutMode === 'split'
-                  ? 'bg-white text-notion-accent shadow-sm'
-                  : 'text-notion-text-secondary hover:bg-white/60 hover:text-notion-text'
-              }`}
+              onClick={async () => {
+                if (!paper) return;
+                try {
+                  const result = await ipc.exportHighlightsMarkdown(paper.id);
+                  if (
+                    !result.markdown.includes('## Highlights') &&
+                    !result.markdown.includes('## Reading Notes')
+                  ) {
+                    toast.info(t('reader.noHighlightsToExport'));
+                    return;
+                  }
+                  await navigator.clipboard.writeText(result.markdown);
+                  toast.success(t('reader.exportCopied'));
+                } catch {
+                  toast.error('Export failed');
+                }
+              }}
+              title={t('reader.exportHighlights')}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
             >
-              <Columns2 size={14} />
+              <ClipboardCopy size={14} />
             </button>
             <button
-              onClick={() => setLayoutMode('pdf-only')}
-              title="PDF only"
-              className={`inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors ${
-                layoutMode === 'pdf-only'
-                  ? 'bg-white text-notion-accent shadow-sm'
-                  : 'text-notion-text-secondary hover:bg-white/60 hover:text-notion-text'
-              }`}
+              onClick={() => setFocusMode(true)}
+              title={t('reader.focusMode') + ' (F)'}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-secondary transition-colors hover:bg-notion-sidebar/50"
             >
-              <FileText size={14} />
+              <Maximize2 size={14} />
             </button>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Focus mode: minimal floating controls */}
+      {focusMode && (
+        <div className="absolute right-3 top-3 z-30 flex items-center gap-1 rounded-lg border border-notion-border/50 bg-white/80 p-1 shadow-sm backdrop-blur-sm">
+          <button
+            onClick={() => setFocusMode(false)}
+            title={t('reader.exitFocusMode') + ' (Esc)'}
+            className="inline-flex h-6 w-6 items-center justify-center rounded text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+          >
+            <Minimize2 size={12} />
+          </button>
+        </div>
+      )}
 
       {/* Split pane */}
       <div ref={containerRef} className="relative flex flex-1 overflow-hidden">
@@ -1012,6 +1482,15 @@ export function ReaderPage() {
                                     setChatSessions((prev) =>
                                       prev.filter((s) => s.id !== session.id),
                                     );
+                                    // If the deleted session is currently displayed, clear chat state
+                                    if (agentTodoId === session.id) {
+                                      setAgentTodoId(null);
+                                      setAgentRunId(null);
+                                      setLocalUserMessages([]);
+                                      setHistoricMessages([]);
+                                      agentRunIdRef.current = null;
+                                      agentTodoIdRef.current = '';
+                                    }
                                   }
                                 }}
                                 className="flex-shrink-0 rounded p-1 text-notion-text-tertiary hover:bg-red-50 hover:text-red-500"
@@ -1033,19 +1512,52 @@ export function ReaderPage() {
             <div className="notion-scrollbar flex-1 overflow-y-auto">
               {!agentTodoId &&
                 (chatModel ? (
-                  <div className="flex h-full flex-col items-center justify-center gap-2 pt-16 text-center">
+                  <div className="flex h-full flex-col items-center justify-center gap-3 px-6 pt-12 text-center">
                     <AgentLogo tool={chatModel.agentTool} size={24} />
                     <p className="text-sm font-medium text-notion-text-secondary">
                       {chatModel.name}
                     </p>
                     <p className="text-xs text-notion-text-tertiary">
-                      Send a message to start the agent
+                      {t('reader.ai.chatHint', 'Ask anything about this paper')}
                     </p>
+                    {/* Preset question buttons */}
+                    <div className="mt-2 flex flex-col gap-1.5 w-full max-w-xs">
+                      {[
+                        {
+                          key: 'contribution',
+                          label: t('reader.ai.presetContribution', "What's the main contribution?"),
+                        },
+                        {
+                          key: 'methodology',
+                          label: t('reader.ai.presetMethodology', 'Explain the methodology'),
+                        },
+                        {
+                          key: 'results',
+                          label: t('reader.ai.presetResults', 'Summarize the key results'),
+                        },
+                        {
+                          key: 'limitations',
+                          label: t('reader.ai.presetLimitations', 'What are the limitations?'),
+                        },
+                      ].map((q) => (
+                        <button
+                          key={q.key}
+                          onClick={() => {
+                            setChatInput(q.label);
+                            setTimeout(() => handleChatSend(), 50);
+                          }}
+                          disabled={agentRunning}
+                          className="rounded-lg border border-notion-border bg-white px-3 py-2 text-left text-xs text-notion-text-secondary transition-colors hover:bg-notion-accent-light hover:text-notion-accent hover:border-notion-accent/30 disabled:opacity-40"
+                        >
+                          {q.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   <div className="flex h-full flex-col items-center justify-center gap-2 pt-16 text-center">
                     <p className="text-xs text-notion-text-tertiary">
-                      Select an agent above to chat about this paper
+                      {t('reader.ai.selectAgent', 'Select an agent above to chat about this paper')}
                     </p>
                   </div>
                 ))}
@@ -1064,18 +1576,55 @@ export function ReaderPage() {
 
             {/* Input */}
             <div className="flex-shrink-0 px-4 py-4">
-              <div className="mx-auto mb-2 flex w-full max-w-2xl">
+              <div className="mx-auto mb-2 flex w-full max-w-2xl gap-1.5 flex-wrap">
                 <button
                   onClick={handleSummarize}
                   disabled={agentRunning || !chatModel}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border bg-white px-3 py-1.5 text-xs font-medium text-notion-text-secondary shadow-sm transition-colors hover:bg-notion-sidebar hover:text-notion-text disabled:opacity-40"
                 >
                   <Zap size={12} />
-                  Summarize
+                  {t('reader.ai.summarize', 'Summarize')}
+                </button>
+                <button
+                  onClick={() => {
+                    setChatInput(
+                      t('reader.ai.presetContribution', "What's the main contribution?"),
+                    );
+                    setTimeout(() => handleChatSend(), 50);
+                  }}
+                  disabled={agentRunning || !chatModel}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border bg-white px-3 py-1.5 text-xs font-medium text-notion-text-secondary shadow-sm transition-colors hover:bg-notion-sidebar hover:text-notion-text disabled:opacity-40"
+                >
+                  {t('reader.ai.presetContribution', "What's the main contribution?")}
                 </button>
               </div>
               <div className="mx-auto w-full max-w-2xl">
                 <div className="rounded-2xl border border-notion-border bg-white shadow-sm transition-all">
+                  {/* Attached quotes from PDF selections */}
+                  {attachedQuotes.length > 0 && (
+                    <div className="mx-3 mt-3 flex flex-col gap-1.5">
+                      {attachedQuotes.map((q, i) => (
+                        <div
+                          key={i}
+                          className="rounded-lg border border-notion-accent/20 bg-notion-accent-light/50 px-3 py-2"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="line-clamp-3 text-xs italic text-notion-text-secondary leading-relaxed">
+                              &ldquo;{q}&rdquo;
+                            </p>
+                            <button
+                              onClick={() =>
+                                setAttachedQuotes((prev) => prev.filter((_, j) => j !== i))
+                              }
+                              className="mt-0.5 flex-shrink-0 rounded p-0.5 text-notion-text-tertiary hover:text-red-400"
+                            >
+                              <X size={12} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {/* Attached paper chips */}
                   {attachedPapers.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 px-4 pt-3">
@@ -1288,7 +1837,11 @@ export function ReaderPage() {
                     ) : (
                       <button
                         onClick={handleChatSend}
-                        disabled={!chatInput.trim() || !chatModel || agentRunning}
+                        disabled={
+                          (!chatInput.trim() && attachedQuotes.length === 0) ||
+                          !chatModel ||
+                          agentRunning
+                        }
                         className="flex-shrink-0 rounded-full bg-notion-text p-1.5 text-white transition-opacity hover:opacity-80 disabled:opacity-30"
                         title="Send"
                       >
@@ -1315,15 +1868,254 @@ export function ReaderPage() {
         {/* Right: PDF */}
         {layoutMode !== 'chat-only' && (
           <div
-            className="relative flex flex-col"
-            style={{ width: layoutMode === 'pdf-only' ? '100%' : `${100 - leftWidth}%` }}
+            className="relative flex min-w-0 flex-1 flex-col overflow-x-clip"
+            style={
+              layoutMode !== 'pdf-only'
+                ? { maxWidth: `${100 - leftWidth}%`, flexBasis: `${100 - leftWidth}%` }
+                : undefined
+            }
           >
             {pdfPath ? (
               <PdfViewer
                 path={pdfPath}
+                paperId={paper?.id}
+                cachedReferences={cachedReferences}
+                onReferencesExtracted={(refs) => setCachedReferences(refs)}
+                initialPage={
+                  (location.state as { initialPage?: number } | null)?.initialPage ??
+                  paper?.lastReadPage ??
+                  undefined
+                }
+                forceInitialPage={
+                  (location.state as { initialPage?: number } | null)?.initialPage != null
+                }
+                initialPageYOffset={
+                  (location.state as { initialPageYOffset?: number } | null)?.initialPageYOffset
+                }
                 onFileNotFound={() =>
                   setPaper((prev) => (prev ? { ...prev, pdfPath: undefined } : prev))
                 }
+                onPageChange={(page, total) => {
+                  if (paper) {
+                    ipc.updateReadingProgress(paper.id, page, total).catch(() => undefined);
+                  }
+                }}
+                onAskAI={(text) => {
+                  setAttachedQuotes((prev) => [...prev, text]);
+                  if (layoutMode === 'pdf-only') setLayoutMode('split');
+                  setTimeout(() => textareaRef.current?.focus(), 100);
+                }}
+                highlights={highlights}
+                onCreateHighlight={
+                  paper
+                    ? (params) => {
+                        ipc
+                          .createHighlight({ ...params, paperId: paper.id })
+                          .then((h) => {
+                            setHighlights((prev) => [...prev, h]);
+                            // Auto-open annotation sidebar so user can add a note
+                            setShowAnnotationSidebar(true);
+                            // Fire-and-forget: auto-suggest AI note for longer highlights
+                            if (h.text && h.text.length > 20) {
+                              ipc
+                                .readerInlineAI({
+                                  paperId: paper.id,
+                                  action: 'suggestNote',
+                                  selectedText: h.text,
+                                  language: i18n.language,
+                                })
+                                .then((aiResult) => {
+                                  if (aiResult?.result) {
+                                    ipc
+                                      .updateHighlight(h.id, { note: aiResult.result })
+                                      .then((updated) => {
+                                        setHighlights((prev) =>
+                                          prev.map((x) => (x.id === h.id ? updated : x)),
+                                        );
+                                        showSuccess(t('reader.ai.noteSuggested'));
+                                      })
+                                      .catch(() => undefined);
+                                  }
+                                })
+                                .catch(() => undefined);
+                            }
+                          })
+                          .catch(() => undefined);
+                      }
+                    : undefined
+                }
+                onDeleteHighlight={(id) => {
+                  ipc
+                    .deleteHighlight(id)
+                    .then(() => setHighlights((prev) => prev.filter((x) => x.id !== id)))
+                    .catch(() => undefined);
+                }}
+                onOpenUrl={(url) => {
+                  // Try to detect arXiv ID from various URL patterns
+                  const arxivMatch = url.match(
+                    /(?:arxiv\.org\/(?:abs|pdf)|alphaxiv\.org\/(?:abs|overview))\/(\d{4}\.\d{4,5})/,
+                  );
+                  if (arxivMatch) {
+                    const arxivId = arxivMatch[1];
+                    ipc
+                      .getPaperByShortId(arxivId)
+                      .then((existing) => {
+                        if (existing) {
+                          openTab(`/papers/${existing.shortId}/reader`);
+                        } else {
+                          showInfo(`Downloading ${arxivId}...`);
+                          ipc
+                            .downloadPaper(arxivId, [], true)
+                            .then((result) => {
+                              if (result?.paper) {
+                                showSuccess('Paper ready');
+                                openTab(`/papers/${result.paper.shortId}/reader`);
+                              }
+                            })
+                            .catch(() => {
+                              showError('Download failed');
+                            });
+                        }
+                      })
+                      .catch(() => showError('Failed to check paper'));
+                  } else {
+                    // For DOI and other URLs, try to import via the download service
+                    // which can resolve DOIs and direct PDF URLs
+                    showInfo('Opening paper...');
+                    ipc
+                      .downloadPaper(url, [], true)
+                      .then((result) => {
+                        if (result?.paper) {
+                          showSuccess('Paper ready');
+                          openTab(`/papers/${result.paper.shortId}/reader`);
+                        } else {
+                          showError('Could not import paper');
+                        }
+                      })
+                      .catch(() => {
+                        showError('Failed to import paper');
+                      });
+                  }
+                }}
+                onSearchPaper={(query) => {
+                  // Search for paper by selected text (title/reference)
+                  // Use smart cleaning to strip venue info, author prefixes, etc.
+                  const cleanQuery = cleanCitationSearchQuery(query);
+
+                  // Detect input type
+                  const arxivMatch = cleanQuery.match(/(\d{4}\.\d{4,5})/);
+                  const arxivId = arxivMatch ? arxivMatch[1] : undefined;
+                  const isDoi = /^10\.\d{4,}\/\S+$/.test(cleanQuery);
+
+                  // Show preview modal with search results
+                  setSearchQuery(cleanQuery);
+                  setSearchLoading(true);
+                  setSearchResults([]);
+                  setPreviewNoPdfUrl(null);
+                  setPreviewModalOpen(true);
+
+                  // If DOI, try to download/import directly instead of text search
+                  if (isDoi) {
+                    ipc
+                      .downloadPaper(cleanQuery, [], true)
+                      .then((result) => {
+                        if (result?.paper) {
+                          const p = result.paper;
+                          setSearchResults([
+                            {
+                              paperId: p.id,
+                              title: p.title,
+                              authors: (p.authors ?? []).map((name: string) => ({ name })),
+                              year: p.submittedAt ? new Date(p.submittedAt).getFullYear() : null,
+                              abstract: p.abstract ?? null,
+                              citationCount: 0,
+                              externalIds: { ArXiv: p.shortId || undefined },
+                              url: p.sourceUrl ?? null,
+                            },
+                          ]);
+                        } else {
+                          showInfo(t('pdf.preview.noResults'));
+                        }
+                      })
+                      .catch(() => {
+                        // DOI resolve failed, fall back to text search
+                        return ipc.searchPapers(cleanQuery, 10).then((response) => {
+                          setSearchResults(response.results);
+                          if (response.results.length === 0) {
+                            showInfo(t('pdf.preview.noResults'));
+                          }
+                        });
+                      })
+                      .finally(() => setSearchLoading(false));
+                    return;
+                  }
+
+                  // First try local DB match, then fall back to OpenAlex search
+                  ipc
+                    .matchReference({ arxivId, title: cleanQuery })
+                    .then((localPaper) => {
+                      if (localPaper) {
+                        // Convert PaperItem to SearchResult format
+                        const localResult: SearchResult = {
+                          paperId: localPaper.id,
+                          title: localPaper.title,
+                          authors: (localPaper.authors ?? []).map((name) => ({ name })),
+                          year:
+                            localPaper.year ??
+                            (localPaper.submittedAt
+                              ? new Date(localPaper.submittedAt).getFullYear()
+                              : null),
+                          abstract: localPaper.abstract ?? null,
+                          citationCount: 0,
+                          externalIds: {
+                            ArXiv: localPaper.shortId || undefined,
+                          },
+                          url: localPaper.sourceUrl ?? null,
+                        };
+                        setSearchResults([localResult]);
+                        setSearchLoading(false);
+                        return;
+                      }
+
+                      // No local match, fall back to OpenAlex search
+                      return ipc.searchPapers(cleanQuery, 10).then((response) => {
+                        setSearchResults(response.results);
+                        if (response.results.length === 0) {
+                          showInfo(t('pdf.preview.noResults'));
+                        }
+                      });
+                    })
+                    .catch((err) => {
+                      // Show error in modal instead of opening browser
+                      setPreviewModalOpen(false);
+                      showError(
+                        `Search failed: ${err instanceof Error ? err.message : 'Unknown error'}`,
+                      );
+                    })
+                    .finally(() => {
+                      setSearchLoading(false);
+                    });
+                }}
+                onUpdateHighlight={(id, params) => {
+                  ipc
+                    .updateHighlight(id, params)
+                    .then((updated) =>
+                      setHighlights((prev) => prev.map((x) => (x.id === id ? updated : x))),
+                    )
+                    .catch(() => undefined);
+                }}
+                showCitationSidebar={showCitationSidebar}
+                onToggleCitationSidebar={() => {
+                  setShowCitationSidebar((v) => !v);
+                  setShowAIOutlineSidebar(false);
+                }}
+                showAIOutlineSidebar={showAIOutlineSidebar}
+                onToggleAIOutlineSidebar={() => {
+                  setShowAIOutlineSidebar((v) => !v);
+                  setShowCitationSidebar(false);
+                }}
+                shortId={shortId}
+                goToPageRef={goToPageRef}
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-4">
@@ -1383,6 +2175,142 @@ export function ReaderPage() {
           </div>
         )}
 
+        {/* Annotation sidebar */}
+        {showAnnotationSidebar && (
+          <>
+            {/* Resize handle */}
+            <div
+              className="group flex w-1 cursor-col-resize items-center justify-center hover:bg-blue-400/50 active:bg-blue-400 transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                annotationResizing.current = true;
+                const startX = e.clientX;
+                const startW = annotationSidebarWidth;
+                const onMove = (ev: MouseEvent) => {
+                  if (!annotationResizing.current) return;
+                  // Dragging left increases width
+                  const newW = Math.max(200, Math.min(500, startW - (ev.clientX - startX)));
+                  setAnnotationSidebarWidth(newW);
+                };
+                const onUp = () => {
+                  annotationResizing.current = false;
+                  document.removeEventListener('mousemove', onMove);
+                  document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+              }}
+            />
+            <div
+              className="flex flex-shrink-0 flex-col border-l border-notion-border bg-white"
+              style={{ width: annotationSidebarWidth }}
+            >
+              <div className="flex items-center justify-between border-b border-notion-border px-3 py-2">
+                <span className="text-xs font-medium text-notion-text">
+                  {t('reader.annotations')} ({highlights.length})
+                </span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      if (!paper || highlights.length === 0 || generatingSummary) return;
+                      setGeneratingSummary(true);
+                      ipc
+                        .readerReadingSummary({
+                          paperId: paper.id,
+                          highlights: highlights.map((h) => ({
+                            text: h.text,
+                            note: h.note || '',
+                            color: h.color,
+                            page: h.pageNumber,
+                          })),
+                          language: i18n.language,
+                        })
+                        .then((res) => {
+                          if (res?.summary) {
+                            setChatInput(res.summary);
+                            if (layoutMode === 'pdf-only') setLayoutMode('split');
+                            setTimeout(() => textareaRef.current?.focus(), 100);
+                          }
+                        })
+                        .catch(() => showError('Failed to generate summary'))
+                        .finally(() => setGeneratingSummary(false));
+                    }}
+                    disabled={highlights.length === 0 || generatingSummary}
+                    title={t('reader.ai.generateSummary')}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-notion-accent transition-colors hover:bg-notion-accent-light disabled:opacity-50"
+                  >
+                    {generatingSummary ? (
+                      <Loader2 size={10} className="animate-spin" />
+                    ) : (
+                      <Sparkles size={10} />
+                    )}
+                    {generatingSummary
+                      ? t('reader.ai.generatingSummary')
+                      : t('reader.ai.generateSummary')}
+                  </button>
+                  <button
+                    onClick={() => setShowAnnotationSidebar(false)}
+                    className="rounded p-1 text-notion-text-tertiary hover:bg-notion-sidebar"
+                  >
+                    <X size={12} />
+                  </button>
+                </div>
+              </div>
+              <div className="notion-scrollbar flex-1 overflow-y-auto">
+                {highlights.length === 0 ? (
+                  <div className="px-4 py-8 text-center text-xs text-notion-text-tertiary">
+                    {t('reader.noAnnotations')}
+                  </div>
+                ) : (
+                  (() => {
+                    // Group highlights by page
+                    const byPage = new Map<number, typeof highlights>();
+                    for (const h of [...highlights].sort((a, b) => a.pageNumber - b.pageNumber)) {
+                      const arr = byPage.get(h.pageNumber) ?? [];
+                      arr.push(h);
+                      byPage.set(h.pageNumber, arr);
+                    }
+                    return Array.from(byPage.entries()).map(([page, items]) => (
+                      <div key={page} className="border-b border-notion-border/50">
+                        <div className="sticky top-0 bg-notion-sidebar/50 px-3 py-1">
+                          <span className="text-[10px] font-medium text-notion-text-tertiary">
+                            {t('reader.page')} {page}
+                          </span>
+                        </div>
+                        {items.map((h) => (
+                          <AnnotationCard
+                            key={h.id}
+                            highlight={h}
+                            onJumpToPage={(page) => goToPageRef.current?.(page)}
+                            onUpdateNote={(note) => {
+                              ipc
+                                .updateHighlight(h.id, { note })
+                                .then((updated) =>
+                                  setHighlights((prev) =>
+                                    prev.map((x) => (x.id === h.id ? updated : x)),
+                                  ),
+                                )
+                                .catch(() => undefined);
+                            }}
+                            onDelete={() => {
+                              ipc
+                                .deleteHighlight(h.id)
+                                .then(() =>
+                                  setHighlights((prev) => prev.filter((x) => x.id !== h.id)),
+                                )
+                                .catch(() => undefined);
+                            }}
+                          />
+                        ))}
+                      </div>
+                    ));
+                  })()
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
         {isDragging && <div className="absolute inset-0 z-50 cursor-col-resize" />}
       </div>
 
@@ -1391,6 +2319,51 @@ export function ReaderPage() {
         isOpen={showRatingPrompt}
         onRate={handleRatingPromptRate}
         onSkip={handleRatingPromptSkip}
+      />
+
+      {/* Paper Preview Modal */}
+      <PaperPreviewModal
+        isOpen={previewModalOpen}
+        onClose={() => setPreviewModalOpen(false)}
+        results={searchResults}
+        isLoading={searchLoading}
+        query={searchQuery}
+        isDownloading={previewDownloading}
+        noPdfUrl={previewNoPdfUrl}
+        onOpenWebsite={(url) => {
+          window.electronAPI?.openBrowser(url);
+        }}
+        onDownload={async (result) => {
+          setPreviewDownloading(true);
+          setPreviewNoPdfUrl(null);
+          try {
+            // Prefer arXiv ID, then DOI, then title as last resort
+            const downloadInput = result.externalIds.ArXiv
+              ? result.externalIds.ArXiv
+              : result.externalIds.DOI
+                ? result.externalIds.DOI
+                : result.title;
+
+            const downloadResult = await ipc.downloadPaper(downloadInput, [], true);
+            if (downloadResult?.paper) {
+              if (downloadResult.download?.success) {
+                showSuccess(t('pdf.citation.downloaded'));
+                setPreviewModalOpen(false);
+                openTab(`/papers/${downloadResult.paper.shortId}/reader`);
+              } else {
+                // No PDF — stay in modal, show "Open website" option
+                const doi = result.externalIds.DOI;
+                setPreviewNoPdfUrl(doi ? `https://doi.org/${doi}` : (result.url ?? null));
+              }
+            } else {
+              showError('Download failed - paper not found');
+            }
+          } catch (err) {
+            showError(`Download failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          } finally {
+            setPreviewDownloading(false);
+          }
+        }}
       />
     </div>
   );

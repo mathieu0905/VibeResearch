@@ -438,8 +438,8 @@ export class AgentTodoService {
         };
       }) => {
         const m = data.message;
-        this.repository
-          .upsertMessage({
+        Promise.resolve(
+          this.repository.upsertMessage({
             runId: data.runId,
             msgId: m.msgId,
             type: m.type as
@@ -455,12 +455,39 @@ export class AgentTodoService {
             status: m.status ?? null,
             toolCallId: m.toolCallId ?? null,
             toolName: m.toolName ?? null,
-          })
-          .catch((err) => {
-            console.error('[AgentTodoService] Failed to upsert message:', err);
-          });
+          }),
+        ).catch((err) => {
+          console.error('[AgentTodoService] Failed to upsert message:', err);
+        });
       },
     );
+
+    // Persist the initial user prompt as a run message so it survives mid-stream exits.
+    // Follow-up messages are already saved in sendMessage(), but the first prompt was not.
+    // Extract the clean user question from the full prompt (which includes paper context).
+    // The prompt format is: "..context..\n\n---\n\n用户问题: <user text>"
+    const userQuestionMatch = todo.prompt.match(/(?:用户问题:\s*)([\s\S]*?)$/);
+    const displayText = userQuestionMatch ? userQuestionMatch[1].trim() : todo.prompt;
+
+    const initialMsgId = `user-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    Promise.resolve(
+      this.repository.createMessage({
+        runId: run.id,
+        msgId: initialMsgId,
+        type: 'text',
+        role: 'user',
+        content: JSON.stringify({ text: displayText }),
+        status: null,
+        toolCallId: null,
+        toolName: null,
+      }),
+    ).catch((err) => {
+      console.error('[AgentTodoService] Failed to persist initial user message:', err);
+    });
+    // Also push to runner so it appears in live stream / recovery
+    if (typeof runner.pushUserMessage === 'function') {
+      runner.pushUserMessage(run.id, initialMsgId, displayText);
+    }
 
     // Run async
     runner

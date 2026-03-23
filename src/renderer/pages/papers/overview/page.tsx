@@ -1,9 +1,12 @@
 import { useEffect, useState, useCallback, useMemo, useRef, type ReactNode } from 'react';
 import i18n from 'i18next';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useTabs } from '../../../hooks/use-tabs';
 import {
   ipc,
+  onIpc,
+  onStreamingPort,
   type PaperItem,
   type TagInfo,
   type ModelConfig,
@@ -50,7 +53,6 @@ import {
   Github,
   FolderDown,
   Lightbulb,
-  Sparkles,
   Target,
   FolderKanban,
   Copy,
@@ -593,12 +595,14 @@ export function OverviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { updateTabLabel, openTab } = useTabs();
+  const { t } = useTranslation();
 
   const [paper, setPaper] = useState<PaperItem | null>(null);
   const [chatSessions, setChatSessions] = useState<AgentTodoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [rating, setRating] = useState<number | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [paperDir, setPaperDir] = useState<string | null>(null);
   const [activeAgent, setActiveAgent] = useState<AgentConfigItem | null>(null);
@@ -653,6 +657,24 @@ export function OverviewPage() {
       .catch(() => undefined)
       .finally(() => setLoading(false));
   }, [shortId]);
+
+  // Auto-open reader if navigated with openReader flag
+  useEffect(() => {
+    if (!paper || loading) return;
+    const state = location.state as {
+      openReader?: boolean;
+      from?: string;
+      initialPage?: number;
+      initialPageYOffset?: number;
+    } | null;
+    if (state?.openReader && paper.pdfPath) {
+      const navState: Record<string, unknown> = {};
+      if (state.from) navState.from = state.from;
+      if (state.initialPage != null) navState.initialPage = state.initialPage;
+      if (state.initialPageYOffset != null) navState.initialPageYOffset = state.initialPageYOffset;
+      openTab(`/papers/${paper.shortId}/reader`, navState);
+    }
+  }, [paper, loading, location.state, openTab]);
 
   // Load citation counts
   useEffect(() => {
@@ -776,16 +798,26 @@ export function OverviewPage() {
 
   const handleDeletePaper = useCallback(async () => {
     if (!paper) return;
-    if (!confirm(`Delete "${paper.title}"? This action cannot be undone.`)) return;
     setDeleting(true);
     try {
       await ipc.deletePaper(paper.id);
       navigate('/papers');
     } catch {
-      alert('Failed to delete paper');
+      toast.error(t('papers.deleteFailed'));
       setDeleting(false);
+      setShowDeleteConfirm(false);
     }
-  }, [paper, navigate]);
+  }, [paper, navigate, toast, t]);
+
+  // ESC to close delete confirmation modal
+  useEffect(() => {
+    if (!showDeleteConfirm) return;
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowDeleteConfirm(false);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [showDeleteConfirm]);
 
   // Auto-detect repo on mount
   useEffect(() => {
@@ -917,12 +949,12 @@ export function OverviewPage() {
               BibTeX
             </button>
             <button
-              onClick={handleDeletePaper}
+              onClick={() => setShowDeleteConfirm(true)}
               disabled={deleting}
               className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 shadow-sm transition-all hover:bg-red-50 disabled:opacity-40"
             >
               {deleting ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-              Delete
+              {t('common.delete')}
             </button>
           </div>
 
@@ -956,17 +988,16 @@ export function OverviewPage() {
             </div>
           )}
 
-          {/* Abstract */}
-          {paper.abstract && (
-            <div className="rounded-xl border border-notion-border p-5">
-              <h2 className="text-sm font-semibold text-notion-text-secondary uppercase tracking-wider mb-3">
-                Abstract
-              </h2>
-              <p className="text-sm text-notion-text leading-relaxed whitespace-pre-wrap">
-                {paper.abstract}
-              </p>
-            </div>
-          )}
+          {/* Abstract / AI Summary */}
+          <AbstractSection
+            abstract={paper.abstract || ''}
+            paperId={paper.id}
+            shortId={paper.shortId}
+            title={paper.title}
+            pdfUrl={paper.pdfUrl}
+            pdfPath={paper.pdfPath}
+            onUpdate={(newAbstract) => setPaper((p) => (p ? { ...p, abstract: newAbstract } : p))}
+          />
 
           {/* Chat History */}
           <div>
@@ -1136,6 +1167,404 @@ export function OverviewPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      <AnimatePresence>
+        {showDeleteConfirm && paper && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={() => setShowDeleteConfirm(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowDeleteConfirm(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="mx-4 max-w-sm rounded-xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-notion-text">
+                {t('papers.deleteConfirmTitle')}
+              </h3>
+              <p className="mt-2 text-sm font-medium text-notion-text">
+                {cleanArxivTitle(paper.title)}
+              </p>
+              <p className="mt-2 text-sm text-notion-text-secondary">
+                {t('papers.deleteConfirmMessage')}
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleDeletePaper}
+                  disabled={deleting}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting && <Loader2 size={14} className="animate-spin" />}
+                  {t('common.delete')}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/**
+ * Parse abstract to detect AlphaXiv summary
+ * Returns { alphaXivSummary, originalAbstract } or null if no AlphaXiv content
+ */
+function parseAlphaXivAbstract(abstract: string): {
+  alphaXivSummary: string;
+  originalAbstract: string;
+} | null {
+  const marker = '**AI-Generated Summary (AlphaXiv):**';
+  const divider = '\n\n---\n\n**Original Abstract:**';
+
+  if (!abstract.includes(marker)) {
+    return null;
+  }
+
+  const startIndex = abstract.indexOf(marker) + marker.length;
+  const dividerIndex = abstract.indexOf(divider);
+
+  if (dividerIndex === -1) {
+    return null;
+  }
+
+  const alphaXivSummary = abstract.slice(startIndex, dividerIndex).trim();
+  const originalAbstract = abstract.slice(dividerIndex + divider.length).trim();
+
+  return { alphaXivSummary, originalAbstract };
+}
+
+/**
+ * Abstract section with tabs for AlphaXiv summary vs original abstract.
+ * Supports generating AI summary for ANY paper (not just arXiv) when no AlphaXiv data exists.
+ */
+function AbstractSection({
+  abstract,
+  paperId,
+  shortId,
+  title,
+  pdfUrl,
+  pdfPath,
+  onUpdate,
+}: {
+  abstract: string;
+  paperId: string;
+  shortId: string;
+  title: string;
+  pdfUrl?: string;
+  pdfPath?: string;
+  onUpdate: (newAbstract: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [activeTab, setActiveTab] = useState<'alphaxiv' | 'abstract'>('abstract');
+  const [fetching, setFetching] = useState(false);
+  const [localAiSummary, setLocalAiSummary] = useState<string | null>(null);
+  const [streamingContent, setStreamingContent] = useState<string>('');
+  const [generating, setGenerating] = useState(false);
+  const [genPhase, setGenPhase] = useState<string>('');
+  const parsed = parseAlphaXivAbstract(abstract);
+
+  // Ref-based chunk buffer: accumulate chunks without triggering renders,
+  // then flush to state once per animation frame for smooth streaming.
+  const chunkBufferRef = useRef<string>('');
+  const rafRef = useRef<number>(0);
+
+  // Check if shortId looks like an arXiv ID
+  const isArxivPaper = /^\d{4}\.\d{4,5}/.test(shortId);
+
+  // Reset state when paper changes
+  useEffect(() => {
+    setLocalAiSummary(null);
+    setStreamingContent('');
+    chunkBufferRef.current = '';
+    setActiveTab('abstract');
+    setGenerating(false);
+    setGenPhase('');
+  }, [paperId]);
+
+  // Listen for streaming events via MessagePort (bypasses Electron IPC batching)
+  // Phase, Done, and Error still use regular IPC (they're one-shot events, not affected by batching)
+  useEffect(() => {
+    // MessagePort-based chunk streaming — chunks arrive individually, not batched
+    const unsubPort = onStreamingPort(
+      paperId,
+      (chunk: string) => {
+        // Accumulate in ref (no render), schedule RAF flush
+        chunkBufferRef.current += chunk;
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = 0;
+            const buf = chunkBufferRef.current;
+            setStreamingContent(buf);
+          });
+        }
+      },
+      () => {
+        // onDone from port — no action needed, we rely on IPC done event for final summary
+      },
+      (error: string) => {
+        console.error('AI summary streaming port error:', error);
+      },
+    );
+
+    // Fallback: also listen for IPC-based chunks in case MessagePort isn't available
+    const unsubChunk = onIpc('papers:aiSummaryChunk', (...args: unknown[]) => {
+      const data = args[1] as { paperId: string; chunk: string };
+      if (data?.paperId === paperId) {
+        chunkBufferRef.current += data.chunk;
+        if (!rafRef.current) {
+          rafRef.current = requestAnimationFrame(() => {
+            rafRef.current = 0;
+            const buf = chunkBufferRef.current;
+            setStreamingContent(buf);
+          });
+        }
+      }
+    });
+    const unsubPhase = onIpc('papers:aiSummaryPhase', (...args: unknown[]) => {
+      const data = args[1] as { paperId: string; phase: string };
+      if (data?.paperId === paperId) {
+        setGenPhase(data.phase);
+      }
+    });
+    const unsubDone = onIpc('papers:aiSummaryDone', (...args: unknown[]) => {
+      const data = args[1] as { paperId: string; summary: string };
+      if (data?.paperId === paperId) {
+        // Cancel any pending RAF
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = 0;
+        }
+        chunkBufferRef.current = '';
+        setLocalAiSummary(data.summary);
+        setStreamingContent('');
+        setGenerating(false);
+      }
+    });
+    const unsubError = onIpc('papers:aiSummaryError', (...args: unknown[]) => {
+      const data = args[1] as { paperId: string; error: string };
+      if (data?.paperId === paperId) {
+        if (rafRef.current) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = 0;
+        }
+        chunkBufferRef.current = '';
+        console.error('AI summary generation failed:', data.error);
+        setGenerating(false);
+      }
+    });
+    return () => {
+      unsubPort();
+      unsubChunk();
+      unsubPhase();
+      unsubDone();
+      unsubError();
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [paperId]);
+
+  // On mount: try AlphaXiv for arXiv papers, then check local cache for all papers
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSummary() {
+      // 1. For arXiv papers without embedded summary, try AlphaXiv first
+      if (isArxivPaper && !parsed) {
+        setFetching(true);
+        try {
+          const newAbstract = await ipc.fetchAlphaXiv(paperId, shortId);
+          if (!cancelled && newAbstract) {
+            onUpdate(newAbstract);
+            setFetching(false);
+            return;
+          }
+        } catch {
+          // AlphaXiv failed, continue to local cache
+        }
+        if (!cancelled) setFetching(false);
+      }
+
+      // 2. Check for locally generated AI summary (any paper type)
+      if (!parsed) {
+        try {
+          const cached = await ipc.getAiSummary(shortId);
+          if (!cancelled && cached) {
+            setLocalAiSummary(cached);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    loadSummary();
+    return () => {
+      cancelled = true;
+    };
+  }, [paperId, shortId]);
+
+  const handleGenerate = useCallback(() => {
+    setGenerating(true);
+    setStreamingContent('');
+    chunkBufferRef.current = '';
+    setGenPhase('');
+    setActiveTab('alphaxiv');
+    // Pure event-based: send triggers generation, results arrive via on() listeners
+    ipc.startAiSummary({
+      paperId,
+      shortId,
+      title,
+      abstract,
+      pdfUrl,
+      pdfPath,
+      language: i18n.language as 'en' | 'zh',
+    });
+  }, [paperId, shortId, title, abstract, pdfUrl, pdfPath]);
+
+  const handleRegenerate = useCallback(async () => {
+    // Delete cached file, but keep localAiSummary visible until streaming replaces it
+    try {
+      await ipc.deleteAiSummary(shortId);
+    } catch {
+      // ignore
+    }
+    handleGenerate();
+  }, [shortId, handleGenerate]);
+
+  const hasSummary = parsed || localAiSummary || generating;
+  const isStreaming = generating && streamingContent.length > 0;
+
+  // Show generate button in header when appropriate
+  const generateButton =
+    !fetching && !parsed ? (
+      <button
+        onClick={hasSummary ? handleRegenerate : handleGenerate}
+        disabled={generating}
+        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium text-purple-600 hover:bg-purple-50 transition-colors disabled:opacity-50"
+      >
+        {generating ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : hasSummary ? (
+          <RefreshCw size={12} />
+        ) : (
+          <Wand2 size={12} />
+        )}
+        {generating
+          ? t('paper.aiSummaryGenerating')
+          : hasSummary
+            ? t('paper.regenerateAiSummary')
+            : t('paper.generateAiSummary')}
+      </button>
+    ) : null;
+
+  // No summary and not streaming — show abstract with generate button
+  if (!hasSummary && !isStreaming) {
+    return (
+      <div className="rounded-xl border border-notion-border p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold text-notion-text-secondary uppercase tracking-wider">
+            Abstract
+          </h2>
+          <div className="flex items-center gap-2">
+            {fetching && (
+              <div className="flex items-center gap-1.5 text-purple-500 text-xs">
+                <Loader2 size={12} className="animate-spin" />
+                {t('paper.alphaXivLoading')}
+              </div>
+            )}
+            {generateButton}
+          </div>
+        </div>
+        {abstract ? (
+          <div className="text-sm text-notion-text leading-relaxed">
+            <MarkdownContent content={abstract} />
+          </div>
+        ) : (
+          <p className="text-sm text-notion-text-tertiary italic">{t('paper.noAbstract')}</p>
+        )}
+      </div>
+    );
+  }
+
+  const summaryContent = generating
+    ? streamingContent
+    : parsed?.alphaXivSummary || localAiSummary || '';
+  const originalAbstract = parsed?.originalAbstract || abstract;
+  const summaryLabel = parsed ? 'AI Summary (AlphaXiv)' : t('paper.aiSummaryLocal');
+
+  return (
+    <div className="rounded-xl border border-notion-border p-5">
+      {/* Tab Header */}
+      <div className="flex items-center gap-1 mb-3">
+        <button
+          onClick={() => setActiveTab('abstract')}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            activeTab === 'abstract'
+              ? 'bg-notion-accent-light text-notion-accent'
+              : 'text-notion-text-secondary hover:bg-notion-sidebar'
+          }`}
+        >
+          Abstract
+        </button>
+        <button
+          onClick={() => setActiveTab('alphaxiv')}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+            activeTab === 'alphaxiv'
+              ? 'bg-purple-100 text-purple-700'
+              : 'text-notion-text-secondary hover:bg-notion-sidebar'
+          }`}
+        >
+          {summaryLabel}
+          {generating && <Loader2 size={10} className="ml-1 inline animate-spin" />}
+        </button>
+        <div className="ml-auto">{generateButton}</div>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'alphaxiv' ? (
+        <div className="max-h-[400px] overflow-y-auto rounded-lg border border-purple-100 bg-purple-50/30 p-4">
+          {generating && !streamingContent ? (
+            <div className="flex items-center gap-2 text-sm text-purple-500">
+              <Loader2 size={14} className="animate-spin" />
+              {genPhase === 'extracting'
+                ? t('paper.aiSummaryExtracting')
+                : genPhase === 'generating'
+                  ? t('paper.aiSummaryWaitingLLM')
+                  : t('paper.aiSummaryGenerating')}
+            </div>
+          ) : (
+            <MarkdownContent content={summaryContent} />
+          )}
+          {isStreaming && (
+            <span className="inline-block w-2 h-4 bg-purple-400 animate-pulse ml-0.5" />
+          )}
+        </div>
+      ) : (
+        <div>
+          {originalAbstract ? (
+            <MarkdownContent content={originalAbstract} />
+          ) : (
+            <p className="text-sm text-notion-text-tertiary italic">{t('paper.noAbstract')}</p>
+          )}
         </div>
       )}
     </div>

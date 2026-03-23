@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { ipc, type PaperItem } from '../hooks/use-ipc';
 import { ImportModal } from './import-modal';
 import { LoadingSpinner } from './loading-spinner';
-import { FileText, Loader2, Trash2, Download } from 'lucide-react';
+import { FileText, Loader2, Trash2, Download, BookOpen, Clock } from 'lucide-react';
 import { getTagStyle } from '@shared';
 
 const EXCLUDED_TAGS = [
@@ -54,16 +54,28 @@ const cardVariants = {
 
 export function DashboardContent() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [todayPapers, setTodayPapers] = useState<PaperItem[]>([]);
+  const [recentlyRead, setRecentlyRead] = useState<PaperItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
   const fetchTodayPapers = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await ipc.listTodayPapers();
+      const [data, allPapers] = await Promise.all([
+        ipc.listTodayPapers(),
+        ipc.listPapers({ importedWithin: 'all' }),
+      ]);
       setTodayPapers(data);
+      // Get recently read papers (have lastReadAt and reading progress)
+      const read = allPapers
+        .filter((p) => p.lastReadAt && p.lastReadPage && p.totalPages)
+        .sort((a, b) => new Date(b.lastReadAt!).getTime() - new Date(a.lastReadAt!).getTime())
+        .slice(0, 5);
+      setRecentlyRead(read);
     } catch {
       // silent
     } finally {
@@ -71,21 +83,23 @@ export function DashboardContent() {
     }
   }, []);
 
-  const handleDelete = useCallback(
-    async (paperId: string, title: string) => {
-      if (!confirm(t('dashboardContent.deleteConfirm', { title }))) return;
-      setDeleting(paperId);
-      try {
-        await ipc.deletePaper(paperId);
-        setTodayPapers((prev) => prev.filter((p) => p.id !== paperId));
-      } catch {
-        alert(t('dashboardContent.deleteFailed'));
-      } finally {
-        setDeleting(null);
-      }
-    },
-    [t],
-  );
+  const handleDeleteRequest = useCallback((paperId: string, title: string) => {
+    setDeleteTarget({ id: paperId, title });
+  }, []);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleting(deleteTarget.id);
+    try {
+      await ipc.deletePaper(deleteTarget.id);
+      setTodayPapers((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+    } catch {
+      // silent - toast could be added later
+    } finally {
+      setDeleting(null);
+      setDeleteTarget(null);
+    }
+  }, [deleteTarget]);
 
   useEffect(() => {
     fetchTodayPapers();
@@ -139,7 +153,7 @@ export function DashboardContent() {
                       key={paper.id}
                       paper={paper}
                       deleting={deleting}
-                      onDelete={handleDelete}
+                      onDelete={handleDeleteRequest}
                     />
                   ))}
                 </AnimatePresence>
@@ -153,11 +167,13 @@ export function DashboardContent() {
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -10 }}
-                className="rounded-xl border border-notion-border bg-white py-20 text-center shadow-notion"
+                className="rounded-xl border border-notion-border bg-white p-6 text-center shadow-notion"
               >
-                <p className="text-base text-notion-text-secondary">No new papers today</p>
+                <p className="text-base text-notion-text-secondary">
+                  {t('dashboardContent.noNewPapers', 'No new papers today')}
+                </p>
                 <p className="mt-1 text-sm text-notion-text-tertiary">
-                  Import papers to get started
+                  {t('dashboardContent.importHint', 'Import papers to get started')}
                 </p>
                 <div className="mt-4 flex items-center justify-center gap-2">
                   <button
@@ -165,24 +181,127 @@ export function DashboardContent() {
                     className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500 px-3 py-1.5 text-xs font-medium text-white no-underline hover:bg-blue-600"
                   >
                     <Download size={12} />
-                    Import Papers
+                    {t('dashboardContent.importPapers', 'Import Papers')}
                   </button>
                   <Link
                     to="/papers"
                     className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border px-3 py-1.5 text-xs font-medium text-notion-text-secondary no-underline hover:bg-notion-sidebar"
                   >
-                    Go to Library
+                    {t('dashboardContent.goToLibrary', 'Go to Library')}
                   </Link>
                 </div>
               </motion.div>
             )}
           </AnimatePresence>
         </section>
+
+        {/* Continue Reading — show recently read papers with progress */}
+        {!loading && recentlyRead.length > 0 && (
+          <section>
+            <div className="mb-4 flex items-center gap-2">
+              <BookOpen size={18} className="text-green-500" />
+              <h2 className="text-lg font-semibold text-notion-text">
+                {t('dashboardContent.continueReading', 'Continue Reading')}
+              </h2>
+            </div>
+            <div className="flex flex-col gap-2">
+              {recentlyRead.map((paper) => {
+                const progress = Math.round(
+                  ((paper.lastReadPage ?? 0) / (paper.totalPages ?? 1)) * 100,
+                );
+                return (
+                  <button
+                    key={paper.id}
+                    onClick={() =>
+                      navigate(`/papers/${paper.shortId}/reader`, {
+                        state: { from: '/dashboard' },
+                      })
+                    }
+                    className="group flex items-center gap-3 rounded-lg border border-notion-border bg-white px-4 py-3 text-left transition-colors hover:bg-notion-accent-light hover:border-notion-accent/30"
+                  >
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-50">
+                      <BookOpen size={14} className="text-green-500" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-notion-text">{paper.title}</p>
+                      <div className="mt-1 flex items-center gap-2">
+                        <div className="h-1.5 w-24 overflow-hidden rounded-full bg-notion-sidebar">
+                          <div
+                            className="h-full rounded-full bg-green-400 transition-all"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] text-notion-text-tertiary">
+                          {progress}% · {t('dashboardContent.page', 'p.')}
+                          {paper.lastReadPage}/{paper.totalPages}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-[10px] text-notion-text-tertiary">
+                      <Clock size={10} />
+                      {paper.lastReadAt ? new Date(paper.lastReadAt).toLocaleDateString() : ''}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
       </div>
 
       {showImportModal && (
         <ImportModal onClose={() => setShowImportModal(false)} onImported={fetchTodayPapers} />
       )}
+
+      {/* Delete confirmation modal */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={() => setDeleteTarget(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setDeleteTarget(null);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="mx-4 max-w-sm rounded-xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-notion-text">
+                {t('papers.deleteConfirmTitle')}
+              </h3>
+              <p className="mt-2 text-sm font-medium text-notion-text">{deleteTarget.title}</p>
+              <p className="mt-2 text-sm text-notion-text-secondary">
+                {t('papers.deleteConfirmMessage')}
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  disabled={deleting === deleteTarget.id}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting === deleteTarget.id && <Loader2 size={14} className="animate-spin" />}
+                  {t('common.delete')}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

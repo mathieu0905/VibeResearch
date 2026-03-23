@@ -9,8 +9,20 @@ import {
   type AgenticSearchStep,
   type AgenticSearchPaper,
   type SemanticSearchPaper,
+  type SearchResultItem,
 } from '../hooks/use-ipc';
-import { FileText, Search, Loader2, Trash2, X, Sparkles, RotateCcw } from 'lucide-react';
+import {
+  FileText,
+  Search,
+  Loader2,
+  Trash2,
+  X,
+  Sparkles,
+  RotateCcw,
+  Globe,
+  Download,
+  Check,
+} from 'lucide-react';
 import {
   cleanArxivTitle,
   filterNormalSearchResults,
@@ -18,6 +30,33 @@ import {
   tokenizeSearchQuery,
 } from '@shared';
 import { useTranslation } from 'react-i18next';
+
+// Module-level cache to persist search state across unmount/remount
+const searchCache: {
+  query: string;
+  searchMode: SearchMode;
+  resultTab: ResultTab;
+  hasSearched: boolean;
+  semanticPapers: SemanticSearchPaper[];
+  semanticFallbackReason: string | null;
+  papers: PaperItem[];
+  agenticPapers: AgenticSearchPaper[];
+  agenticSteps: AgenticSearchStep[];
+  onlineResults: SearchResultItem[];
+  importedIds: Set<string>;
+} = {
+  query: '',
+  searchMode: 'search',
+  resultTab: 'library',
+  hasSearched: false,
+  semanticPapers: [],
+  semanticFallbackReason: null,
+  papers: [],
+  agenticPapers: [],
+  agenticSteps: [],
+  onlineResults: [],
+  importedIds: new Set(),
+};
 
 const EXCLUDED_TAGS = [
   'arxiv',
@@ -89,6 +128,7 @@ const searchBoxVariants = {
 };
 
 type SearchMode = 'search' | 'agentic';
+type ResultTab = 'library' | 'online';
 
 // Fuse.js fallback config for title/tag typo tolerance when exact token matching finds nothing
 const FUSE_OPTIONS: IFuseOptions<PaperItem> = {
@@ -202,19 +242,34 @@ function markPaperQueuedStatus<T extends { id: string; processingStatus?: string
 export function SearchContent() {
   const { t } = useTranslation();
   const [allPapers, setAllPapers] = useState<PaperItem[]>([]);
-  const [papers, setPapers] = useState<PaperItem[]>([]);
-  const [agenticPapers, setAgenticPapers] = useState<AgenticSearchPaper[]>([]);
-  const [semanticPapers, setSemanticPapers] = useState<SemanticSearchPaper[]>([]);
-  const [query, setQuery] = useState('');
+  const [papers, setPapers] = useState<PaperItem[]>(searchCache.papers);
+  const [agenticPapers, setAgenticPapers] = useState<AgenticSearchPaper[]>(
+    searchCache.agenticPapers,
+  );
+  const [semanticPapers, setSemanticPapers] = useState<SemanticSearchPaper[]>(
+    searchCache.semanticPapers,
+  );
+  const [query, setQuery] = useState(searchCache.query);
   const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [hasSearched, setHasSearched] = useState(searchCache.hasSearched);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
   const [retryingPaperId, setRetryingPaperId] = useState<string | null>(null);
-  const [searchMode, setSearchMode] = useState<SearchMode>('search');
-  const [agenticSteps, setAgenticSteps] = useState<AgenticSearchStep[]>([]);
+  const [searchMode, setSearchMode] = useState<SearchMode>(searchCache.searchMode);
+  const [agenticSteps, setAgenticSteps] = useState<AgenticSearchStep[]>(searchCache.agenticSteps);
   const [agenticError, setAgenticError] = useState<string | null>(null);
   const [agenticModelMissing, setAgenticModelMissing] = useState(false);
-  const [semanticFallbackReason, setSemanticFallbackReason] = useState<string | null>(null);
+  const [agenticFallbackMessage, setAgenticFallbackMessage] = useState<string | null>(null);
+  const [semanticFallbackReason, setSemanticFallbackReason] = useState<string | null>(
+    searchCache.semanticFallbackReason,
+  );
+  const [onlineResults, setOnlineResults] = useState<SearchResultItem[]>(searchCache.onlineResults);
+  const [onlineLoading, setOnlineLoading] = useState(false);
+  const [importingIds, setImportingIds] = useState<Set<string>>(new Set());
+  const [importedIds, setImportedIds] = useState<Set<string>>(searchCache.importedIds);
+  const [importErrors, setImportErrors] = useState<Map<string, string>>(new Map());
+  const [resultTab, setResultTab] = useState<ResultTab>(searchCache.resultTab);
+  const agenticAbortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fuseRef = useRef<Fuse<PaperItem> | null>(null);
   const navigate = useNavigate();
@@ -225,6 +280,21 @@ export function SearchContent() {
     fuseRef.current = new Fuse(data, FUSE_OPTIONS);
     return data;
   }, []);
+
+  // Sync state to module-level cache for persistence across navigation
+  useEffect(() => {
+    searchCache.query = query;
+    searchCache.searchMode = searchMode;
+    searchCache.resultTab = resultTab;
+    searchCache.hasSearched = hasSearched;
+    searchCache.semanticPapers = semanticPapers;
+    searchCache.semanticFallbackReason = semanticFallbackReason;
+    searchCache.papers = papers;
+    searchCache.agenticPapers = agenticPapers;
+    searchCache.agenticSteps = agenticSteps;
+    searchCache.onlineResults = onlineResults;
+    searchCache.importedIds = importedIds;
+  });
 
   // Load all papers once on mount for fuzzy search
   useEffect(() => {
@@ -270,43 +340,82 @@ export function SearchContent() {
     [allPapers],
   );
 
-  const doAgenticSearch = useCallback(async (q: string) => {
-    if (!q.trim()) {
-      setHasSearched(false);
-      setAgenticPapers([]);
+  const doAgenticSearch = useCallback(
+    async (q: string) => {
+      if (!q.trim()) {
+        setHasSearched(false);
+        setAgenticPapers([]);
+        setAgenticSteps([]);
+        setAgenticError(null);
+        setAgenticFallbackMessage(null);
+        return;
+      }
+      setLoading(true);
+      setHasSearched(true);
       setAgenticSteps([]);
+      setAgenticPapers([]);
       setAgenticError(null);
-      return;
-    }
-    setLoading(true);
-    setHasSearched(true);
-    setAgenticSteps([]);
-    setAgenticPapers([]);
-    setAgenticError(null);
+      setAgenticFallbackMessage(null);
 
-    // Listen for streaming step events from main process
-    const unsubscribe = onIpc('papers:agenticSearch:step', (...args: unknown[]) => {
-      const step = args[1] as AgenticSearchStep; // args[0] is IpcRendererEvent
-      setAgenticSteps((prev) => [...prev, step]);
-      if (step.type === 'done') {
+      // Create an AbortController so the user can cancel
+      const abortController = new AbortController();
+      agenticAbortRef.current = abortController;
+
+      // Listen for streaming step events from main process
+      const unsubscribe = onIpc('papers:agenticSearch:step', (...args: unknown[]) => {
+        const step = args[1] as AgenticSearchStep; // args[0] is IpcRendererEvent
+        setAgenticSteps((prev) => [...prev, step]);
+        if (step.type === 'done') {
+          setLoading(false);
+        }
+      });
+
+      const TIMEOUT_MS = 60_000;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const timer = setTimeout(() => reject(new Error('AGENTIC_TIMEOUT')), TIMEOUT_MS);
+        abortController.signal.addEventListener('abort', () => clearTimeout(timer));
+      });
+
+      try {
+        const result = await Promise.race([ipc.agenticSearch(q.trim()), timeoutPromise]);
+        if (abortController.signal.aborted) return;
+        setAgenticPapers(result.papers);
+        // Ensure steps are set from final result (in case events were missed)
+        if (result.steps.length > 0) {
+          setAgenticSteps(result.steps);
+        }
+      } catch (error) {
+        if (abortController.signal.aborted) return;
+        console.error('Agentic search failed:', error);
+        const isTimeout = error instanceof Error && error.message === 'AGENTIC_TIMEOUT';
+        const fallbackKey = isTimeout ? 'search.agenticTimeout' : 'search.agenticFailed';
+        setAgenticFallbackMessage(fallbackKey);
+        // Fallback to normal text search with same query
+        setSearchMode('search');
+        doNormalSearch(q);
+      } finally {
+        unsubscribe();
+        agenticAbortRef.current = null;
         setLoading(false);
       }
-    });
+    },
+    [doNormalSearch],
+  );
 
+  const doOnlineSearch = useCallback(async (q: string) => {
+    if (!q.trim()) {
+      setOnlineResults([]);
+      return;
+    }
+    setOnlineLoading(true);
+    setOnlineResults([]);
     try {
-      const result = await ipc.agenticSearch(q.trim());
-      setAgenticPapers(result.papers);
-      // Ensure steps are set from final result (in case events were missed)
-      if (result.steps.length > 0) {
-        setAgenticSteps(result.steps);
-      }
+      const response = await ipc.searchPapers(q.trim(), 10);
+      setOnlineResults(response.results);
     } catch (error) {
-      console.error('Agentic search failed:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      setAgenticError(errorMsg);
+      console.error('Online search failed:', error);
     } finally {
-      unsubscribe();
-      setLoading(false);
+      setOnlineLoading(false);
     }
   }, []);
 
@@ -317,6 +426,7 @@ export function SearchContent() {
         setSemanticPapers([]);
         setSemanticFallbackReason(null);
         setPapers([]);
+        setOnlineResults([]);
         return;
       }
 
@@ -324,6 +434,9 @@ export function SearchContent() {
       setHasSearched(true);
       setSemanticPapers([]);
       setSemanticFallbackReason(null);
+
+      // Fire online search in parallel
+      void doOnlineSearch(q);
 
       try {
         const result = await ipc.semanticSearch(q.trim(), 18);
@@ -348,7 +461,7 @@ export function SearchContent() {
         setLoading(false);
       }
     },
-    [doNormalSearch],
+    [doNormalSearch, doOnlineSearch],
   );
 
   const doSearch = useCallback(
@@ -381,25 +494,30 @@ export function SearchContent() {
     [reloadPapers],
   );
 
-  const handleDelete = useCallback(async (paperId: string, title: string) => {
-    if (!confirm(`Delete "${title}"? This action cannot be undone.`)) return;
-    setDeleting(paperId);
+  const handleDeleteRequest = useCallback((paperId: string, title: string) => {
+    setDeleteTarget({ id: paperId, title });
+  }, []);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return;
+    setDeleting(deleteTarget.id);
     try {
-      await ipc.deletePaper(paperId);
+      await ipc.deletePaper(deleteTarget.id);
       setAllPapers((prev) => {
-        const next = prev.filter((p) => p.id !== paperId);
+        const next = prev.filter((p) => p.id !== deleteTarget.id);
         fuseRef.current = new Fuse(next, FUSE_OPTIONS);
         return next;
       });
-      setPapers((prev) => prev.filter((p) => p.id !== paperId));
-      setAgenticPapers((prev) => prev.filter((p) => p.id !== paperId));
-      setSemanticPapers((prev) => prev.filter((p) => p.id !== paperId));
+      setPapers((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+      setAgenticPapers((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+      setSemanticPapers((prev) => prev.filter((p) => p.id !== deleteTarget.id));
     } catch {
-      alert('Failed to delete paper');
+      // silent
     } finally {
       setDeleting(null);
+      setDeleteTarget(null);
     }
-  }, []);
+  }, [deleteTarget]);
 
   useEffect(() => {
     setTimeout(() => inputRef.current?.focus(), 50);
@@ -415,27 +533,54 @@ export function SearchContent() {
     doSearch(query);
   };
 
+  const handleCancelAgenticSearch = useCallback(() => {
+    agenticAbortRef.current?.abort();
+    agenticAbortRef.current = null;
+    setLoading(false);
+    setAgenticSteps([]);
+    setAgenticPapers([]);
+    setAgenticError(null);
+    setAgenticFallbackMessage(null);
+    setHasSearched(false);
+    inputRef.current?.focus();
+  }, []);
+
   const handleClear = () => {
+    agenticAbortRef.current?.abort();
+    agenticAbortRef.current = null;
     setQuery('');
     setHasSearched(false);
     setPapers([]);
     setAgenticPapers([]);
     setAgenticSteps([]);
     setAgenticError(null);
+    setAgenticFallbackMessage(null);
     setSemanticPapers([]);
     setSemanticFallbackReason(null);
+    setOnlineResults([]);
+    setOnlineLoading(false);
+    setImportingIds(new Set());
+    setImportedIds(new Set());
+    setResultTab('library');
     inputRef.current?.focus();
   };
 
   const handleSearchModeChange = (mode: SearchMode) => {
+    agenticAbortRef.current?.abort();
+    agenticAbortRef.current = null;
     setSearchMode(mode);
+    setLoading(false);
     setHasSearched(false);
     setPapers([]);
     setAgenticPapers([]);
     setAgenticSteps([]);
     setAgenticError(null);
+    setAgenticFallbackMessage(null);
     setSemanticPapers([]);
     setSemanticFallbackReason(null);
+    setOnlineResults([]);
+    setOnlineLoading(false);
+    setResultTab('library');
     if (mode === 'agentic') {
       ipc
         .getActiveModel('lightweight')
@@ -446,6 +591,40 @@ export function SearchContent() {
     }
     inputRef.current?.focus();
   };
+
+  const handleImportOnlineResult = useCallback(
+    async (result: SearchResultItem) => {
+      const key = result.paperId;
+      if (importingIds.has(key) || importedIds.has(key)) return;
+
+      setImportingIds((prev) => new Set(prev).add(key));
+      setImportErrors((prev) => {
+        const next = new Map(prev);
+        next.delete(key);
+        return next;
+      });
+      try {
+        // Prefer DOI, then arXiv ID, then title
+        const input =
+          result.externalIds?.DOI ??
+          (result.externalIds?.ArXiv ? result.externalIds.ArXiv : result.title);
+        await ipc.downloadPaper(input, [], false);
+        setImportedIds((prev) => new Set(prev).add(key));
+        void reloadPapers();
+      } catch (error) {
+        console.error('Import failed:', error);
+        const msg = error instanceof Error ? error.message : 'Import failed';
+        setImportErrors((prev) => new Map(prev).set(key, msg));
+      } finally {
+        setImportingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
+    },
+    [importingIds, importedIds, reloadPapers],
+  );
 
   const semanticUsingFallback = searchMode === 'search' && !!semanticFallbackReason;
   const displayPapers =
@@ -473,9 +652,7 @@ export function SearchContent() {
                   searchMode === 'agentic' ? 'text-blue-600' : 'text-notion-text'
                 }`}
               >
-                {searchMode === 'agentic'
-                  ? 'What are you curious about?'
-                  : 'What are you reading today?'}
+                {searchMode === 'agentic' ? t('search.heroCurious') : t('search.heroReading')}
               </motion.p>
             )}
           </AnimatePresence>
@@ -653,6 +830,27 @@ export function SearchContent() {
             )}
           </AnimatePresence>
 
+          {/* Agentic search fallback message (shown after timeout/failure triggers text search) */}
+          <AnimatePresence>
+            {agenticFallbackMessage && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="mt-3 rounded-xl border border-amber-100 bg-amber-50 p-4"
+              >
+                <div className="flex items-start gap-2">
+                  <span className="text-amber-500">&#x26A0;&#xFE0F;</span>
+                  <div>
+                    <p className="text-sm font-medium text-amber-700">
+                      {t(agenticFallbackMessage)}
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           <AnimatePresence>
             {searchMode === 'search' && semanticFallbackReason && (
               <motion.div
@@ -747,7 +945,7 @@ export function SearchContent() {
                       </div>
                     </motion.div>
                   ))}
-                  {/* Pulsing indicator when waiting for next step */}
+                  {/* Pulsing indicator + cancel button when waiting for next step */}
                   {loading && (
                     <motion.div
                       initial={{ opacity: 0 }}
@@ -755,7 +953,13 @@ export function SearchContent() {
                       className="flex items-center gap-2 text-sm text-blue-500"
                     >
                       <Loader2 size={13} className="animate-spin flex-shrink-0" />
-                      <span className="text-xs">AI is thinking...</span>
+                      <span className="text-xs">{t('search.agenticSearching')}</span>
+                      <button
+                        onClick={handleCancelAgenticSearch}
+                        className="ml-auto rounded-lg border border-blue-200 bg-white px-2.5 py-0.5 text-xs font-medium text-blue-600 transition-colors hover:bg-blue-50"
+                      >
+                        {t('search.cancelSearch')}
+                      </button>
                     </motion.div>
                   )}
                 </div>
@@ -777,77 +981,246 @@ export function SearchContent() {
             className="flex-1 overflow-y-auto px-6 pb-8"
           >
             <div className="mx-auto max-w-5xl">
-              {displayPapers.length > 0 ? (
+              {/* Result tabs (Library / Online) — only in search mode */}
+              {searchMode === 'search' && (
+                <div className="mb-4 flex items-center gap-1 border-b border-notion-border">
+                  <button
+                    onClick={() => setResultTab('library')}
+                    className={`relative px-3 py-2 text-sm font-medium transition-colors ${
+                      resultTab === 'library'
+                        ? 'text-notion-text'
+                        : 'text-notion-text-tertiary hover:text-notion-text-secondary'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <FileText size={14} />
+                      {t('search.libraryResults')}
+                      {displayPapers.length > 0 && (
+                        <span className="ml-0.5 rounded-full bg-notion-sidebar px-1.5 py-0.5 text-xs">
+                          {displayPapers.length}
+                        </span>
+                      )}
+                    </span>
+                    {resultTab === 'library' && (
+                      <motion.div
+                        layoutId="resultTabIndicator"
+                        className="absolute bottom-0 left-0 right-0 h-0.5 bg-notion-text"
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setResultTab('online')}
+                    className={`relative px-3 py-2 text-sm font-medium transition-colors ${
+                      resultTab === 'online'
+                        ? 'text-notion-accent'
+                        : 'text-notion-text-tertiary hover:text-notion-text-secondary'
+                    }`}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Globe size={14} />
+                      {t('search.onlineResults')}
+                      {onlineLoading ? (
+                        <Loader2 size={12} className="animate-spin text-notion-accent" />
+                      ) : (
+                        onlineResults.length > 0 && (
+                          <span className="ml-0.5 rounded-full bg-notion-sidebar px-1.5 py-0.5 text-xs">
+                            {onlineResults.length}
+                          </span>
+                        )
+                      )}
+                    </span>
+                    {resultTab === 'online' && (
+                      <motion.div
+                        layoutId="resultTabIndicator"
+                        className="absolute bottom-0 left-0 right-0 h-0.5 bg-notion-accent"
+                        transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                      />
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {/* Agentic mode header */}
+              {searchMode === 'agentic' && displayPapers.length > 0 && (
+                <motion.p
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="mb-4 text-sm text-notion-text-tertiary"
+                >
+                  Found {displayPapers.length} paper
+                  {displayPapers.length !== 1 ? 's' : ''} (AI-curated)
+                </motion.p>
+              )}
+
+              {/* Library tab content (or agentic results) */}
+              {(searchMode === 'agentic' || resultTab === 'library') && (
                 <>
-                  <motion.p
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mb-4 text-sm text-notion-text-tertiary"
-                  >
-                    Found {displayPapers.length} paper{displayPapers.length !== 1 ? 's' : ''}
-                    {searchMode === 'agentic' && ' (AI-curated)'}
-                  </motion.p>
-                  <motion.div
-                    className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-                    variants={containerVariants}
-                    initial="hidden"
-                    animate="visible"
-                  >
-                    <AnimatePresence mode="popLayout">
-                      {searchMode === 'agentic'
-                        ? agenticPapers.map((paper) => (
-                            <AgenticPaperCard
-                              key={paper.id}
-                              paper={paper}
-                              deleting={deleting}
-                              retryingPaperId={retryingPaperId}
-                              onDelete={handleDelete}
-                              onRetry={handleRetryProcessing}
-                            />
-                          ))
-                        : !semanticUsingFallback
-                          ? semanticPapers.map((paper) => (
-                              <SemanticPaperCard
+                  {displayPapers.length > 0 ? (
+                    <motion.div
+                      key="library-grid"
+                      className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="visible"
+                    >
+                      <AnimatePresence mode="popLayout">
+                        {searchMode === 'agentic'
+                          ? agenticPapers.map((paper) => (
+                              <AgenticPaperCard
                                 key={paper.id}
                                 paper={paper}
                                 deleting={deleting}
                                 retryingPaperId={retryingPaperId}
-                                onDelete={handleDelete}
+                                onDelete={handleDeleteRequest}
                                 onRetry={handleRetryProcessing}
                               />
                             ))
-                          : papers.map((paper) => (
-                              <PaperCard
-                                key={paper.id}
-                                paper={paper}
-                                deleting={deleting}
-                                retryingPaperId={retryingPaperId}
-                                onDelete={handleDelete}
-                                onRetry={handleRetryProcessing}
-                              />
-                            ))}
-                    </AnimatePresence>
-                  </motion.div>
+                          : !semanticUsingFallback
+                            ? semanticPapers.map((paper) => (
+                                <SemanticPaperCard
+                                  key={paper.id}
+                                  paper={paper}
+                                  deleting={deleting}
+                                  retryingPaperId={retryingPaperId}
+                                  onDelete={handleDeleteRequest}
+                                  onRetry={handleRetryProcessing}
+                                />
+                              ))
+                            : papers.map((paper) => (
+                                <PaperCard
+                                  key={paper.id}
+                                  paper={paper}
+                                  deleting={deleting}
+                                  retryingPaperId={retryingPaperId}
+                                  onDelete={handleDeleteRequest}
+                                  onRetry={handleRetryProcessing}
+                                />
+                              ))}
+                      </AnimatePresence>
+                    </motion.div>
+                  ) : (
+                    !loading && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="flex flex-col items-center justify-center py-16 text-center"
+                      >
+                        <p className="text-base text-notion-text-secondary">
+                          {t('searchContent.noMatch')}
+                        </p>
+                        <p className="mt-1 text-sm text-notion-text-tertiary">
+                          {searchMode === 'agentic'
+                            ? 'Try a different description'
+                            : 'Try different keywords or wait for indexing to finish'}
+                        </p>
+                      </motion.div>
+                    )
+                  )}
                 </>
-              ) : (
-                !loading && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-col items-center justify-center py-16 text-center"
-                  >
-                    <p className="text-base text-notion-text-secondary">
-                      {t('searchContent.noMatch')}
-                    </p>
-                    <p className="mt-1 text-sm text-notion-text-tertiary">
-                      {searchMode === 'agentic'
-                        ? 'Try a different description'
-                        : 'Try different keywords or wait for indexing to finish'}
-                    </p>
-                  </motion.div>
-                )
+              )}
+
+              {/* Online tab content */}
+              {searchMode === 'search' && resultTab === 'online' && (
+                <>
+                  {onlineLoading && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="flex items-center justify-center gap-2 py-16"
+                    >
+                      <Loader2 size={16} className="animate-spin text-notion-accent" />
+                      <span className="text-sm text-notion-text-tertiary">
+                        {t('search.onlineSearching')}
+                      </span>
+                    </motion.div>
+                  )}
+                  {!onlineLoading && onlineResults.length > 0 && (
+                    <motion.div
+                      key="online-grid"
+                      className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                      variants={containerVariants}
+                      initial="hidden"
+                      animate="visible"
+                    >
+                      {onlineResults.map((result) => (
+                        <OnlineResultCard
+                          key={result.paperId}
+                          result={result}
+                          importing={importingIds.has(result.paperId)}
+                          imported={importedIds.has(result.paperId)}
+                          error={importErrors.get(result.paperId)}
+                          onImport={handleImportOnlineResult}
+                        />
+                      ))}
+                    </motion.div>
+                  )}
+                  {!onlineLoading && onlineResults.length === 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="flex flex-col items-center justify-center py-16 text-center"
+                    >
+                      <p className="text-base text-notion-text-secondary">
+                        {t('search.onlineNoResults')}
+                      </p>
+                    </motion.div>
+                  )}
+                </>
               )}
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete confirmation modal */}
+      <AnimatePresence>
+        {deleteTarget && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={() => setDeleteTarget(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setDeleteTarget(null);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="mx-4 max-w-sm rounded-xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-notion-text">
+                {t('papers.deleteConfirmTitle')}
+              </h3>
+              <p className="mt-2 text-sm font-medium text-notion-text">
+                {cleanArxivTitle(deleteTarget.title)}
+              </p>
+              <p className="mt-2 text-sm text-notion-text-secondary">
+                {t('papers.deleteConfirmMessage')}
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setDeleteTarget(null)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleDeleteConfirm}
+                  disabled={deleting === deleteTarget.id}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting === deleteTarget.id && <Loader2 size={14} className="animate-spin" />}
+                  {t('common.delete')}
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1085,6 +1458,9 @@ function SemanticPaperCard({
         )}
       </motion.button>
 
+      {/* Relevance score badge */}
+      <RelevanceScoreBadge score={paper.finalScore} />
+
       <button onClick={handleClick} className="flex flex-col items-start gap-2 text-left">
         <motion.div
           className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50"
@@ -1132,6 +1508,27 @@ function SemanticPaperCard({
         </div>
       </button>
     </motion.div>
+  );
+}
+
+function RelevanceScoreBadge({ score }: { score: number }) {
+  const pct = Math.round(score * 100);
+  const color =
+    pct >= 80
+      ? 'bg-green-50 text-green-700 border-green-200'
+      : pct >= 60
+        ? 'bg-blue-50 text-blue-700 border-blue-200'
+        : pct >= 40
+          ? 'bg-amber-50 text-amber-700 border-amber-200'
+          : 'bg-notion-sidebar text-notion-text-tertiary border-notion-border';
+
+  return (
+    <div
+      className={`absolute right-2 top-2 z-10 rounded-md border px-1.5 py-0.5 text-xs font-semibold tabular-nums transition-opacity group-hover:opacity-0 ${color}`}
+      title={`Relevance: ${pct}%`}
+    >
+      {pct}%
+    </div>
   );
 }
 
@@ -1263,6 +1660,133 @@ function AgenticPaperCard({
             })}
         </div>
       </button>
+    </motion.div>
+  );
+}
+
+function OnlineResultCard({
+  result,
+  importing,
+  imported,
+  error,
+  onImport,
+}: {
+  result: SearchResultItem;
+  importing: boolean;
+  imported: boolean;
+  error?: string;
+  onImport: (result: SearchResultItem) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <motion.div
+      variants={cardVariants}
+      layout
+      className="group relative flex flex-col rounded-xl border border-notion-border bg-white p-4"
+      whileHover={{
+        scale: 1.02,
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.08)',
+        borderColor: 'rgba(46, 170, 220, 0.3)',
+      }}
+    >
+      {/* Import button */}
+      <div className="absolute right-2 top-2">
+        {imported ? (
+          <span className="flex items-center gap-1 rounded-lg bg-green-50 px-2 py-1 text-xs font-medium text-green-700">
+            <Check size={12} />
+            {t('search.imported')}
+          </span>
+        ) : error ? (
+          <motion.button
+            onClick={(e) => {
+              e.stopPropagation();
+              onImport(result);
+            }}
+            className="flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600 opacity-0 transition-opacity group-hover:opacity-100"
+            title={error}
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <RotateCcw size={12} />
+            Retry
+          </motion.button>
+        ) : (
+          <motion.button
+            onClick={(e) => {
+              e.stopPropagation();
+              onImport(result);
+            }}
+            disabled={importing}
+            className="flex items-center gap-1 rounded-lg bg-notion-accent px-2.5 py-1 text-xs font-medium text-white opacity-0 transition-opacity hover:opacity-100 group-hover:opacity-100 disabled:opacity-100"
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            {importing ? (
+              <>
+                <Loader2 size={12} className="animate-spin" />
+                {t('search.importing')}
+              </>
+            ) : (
+              <>
+                <Download size={12} />
+                {t('search.importToLibrary')}
+              </>
+            )}
+          </motion.button>
+        )}
+      </div>
+      {/* Error message below button */}
+      {error && (
+        <p
+          className="absolute right-2 top-9 max-w-[200px] rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600 opacity-0 transition-opacity group-hover:opacity-100"
+          title={error}
+        >
+          {error.length > 60 ? `${error.slice(0, 60)}…` : error}
+        </p>
+      )}
+
+      <div className="flex flex-col items-start gap-2 text-left">
+        <motion.div
+          className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-50"
+          whileHover={{ rotate: 5 }}
+        >
+          <Globe size={18} className="text-notion-accent" />
+        </motion.div>
+
+        <h3 className="line-clamp-2 pr-16 text-sm font-medium text-notion-text">{result.title}</h3>
+
+        {result.authors && result.authors.length > 0 && (
+          <p className="line-clamp-1 text-xs text-notion-text-secondary">
+            {result.authors.map((a) => a.name).join(', ')}
+          </p>
+        )}
+
+        {result.abstract && (
+          <p className="line-clamp-2 text-xs leading-relaxed text-notion-text-tertiary">
+            {result.abstract}
+          </p>
+        )}
+
+        <div className="flex flex-wrap gap-1.5">
+          {result.year && (
+            <span className="rounded bg-notion-sidebar px-1.5 py-0.5 text-xs text-notion-text-secondary">
+              {result.year}
+            </span>
+          )}
+          {result.citationCount > 0 && (
+            <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
+              {t('search.citations', { count: result.citationCount })}
+            </span>
+          )}
+          {result.externalIds?.ArXiv && (
+            <span className="rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-600">arXiv</span>
+          )}
+          {result.externalIds?.DOI && (
+            <span className="rounded bg-blue-50 px-1.5 py-0.5 text-xs text-blue-600">DOI</span>
+          )}
+        </div>
+      </div>
     </motion.div>
   );
 }

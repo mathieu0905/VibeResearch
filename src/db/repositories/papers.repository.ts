@@ -17,8 +17,10 @@ export interface CreatePaperParams {
   abstract?: string;
   pdfUrl?: string;
   pdfPath?: string;
+  doi?: string;
   tags: string[];
   categorizedTags?: CategorizedTag[];
+  isTemporary?: boolean;
 }
 
 export interface SemanticIndexDebugSummary {
@@ -82,6 +84,9 @@ export class PapersRepository {
         abstract: params.abstract,
         pdfUrl: params.pdfUrl,
         pdfPath: params.pdfPath,
+        doi: params.doi,
+        isTemporary: params.isTemporary ?? false,
+        temporaryImportedAt: params.isTemporary ? new Date() : null,
         tags: {
           create: tags.map((tag) => ({
             tagId: tag.id,
@@ -101,8 +106,18 @@ export class PapersRepository {
     year?: number;
     tag?: string;
     importedWithin?: 'today' | 'week' | 'month' | 'all';
+    temporary?: boolean;
   }) {
     const conditions: Record<string, unknown>[] = [];
+
+    // Filter by temporary status
+    if (query?.temporary === true) {
+      conditions.push({ isTemporary: true });
+      // Reading List only shows papers with downloaded PDFs
+      conditions.push({ pdfPath: { not: null } });
+    } else {
+      conditions.push({ isTemporary: false });
+    }
 
     if (query?.year) {
       conditions.push({
@@ -157,6 +172,173 @@ export class PapersRepository {
     return mapped;
   }
 
+  async listPaginated(query?: {
+    q?: string;
+    year?: number;
+    tag?: string;
+    importedWithin?: 'today' | 'week' | 'month' | 'all';
+    temporary?: boolean;
+    page?: number;
+    pageSize?: number;
+    sortBy?: 'lastRead' | 'importDate' | 'title';
+    readingStatus?: 'all' | 'unread' | 'reading' | 'finished';
+  }) {
+    const page = query?.page ?? 0;
+    const pageSize = query?.pageSize ?? 50;
+    const conditions: Record<string, unknown>[] = [];
+
+    // Filter by temporary status
+    if (query?.temporary === true) {
+      conditions.push({ isTemporary: true });
+      conditions.push({ pdfPath: { not: null } });
+    } else {
+      conditions.push({ isTemporary: false });
+    }
+
+    if (query?.year) {
+      conditions.push({
+        submittedAt: {
+          gte: new Date(`${query.year}-01-01T00:00:00Z`),
+          lt: new Date(`${query.year + 1}-01-01T00:00:00Z`),
+        },
+      });
+    }
+
+    if (query?.tag === '__untagged__') {
+      conditions.push({ tags: { none: {} } });
+    } else if (query?.tag) {
+      conditions.push({ tags: { some: { tag: { name: query.tag } } } });
+    }
+
+    // Import time filter
+    if (query?.importedWithin && query.importedWithin !== 'all') {
+      const now = new Date();
+      let startDate: Date;
+      switch (query.importedWithin) {
+        case 'today':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          break;
+        case 'week':
+          startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'month':
+          startDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+          break;
+        default:
+          startDate = new Date(0);
+      }
+      conditions.push({ createdAt: { gte: startDate } });
+    }
+
+    // Text search filter — match title or authors at DB level
+    if (query?.q) {
+      const q = query.q.trim();
+      if (q) {
+        conditions.push({
+          OR: [{ title: { contains: q } }, { authorsJson: { contains: q } }],
+        });
+      }
+    }
+
+    // Reading status filter
+    if (query?.readingStatus && query.readingStatus !== 'all') {
+      if (query.readingStatus === 'unread') {
+        conditions.push({ OR: [{ lastReadPage: null }, { lastReadAt: null }] });
+      } else {
+        // 'reading' and 'finished' need field-to-field comparison — use raw SQL for IDs
+        const op = query.readingStatus === 'reading' ? '<' : '>=';
+        const ids = await this.prisma.$queryRawUnsafe<Array<{ id: string }>>(
+          `SELECT id FROM Paper WHERE lastReadPage IS NOT NULL AND totalPages IS NOT NULL AND lastReadPage ${op} totalPages`,
+        );
+        conditions.push({ id: { in: ids.map((r) => r.id) } });
+      }
+    }
+
+    const where = conditions.length > 0 ? { AND: conditions } : {};
+
+    // Determine sort order
+    let orderBy: Record<string, unknown>[];
+    switch (query?.sortBy) {
+      case 'importDate':
+        orderBy = [{ createdAt: 'desc' }];
+        break;
+      case 'title':
+        orderBy = [{ title: 'asc' }];
+        break;
+      case 'lastRead':
+      default:
+        orderBy = [{ lastReadAt: { sort: 'desc', nulls: 'last' } }, { createdAt: 'desc' }];
+        break;
+    }
+
+    const [papers, total] = await Promise.all([
+      this.prisma.paper.findMany({
+        where,
+        include: {
+          tags: { include: { tag: true } },
+          links: true,
+          readingNotes: true,
+        },
+        orderBy,
+        skip: page * pageSize,
+        take: pageSize,
+      }),
+      this.prisma.paper.count({ where }),
+    ]);
+
+    return {
+      papers: papers.map((paper) => mapPaper(paper)),
+      total,
+      page,
+      pageSize,
+    };
+  }
+
+  async getCounts() {
+    const [total, untagged, unindexed, missingAbstract, withPdf, years] = await Promise.all([
+      this.prisma.paper.count({ where: { isTemporary: false } }),
+      this.prisma.paper.count({
+        where: { isTemporary: false, tags: { none: {} } },
+      }),
+      this.prisma.paper.count({
+        where: { isTemporary: false, indexedAt: null, abstract: { not: '' } },
+      }),
+      this.prisma.paper.count({
+        where: {
+          isTemporary: false,
+          OR: [{ abstract: null }, { abstract: '' }],
+          NOT: [{ pdfPath: null, pdfUrl: null }],
+        },
+      }),
+      this.prisma.paper.count({
+        where: {
+          isTemporary: false,
+          NOT: [{ pdfPath: null, pdfUrl: null }],
+        },
+      }),
+      this.prisma.paper.findMany({
+        where: { isTemporary: false, submittedAt: { not: null } },
+        select: { submittedAt: true },
+        distinct: ['submittedAt'],
+      }),
+    ]);
+
+    // Extract unique years from submittedAt dates
+    const yearSet = new Set<number>();
+    for (const p of years) {
+      if (p.submittedAt) yearSet.add(new Date(p.submittedAt).getUTCFullYear());
+    }
+
+    return {
+      total,
+      untagged,
+      unindexed,
+      missingAbstract,
+      withPdf,
+      availableYears: Array.from(yearSet).sort((a, b) => b - a),
+    };
+  }
+
   async findById(id: string) {
     const paper = await this.prisma.paper.findUnique({
       where: { id },
@@ -205,6 +387,53 @@ export class PapersRepository {
       return null;
     }
 
+    return mapPaper(paper);
+  }
+
+  async findByNormalizedTitle(title: string) {
+    // Normalize: lowercase, strip extra whitespace and common punctuation
+    const normalized = title.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (normalized.length < 10) return null;
+
+    // Search for papers with similar titles
+    const papers = await this.prisma.paper.findMany({
+      where: {
+        title: { contains: normalized.substring(0, 80) },
+      },
+      include: {
+        tags: { include: { tag: true } },
+        links: true,
+        readingNotes: true,
+      },
+      take: 5,
+    });
+
+    // Check for high-confidence match (normalized titles match closely)
+    for (const paper of papers) {
+      const existingNormalized = paper.title.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (
+        existingNormalized === normalized ||
+        existingNormalized.includes(normalized) ||
+        normalized.includes(existingNormalized)
+      ) {
+        return mapPaper(paper);
+      }
+    }
+
+    return null;
+  }
+
+  async findByDoi(doi: string) {
+    const paper = await this.prisma.paper.findFirst({
+      where: { doi },
+      include: {
+        tags: { include: { tag: true } },
+        links: true,
+        readingNotes: true,
+      },
+    });
+
+    if (!paper) return null;
     return mapPaper(paper);
   }
 
@@ -268,6 +497,24 @@ export class PapersRepository {
     });
   }
 
+  async updateReadingProgress(id: string, lastReadPage: number, totalPages: number) {
+    return this.prisma.paper.update({
+      where: { id },
+      data: { lastReadPage, totalPages, lastReadAt: new Date() },
+    });
+  }
+
+  async updateTemporaryStatus(id: string, isTemporary: boolean, temporaryImportedAt?: Date | null) {
+    return this.prisma.paper.update({
+      where: { id },
+      data: {
+        isTemporary,
+        temporaryImportedAt:
+          temporaryImportedAt !== undefined ? temporaryImportedAt : isTemporary ? new Date() : null,
+      },
+    });
+  }
+
   async updateTitle(id: string, title: string) {
     return this.prisma.paper.update({
       where: { id },
@@ -279,6 +526,17 @@ export class PapersRepository {
     const updated = await this.prisma.paper.update({
       where: { id },
       data: { rating },
+      include: {
+        tags: { include: { tag: true } },
+      },
+    });
+    return mapPaper(updated);
+  }
+
+  async updateAbstract(id: string, abstract: string) {
+    const updated = await this.prisma.paper.update({
+      where: { id },
+      data: { abstract },
       include: {
         tags: { include: { tag: true } },
       },
@@ -486,6 +744,7 @@ export class PapersRepository {
     const startTimestamp = startOfToday.getTime();
 
     // Use raw query since SQLite stores timestamps as integers
+    // Exclude temporary papers from Discovery
     const papers = await this.prisma.$queryRaw<
       Array<{
         id: string;
@@ -503,7 +762,7 @@ export class PapersRepository {
         lastReadAt: Date | null;
       }>
     >`
-      SELECT * FROM Paper WHERE createdAt >= ${startTimestamp} ORDER BY createdAt DESC
+      SELECT * FROM Paper WHERE createdAt >= ${startTimestamp} AND isTemporary = 0 ORDER BY createdAt DESC
     `;
 
     // Fetch tags for each paper
@@ -612,6 +871,57 @@ export class PapersRepository {
       orderBy: { createdAt: 'desc' },
     });
     return papers.map((p) => p.id);
+  }
+
+  async listPapersMissingAbstract(): Promise<
+    Array<{
+      id: string;
+      shortId: string;
+      title: string;
+      pdfPath: string | null;
+      pdfUrl: string | null;
+    }>
+  > {
+    const papers = await this.prisma.paper.findMany({
+      where: {
+        OR: [{ abstract: null }, { abstract: '' }],
+        NOT: [{ pdfPath: null, pdfUrl: null }],
+      },
+      select: {
+        id: true,
+        shortId: true,
+        title: true,
+        pdfPath: true,
+        pdfUrl: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return papers;
+  }
+
+  async listPapersWithPdf(): Promise<
+    Array<{
+      id: string;
+      shortId: string;
+      title: string;
+      pdfPath: string | null;
+      pdfUrl: string | null;
+    }>
+  > {
+    const papers = await this.prisma.paper.findMany({
+      where: {
+        NOT: [{ pdfPath: null, pdfUrl: null }],
+      },
+      select: {
+        id: true,
+        shortId: true,
+        title: true,
+        pdfPath: true,
+        pdfUrl: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return papers;
   }
 
   async mergeTag(keepName: string, removeNames: string[]): Promise<void> {
@@ -740,5 +1050,42 @@ export class PapersRepository {
       ...mapPaper(paper),
       embedding: paper.embedding,
     };
+  }
+
+  // ── Temporary papers management ──────────────────────────────────────
+
+  /**
+   * List expired temporary papers (for cleanup)
+   */
+  async listExpiredTemporaryPapers(cutoffDate: Date) {
+    const papers = await this.prisma.paper.findMany({
+      where: {
+        isTemporary: true,
+        temporaryImportedAt: { lt: cutoffDate },
+      },
+      include: {
+        tags: { include: { tag: true } },
+        links: true,
+        readingNotes: true,
+      },
+    });
+    return papers.map((paper) => mapPaper(paper));
+  }
+
+  /**
+   * General update method
+   */
+  async update(
+    id: string,
+    data: {
+      title?: string;
+      isTemporary?: boolean;
+      temporaryImportedAt?: Date | null;
+    },
+  ) {
+    return this.prisma.paper.update({
+      where: { id },
+      data,
+    });
   }
 }

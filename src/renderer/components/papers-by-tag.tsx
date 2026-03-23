@@ -29,6 +29,7 @@ import {
   GitCompareArrows,
   Sparkles,
   Database,
+  FilePenLine,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TagCategory } from '@shared';
@@ -39,9 +40,10 @@ import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
 const EXCLUDED_TAGS = ['arxiv', 'chrome', 'manual', 'pdf'];
-const MAX_VISIBLE_CHIPS = 8;
+const MAX_VISIBLE_CHIPS = 20;
 
 type ImportTimeFilter = 'all' | 'today' | 'week' | 'month';
+type SortOption = 'lastRead' | 'importDate' | 'title';
 type CategoryFilter = 'all' | TagCategory;
 
 // Filter options will be generated inside the component with i18n
@@ -241,7 +243,31 @@ export function PapersByTag({
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [importTimeFilter, setImportTimeFilter] = useState<ImportTimeFilter>('all');
+  const [sortBy, setSortBy] = useState<SortOption>(
+    () => (localStorage.getItem('researchclaw-library-sort') as SortOption) || 'importDate',
+  );
   const [yearFilter, setYearFilter] = useState<number | null>(null);
+  type ReadingStatusFilter = 'all' | 'unread' | 'reading' | 'finished';
+  const [readingStatusFilter, setReadingStatusFilter] = useState<ReadingStatusFilter>('all');
+  // Server-side pagination state
+  const [totalPapers, setTotalPapers] = useState(0);
+  // Duplicate detection
+  const [duplicateGroups, setDuplicateGroups] = useState<
+    Array<{
+      reason: string;
+      papers: Array<{ id: string; shortId: string; title: string; sourceUrl: string | null }>;
+    }>
+  >([]);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  // Library-wide stats (from papers:counts)
+  const [paperCounts, setPaperCounts] = useState<{
+    total: number;
+    untagged: number;
+    unindexed: number;
+    missingAbstract: number;
+    withPdf: number;
+    availableYears: number[];
+  } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
   const [retryingPaperId, setRetryingPaperId] = useState<string | null>(null);
@@ -257,6 +283,19 @@ export function PapersByTag({
     { value: 'month', label: t('papersByTag.timeFilter.month') },
   ];
 
+  const SORT_OPTIONS: { value: SortOption; label: string }[] = [
+    { value: 'lastRead', label: t('papersByTag.sort.lastRead') },
+    { value: 'importDate', label: t('papersByTag.sort.importDate') },
+    { value: 'title', label: t('papersByTag.sort.title') },
+  ];
+
+  const READING_STATUS_OPTIONS: { value: ReadingStatusFilter; label: string }[] = [
+    { value: 'all', label: t('papersByTag.readingStatus.all') },
+    { value: 'unread', label: t('papersByTag.readingStatus.unread') },
+    { value: 'reading', label: t('papersByTag.readingStatus.reading') },
+    { value: 'finished', label: t('papersByTag.readingStatus.finished') },
+  ];
+
   const CATEGORY_FILTER_OPTIONS: { value: CategoryFilter; label: string }[] = [
     { value: 'all', label: t('papersByTag.categoryFilter.all') },
     { value: 'domain', label: t('papersByTag.categoryFilter.domain') },
@@ -264,10 +303,16 @@ export function PapersByTag({
     { value: 'topic', label: t('papersByTag.categoryFilter.topic') },
   ];
 
+  // Persist sort preference
+  useEffect(() => {
+    localStorage.setItem('researchclaw-library-sort', sortBy);
+  }, [sortBy]);
+
   // Single paper auto-tag, index and analyze state
   const [autoTaggingPaperId, setAutoTaggingPaperId] = useState<string | null>(null);
   const [indexingPaperId, setIndexingPaperId] = useState<string | null>(null);
   const [analyzingPaperId, setAnalyzingPaperId] = useState<string | null>(null);
+  const [extractingMetadataPaperId, setExtractingMetadataPaperId] = useState<string | null>(null);
 
   // Batch operation progress state
   const [batchTagProgress, setBatchTagProgress] = useState<{
@@ -277,6 +322,12 @@ export function PapersByTag({
   const [batchIndexProgress, setBatchIndexProgress] = useState<{
     current: number;
     total: number;
+  } | null>(null);
+  // Metadata extraction progress state
+  const [metadataProgress, setMetadataProgress] = useState<{
+    active: boolean;
+    total: number;
+    completed: number;
   } | null>(null);
   // Use ref to track progress without triggering re-renders
 
@@ -290,6 +341,8 @@ export function PapersByTag({
   } | null>(null);
 
   // Selection mode state
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isBatchDeleting, setIsBatchDeleting] = useState(false);
@@ -301,18 +354,78 @@ export function PapersByTag({
   const navigate = useNavigate();
   const toast = useToast();
 
-  const fetchPapers = useCallback(async () => {
-    setLoading(true);
+  // Ref to preserve scroll position across updates
+  const preservedScrollTopRef = useRef<number>(0);
+
+  // Get the scroll container (main element in app-shell)
+  const getScrollContainer = useCallback(() => {
+    // The scroll container is the <main> element in app-shell
+    return document.querySelector('main.overflow-y-auto') as HTMLElement | null;
+  }, []);
+
+  const fetchCounts = useCallback(async () => {
     try {
-      const [paperData, tagData] = await Promise.all([ipc.listPapers(), ipc.listAllTags()]);
-      setPapers(paperData);
+      const [tagData, counts, dupes] = await Promise.all([
+        ipc.listAllTags(),
+        ipc.getPaperCounts(),
+        ipc.findDuplicates(),
+      ]);
       setAllTags(tagData);
+      setPaperCounts(counts);
+      setDuplicateGroups(dupes);
     } catch {
       // silent
-    } finally {
-      setLoading(false);
     }
   }, []);
+
+  const fetchPapers = useCallback(
+    async (preserveScroll = false) => {
+      if (preserveScroll) {
+        const container = getScrollContainer();
+        if (container) {
+          preservedScrollTopRef.current = container.scrollTop;
+        }
+      }
+      setLoading(true);
+      try {
+        const result = await ipc.listPapersPaginated({
+          q: searchQuery || undefined,
+          tag: selectedTag === 'Untagged' ? '__untagged__' : selectedTag || undefined,
+          importedWithin: importTimeFilter !== 'all' ? importTimeFilter : undefined,
+          year: yearFilter ?? undefined,
+          page: currentPage - 1, // server uses 0-indexed
+          pageSize,
+          sortBy,
+          readingStatus: readingStatusFilter !== 'all' ? readingStatusFilter : undefined,
+        });
+        setPapers(result.papers);
+        setTotalPapers(result.total);
+        // Restore scroll position after React renders
+        if (preserveScroll) {
+          requestAnimationFrame(() => {
+            const container = getScrollContainer();
+            if (container && preservedScrollTopRef.current > 0) {
+              container.scrollTop = preservedScrollTopRef.current;
+            }
+          });
+        }
+      } catch {
+        // silent
+      } finally {
+        setLoading(false);
+      }
+    },
+    [
+      getScrollContainer,
+      searchQuery,
+      selectedTag,
+      importTimeFilter,
+      yearFilter,
+      currentPage,
+      sortBy,
+      readingStatusFilter,
+    ],
+  );
 
   const lastRefreshCountRef = useRef(0);
   const lastPapersRefreshCountRef = useRef(0);
@@ -342,29 +455,24 @@ export function PapersByTag({
 
       if (shouldRefreshTags) {
         lastRefreshCountRef.current = typedStatus.completed;
-        ipc
-          .listAllTags()
-          .then(setAllTags)
-          .catch(() => undefined);
+        void fetchCounts();
       }
 
       if (shouldRefreshPapers) {
         lastPapersRefreshCountRef.current = typedStatus.completed;
-        ipc
-          .listPapers()
-          .then(setPapers)
-          .catch(() => undefined);
+        void fetchPapers(true);
       }
 
       if (!typedStatus.active && typedStatus.completed > 0) {
-        fetchPapers();
+        void fetchPapers();
+        void fetchCounts();
       }
     });
 
     return () => {
       unsubscribe();
     };
-  }, [fetchPapers, toast]);
+  }, [fetchPapers, fetchCounts, toast]);
 
   useEffect(() => {
     ipc
@@ -394,6 +502,20 @@ export function PapersByTag({
   }, [fetchPapers]);
 
   useEffect(() => {
+    fetchCounts();
+  }, [fetchCounts]);
+
+  // Refresh papers when window regains focus (catches imports that happened while navigated away)
+  useEffect(() => {
+    const handleFocus = () => {
+      void fetchPapers(true);
+      void fetchCounts();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchPapers, fetchCounts]);
+
+  useEffect(() => {
     return onIpc('papers:processingStatus', (_event, payload) => {
       const { paperId, status } = payload as { paperId: string; status: string; error?: string };
       setPapers((prev) =>
@@ -410,6 +532,14 @@ export function PapersByTag({
     });
   }, []);
 
+  // Refresh paper when metadata is extracted (e.g. after local PDF upload)
+  useEffect(() => {
+    return onIpc('papers:metadataUpdated', () => {
+      void fetchPapers();
+      void fetchCounts();
+    });
+  }, [fetchPapers, fetchCounts]);
+
   // Check if lightweight model is available for auto-tag
   const canAutoTag = useMemo(() => {
     if (!lightweightModel) return false;
@@ -424,66 +554,14 @@ export function PapersByTag({
   }, [embeddingConfig]);
 
   const availableYears = useMemo(() => {
-    const years = new Set<number>();
-    papers.forEach((p) => {
-      if (p.submittedAt) years.add(new Date(p.submittedAt).getUTCFullYear());
-    });
-    return Array.from(years).sort((a, b) => b - a);
-  }, [papers]);
+    return paperCounts?.availableYears ?? [];
+  }, [paperCounts]);
 
-  const importTimeCutoff = useMemo(() => {
-    if (importTimeFilter === 'all') return null;
-    const now = new Date();
-    switch (importTimeFilter) {
-      case 'today':
-        return new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      case 'week':
-        return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      case 'month':
-        return new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
-      default:
-        return null;
-    }
-  }, [importTimeFilter]);
-
-  const visiblePapers = useMemo(() => {
-    return papers.filter((paper) => {
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        const matchesTitle = paper.title.toLowerCase().includes(q);
-        const matchesAuthors = (paper.authors || []).some((a) => a.toLowerCase().includes(q));
-        if (!matchesTitle && !matchesAuthors) return false;
-      }
-
-      if (selectedTag) {
-        const tags = (paper.categorizedTags || [])
-          .filter((t) => !EXCLUDED_TAGS.includes(t.name.toLowerCase()))
-          .map((t) => t.name);
-        if (selectedTag === 'Untagged' && tags.length > 0) return false;
-        if (selectedTag !== 'Untagged' && !tags.includes(selectedTag)) return false;
-      }
-
-      if (importTimeCutoff && paper.createdAt) {
-        const created = new Date(paper.createdAt);
-        if (created < importTimeCutoff) return false;
-      }
-
-      if (
-        yearFilter !== null &&
-        (paper.submittedAt ? new Date(paper.submittedAt).getUTCFullYear() : null) !== yearFilter
-      )
-        return false;
-
-      return true;
-    });
-  }, [papers, searchQuery, selectedTag, importTimeCutoff, yearFilter]);
+  // Server handles filtering, sorting, and pagination — papers is already the current page
+  const visiblePapers = papers;
 
   const tagList = useMemo(() => {
-    const untaggedCount = papers.filter(
-      (p) =>
-        !p.categorizedTags ||
-        p.categorizedTags.filter((t) => !EXCLUDED_TAGS.includes(t.name)).length === 0,
-    ).length;
+    const untaggedN = paperCounts?.untagged ?? 0;
 
     let tags = allTags.filter((t) => !EXCLUDED_TAGS.includes(t.name.toLowerCase()));
 
@@ -493,8 +571,8 @@ export function PapersByTag({
 
     const tagStats = tags.map((t) => ({ name: t.name, count: t.count, category: t.category }));
 
-    if (categoryFilter === 'all' || untaggedCount > 0) {
-      tagStats.push({ name: 'Untagged', count: untaggedCount, category: 'topic' });
+    if (categoryFilter === 'all' || untaggedN > 0) {
+      tagStats.push({ name: 'Untagged', count: untaggedN, category: 'topic' });
     }
 
     return tagStats.sort((a, b) => {
@@ -502,19 +580,21 @@ export function PapersByTag({
       if (b.name === 'Untagged') return -1;
       return a.name.localeCompare(b.name);
     });
-  }, [allTags, papers, categoryFilter]);
+  }, [allTags, paperCounts, categoryFilter]);
 
-  const untaggedCount = useMemo(() => {
-    return papers.filter(
-      (p) =>
-        !p.categorizedTags ||
-        p.categorizedTags.filter((t) => !EXCLUDED_TAGS.includes(t.name)).length === 0,
-    ).length;
-  }, [papers]);
+  // Reset to page 1 when filters or sort change (fetchPapers depends on currentPage and re-fetches)
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedTag, importTimeFilter, yearFilter, sortBy, readingStatusFilter]);
 
-  const unindexedCount = useMemo(() => {
-    return papers.filter((p) => !p.indexedAt && p.abstract).length;
-  }, [papers]);
+  // Pagination — server returns the current page, totalPapers is from the server
+  const totalPages = Math.ceil(totalPapers / pageSize);
+  const paginatedPapers = visiblePapers;
+
+  const untaggedCount = paperCounts?.untagged ?? 0;
+  const unindexedCount = paperCounts?.unindexed ?? 0;
+  const missingAbstractCount = paperCounts?.missingAbstract ?? 0;
+  const papersWithPdfCount = paperCounts?.withPdf ?? 0;
 
   const handleBatchAutoTag = useCallback(async () => {
     // Check if lightweight model is configured
@@ -523,40 +603,20 @@ export function PapersByTag({
       return;
     }
 
-    // Get untagged papers (excluding system tags)
-    const untaggedPapers = papers.filter(
-      (p) =>
-        !p.categorizedTags ||
-        p.categorizedTags.filter((t) => !EXCLUDED_TAGS.includes(t.name)).length === 0,
-    );
-    if (untaggedPapers.length === 0) {
+    if (untaggedCount === 0) {
       toast.info('No untagged papers to process');
       return;
     }
 
-    setBatchTagProgress({ current: 0, total: untaggedPapers.length });
-
+    // Use server-side batch tagging (processes all untagged papers, not just current page)
     try {
-      for (let i = 0; i < untaggedPapers.length; i++) {
-        const paper = untaggedPapers[i];
-        setBatchTagProgress({ current: i + 1, total: untaggedPapers.length });
-        try {
-          await ipc.tagPaper(paper.id);
-        } catch {
-          // Continue with next paper even if one fails
-        }
-        // Small delay to prevent overwhelming the system
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      toast.success(`Auto-tagged ${untaggedPapers.length} papers`);
-      void fetchPapers();
+      await ipc.tagUntagged();
+      toast.info(`Auto-tagging ${untaggedCount} papers in background...`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Auto-tagging failed';
       toast.error(msg);
-    } finally {
-      setBatchTagProgress(null);
     }
-  }, [canAutoTag, papers, toast, fetchPapers]);
+  }, [canAutoTag, untaggedCount, toast]);
 
   const handleBatchIndex = useCallback(async () => {
     // Check if embedding model is configured
@@ -604,19 +664,67 @@ export function PapersByTag({
     } finally {
       setBatchIndexProgress(null);
     }
-  }, [canIndex, papers, toast]);
+  }, [canIndex, papers, toast, fetchCounts]);
 
-  const handleDelete = useCallback(async (paperId: string) => {
-    setDeleting(paperId);
-    try {
-      await ipc.deletePaper(paperId);
-      setPapers((prev) => prev.filter((p) => p.id !== paperId));
-    } catch {
-      // silent
-    } finally {
-      setDeleting(null);
+  // Handle metadata extraction for papers missing abstract
+  useEffect(() => {
+    const unsubscribe = onIpc('metadata:extractionStatus', (_event, status) => {
+      const typed = status as { active: boolean; total: number; completed: number };
+      setMetadataProgress(typed);
+      if (!typed.active && typed.completed > 0) {
+        void fetchPapers(true);
+      }
+    });
+    return unsubscribe;
+  }, [fetchPapers]);
+
+  const handleExtractMetadata = useCallback(async () => {
+    const forceRefresh = missingAbstractCount === 0;
+    const count = forceRefresh ? papersWithPdfCount : missingAbstractCount;
+
+    if (count === 0) {
+      toast.info('No papers with PDF to extract metadata from');
+      return;
     }
-  }, []);
+
+    setMetadataProgress({ active: true, total: count, completed: 0 });
+    try {
+      const result = await ipc.extractMissingMetadata(forceRefresh);
+      if (result.extracted > 0) {
+        toast.success(
+          forceRefresh
+            ? `Refreshed metadata for ${result.extracted} papers`
+            : `Extracted metadata for ${result.extracted} papers`,
+        );
+        void fetchPapers(true);
+      }
+      if (result.failed > 0) {
+        toast.warning(`Failed to extract metadata for ${result.failed} papers`);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Metadata extraction failed';
+      toast.error(msg);
+    } finally {
+      setMetadataProgress(null);
+    }
+  }, [missingAbstractCount, papersWithPdfCount, toast, fetchPapers, fetchCounts]);
+
+  const handleDelete = useCallback(
+    async (paperId: string) => {
+      setDeleting(paperId);
+      try {
+        await ipc.deletePaper(paperId);
+        setPapers((prev) => prev.filter((p) => p.id !== paperId));
+        setTotalPapers((prev) => Math.max(0, prev - 1));
+        void fetchCounts();
+      } catch {
+        // silent
+      } finally {
+        setDeleting(null);
+      }
+    },
+    [fetchCounts],
+  );
 
   const handleDownloadPdf = useCallback(
     async (paper: PaperItem) => {
@@ -642,12 +750,16 @@ export function PapersByTag({
       try {
         await ipc.retryPaperProcessing(paperId);
       } catch (error) {
-        alert(error instanceof Error ? error.message : 'Retrying paper processing failed');
+        const msg = error instanceof Error ? error.message : 'Retrying paper processing failed';
+        toast.error(msg, {
+          label: t('common.retry'),
+          onClick: () => void handleRetryProcessing(paperId),
+        });
       } finally {
         setRetryingPaperId(null);
       }
     },
-    [fetchPapers],
+    [fetchPapers, toast, t],
   );
 
   const handleAutoTagPaper = useCallback(
@@ -662,7 +774,7 @@ export function PapersByTag({
         await ipc.tagPaper(paperId);
         toast.success('Auto-tagging started');
         // Refresh papers after a short delay to show new tags
-        setTimeout(() => void fetchPapers(), 2000);
+        setTimeout(() => void fetchPapers(true), 2000);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Auto-tagging failed';
         const isNoModel =
@@ -672,13 +784,16 @@ export function PapersByTag({
         if (isNoModel) {
           toast.warning('Lightweight model not configured. Please set it up in Settings > Models.');
         } else {
-          toast.error(msg);
+          toast.error(msg, {
+            label: t('common.retry'),
+            onClick: () => void handleAutoTagPaper(paperId),
+          });
         }
       } finally {
         setAutoTaggingPaperId(null);
       }
     },
-    [canAutoTag, fetchPapers, toast],
+    [canAutoTag, fetchPapers, toast, t],
   );
 
   const handleIndexPaper = useCallback(
@@ -699,12 +814,15 @@ export function PapersByTag({
         toast.success('Indexed');
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Indexing failed';
-        toast.error(msg);
+        toast.error(msg, {
+          label: t('common.retry'),
+          onClick: () => void handleIndexPaper(paperId),
+        });
       } finally {
         setIndexingPaperId(null);
       }
     },
-    [canIndex, toast],
+    [canIndex, toast, t],
   );
 
   const handleAnalyzePaper = useCallback(
@@ -720,12 +838,43 @@ export function PapersByTag({
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Analysis failed';
-        toast.error(msg);
+        toast.error(msg, {
+          label: t('common.retry'),
+          onClick: () => void handleAnalyzePaper(paper),
+        });
       } finally {
         setAnalyzingPaperId(null);
       }
     },
-    [toast],
+    [toast, t],
+  );
+
+  const handleExtractPaperMetadata = useCallback(
+    async (paper: PaperItem) => {
+      if (!paper.pdfPath && !paper.pdfUrl) {
+        toast.warning('Paper has no PDF to extract metadata from');
+        return;
+      }
+      setExtractingMetadataPaperId(paper.id);
+      try {
+        const result = await ipc.extractPaperMetadata(paper.id);
+        if (result.success) {
+          toast.success('Metadata extracted successfully');
+          void fetchPapers(true);
+        } else {
+          toast.warning('Could not extract metadata from PDF');
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Metadata extraction failed';
+        toast.error(msg, {
+          label: t('common.retry'),
+          onClick: () => void handleExtractPaperMetadata(paper),
+        });
+      } finally {
+        setExtractingMetadataPaperId(null);
+      }
+    },
+    [toast, fetchPapers, t],
   );
 
   const toggleSelect = useCallback((paperId: string) => {
@@ -741,33 +890,9 @@ export function PapersByTag({
   }, []);
 
   const selectAll = useCallback(() => {
-    const filtered = papers.filter((paper) => {
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        const matchesTitle = paper.title.toLowerCase().includes(q);
-        const matchesAuthors = (paper.authors || []).some((a) => a.toLowerCase().includes(q));
-        if (!matchesTitle && !matchesAuthors) return false;
-      }
-      if (selectedTag) {
-        const tags = (paper.categorizedTags || [])
-          .filter((t) => !EXCLUDED_TAGS.includes(t.name.toLowerCase()))
-          .map((t) => t.name);
-        if (selectedTag === 'Untagged' && tags.length > 0) return false;
-        if (selectedTag !== 'Untagged' && !tags.includes(selectedTag)) return false;
-      }
-      if (importTimeCutoff && paper.createdAt) {
-        const created = new Date(paper.createdAt);
-        if (created < importTimeCutoff) return false;
-      }
-      if (
-        yearFilter !== null &&
-        (paper.submittedAt ? new Date(paper.submittedAt).getUTCFullYear() : null) !== yearFilter
-      )
-        return false;
-      return true;
-    });
-    setSelectedIds(new Set(filtered.map((p) => p.id)));
-  }, [papers, searchQuery, selectedTag, importTimeCutoff, yearFilter]);
+    // Select all papers on the current page (server already filtered)
+    setSelectedIds(new Set(papers.map((p) => p.id)));
+  }, [papers]);
 
   const deselectAll = useCallback(() => setSelectedIds(new Set()), []);
 
@@ -781,9 +906,10 @@ export function PapersByTag({
     setIsBatchDeleting(true);
     try {
       await ipc.deletePapers(Array.from(selectedIds));
-      setPapers((prev) => prev.filter((p) => !selectedIds.has(p.id)));
       setSelectedIds(new Set());
       setIsSelectMode(false);
+      void fetchPapers();
+      void fetchCounts();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       alert(`Failed to delete papers: ${message}`);
@@ -791,7 +917,7 @@ export function PapersByTag({
       setIsBatchDeleting(false);
       setShowDeleteConfirm(false);
     }
-  }, [selectedIds]);
+  }, [selectedIds, fetchPapers, fetchCounts]);
 
   const handleExportBibtex = useCallback(async () => {
     if (selectedIds.size === 0) return;
@@ -855,7 +981,7 @@ export function PapersByTag({
         <div className="flex items-center gap-2">
           {/* Batch Auto Tag */}
           {untaggedCount > 0 && (
-            <div className="flex flex-col gap-1">
+            <div className="relative">
               <motion.button
                 onClick={handleBatchAutoTag}
                 disabled={batchTagProgress !== null || !canAutoTag}
@@ -866,15 +992,15 @@ export function PapersByTag({
                 <Wand2 size={14} />
                 Auto Tag {untaggedCount}
               </motion.button>
-              {/* Batch Tag Progress */}
+              {/* Batch Tag Progress - absolute positioned below button */}
               {batchTagProgress && (
-                <div className="w-full">
-                  <div className="flex items-center justify-between text-[10px] text-notion-text-tertiary mb-0.5">
+                <div className="absolute left-0 right-0 top-full mt-1 z-10 bg-white rounded-lg border border-notion-border shadow-notion p-2">
+                  <div className="flex items-center justify-between text-[10px] text-notion-text-tertiary mb-1">
                     <span>
                       {batchTagProgress.current}/{batchTagProgress.total}
                     </span>
                   </div>
-                  <div className="relative h-1 w-full overflow-hidden rounded-full bg-blue-100">
+                  <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-blue-100">
                     <div
                       className="absolute left-0 top-0 h-full rounded-full bg-blue-500 transition-[width] duration-150 ease-out"
                       style={{
@@ -980,23 +1106,33 @@ export function PapersByTag({
             ))}
           </div>
           <div className="flex items-center gap-2">
+            <PillDropdown options={SORT_OPTIONS} selected={sortBy} onSelect={setSortBy} />
             <PillDropdown
               options={TIME_FILTER_OPTIONS}
               selected={importTimeFilter}
               onSelect={setImportTimeFilter}
               label="Time"
             />
+            <PillDropdown
+              options={READING_STATUS_OPTIONS}
+              selected={readingStatusFilter}
+              onSelect={setReadingStatusFilter}
+              label={t('papersByTag.readingStatus.label')}
+            />
             {availableYears.length > 0 && (
               <YearDropdown years={availableYears} selected={yearFilter} onSelect={setYearFilter} />
             )}
-            {(importTimeFilter !== 'all' || yearFilter !== null) && (
+            {(importTimeFilter !== 'all' ||
+              yearFilter !== null ||
+              readingStatusFilter !== 'all') && (
               <button
                 onClick={() => {
                   setImportTimeFilter('all');
                   setYearFilter(null);
+                  setReadingStatusFilter('all');
                 }}
                 className="flex h-6 w-6 items-center justify-center rounded-full text-notion-text-tertiary hover:bg-notion-sidebar hover:text-notion-text"
-                title="Clear time/year filters"
+                title="Clear filters"
               >
                 <X size={12} />
               </button>
@@ -1213,17 +1349,18 @@ export function PapersByTag({
               className="rounded-xl bg-white p-6 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-semibold text-notion-text">Delete Papers</h3>
+              <h3 className="text-lg font-semibold text-notion-text">
+                {t('papers.deleteConfirmBatchTitle')}
+              </h3>
               <p className="mt-2 text-sm text-notion-text-secondary">
-                Are you sure you want to delete {selectedIds.size} paper
-                {selectedIds.size !== 1 ? 's' : ''}? This action cannot be undone.
+                {t('papers.deleteConfirmBatchMessage', { count: selectedIds.size })}
               </p>
               <div className="mt-4 flex justify-end gap-2">
                 <button
                   onClick={() => setShowDeleteConfirm(false)}
                   className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleBatchDelete}
@@ -1231,7 +1368,7 @@ export function PapersByTag({
                   className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
                 >
                   {isBatchDeleting && <Loader2 size={14} className="animate-spin" />}
-                  Delete
+                  {t('common.delete')}
                 </button>
               </div>
             </motion.div>
@@ -1297,33 +1434,109 @@ export function PapersByTag({
             <p className="text-sm text-notion-text-tertiary">{t('papersByTag.noMatch')}</p>
           </div>
         ) : (
-          <div className="rounded-xl border border-notion-border bg-white overflow-hidden">
-            {visiblePapers.map((paper) => (
-              <PaperCard
-                key={paper.id}
-                paper={paper}
-                deleting={deleting}
-                downloadingPdf={downloadingPdf}
-                retryingPaperId={retryingPaperId}
-                autoTaggingPaperId={autoTaggingPaperId}
-                indexingPaperId={indexingPaperId}
-                analyzingPaperId={analyzingPaperId}
-                canAutoTag={canAutoTag}
-                canIndex={canIndex}
-                onDelete={handleDelete}
-                onDownload={handleDownloadPdf}
-                onRetry={handleRetryProcessing}
-                onAutoTag={handleAutoTagPaper}
-                onIndex={handleIndexPaper}
-                onAnalyze={handleAnalyzePaper}
-                onOpen={(shortId, state) => navigate(`/papers/${shortId}`, { state })}
-                isSelectMode={isSelectMode}
-                isSelected={selectedIds.has(paper.id)}
-                onToggleSelect={toggleSelect}
-                t={t}
-              />
-            ))}
-          </div>
+          <>
+            {duplicateGroups.length > 0 && (
+              <div className="mb-3 flex items-center justify-between rounded-lg border border-orange-200 bg-orange-50 px-4 py-2.5">
+                <span className="text-sm text-orange-700">
+                  {t('papers.duplicates.found', { count: duplicateGroups.length })}
+                </span>
+                <button
+                  onClick={() => setShowDuplicateModal(true)}
+                  className="rounded-lg px-3 py-1 text-sm font-medium text-orange-700 transition-colors hover:bg-orange-100"
+                >
+                  {t('papers.duplicates.review')}
+                </button>
+              </div>
+            )}
+            <div className="rounded-xl border border-notion-border bg-white overflow-hidden">
+              {paginatedPapers.map((paper) => (
+                <PaperCard
+                  key={paper.id}
+                  paper={paper}
+                  deleting={deleting}
+                  downloadingPdf={downloadingPdf}
+                  retryingPaperId={retryingPaperId}
+                  autoTaggingPaperId={autoTaggingPaperId}
+                  indexingPaperId={indexingPaperId}
+                  analyzingPaperId={analyzingPaperId}
+                  extractingMetadataPaperId={extractingMetadataPaperId}
+                  canAutoTag={canAutoTag}
+                  canIndex={canIndex}
+                  onDelete={handleDelete}
+                  onDownload={handleDownloadPdf}
+                  onRetry={handleRetryProcessing}
+                  onAutoTag={handleAutoTagPaper}
+                  onIndex={handleIndexPaper}
+                  onAnalyze={handleAnalyzePaper}
+                  onExtractMetadata={handleExtractPaperMetadata}
+                  onOpen={(shortId, state) => navigate(`/papers/${shortId}`, { state })}
+                  isSelectMode={isSelectMode}
+                  isSelected={selectedIds.has(paper.id)}
+                  onToggleSelect={toggleSelect}
+                  t={t}
+                />
+              ))}
+            </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="mt-4 flex items-center justify-center gap-2 pb-4">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-notion-border bg-white text-notion-text-secondary transition-colors hover:bg-notion-sidebar disabled:opacity-40 disabled:hover:bg-white"
+                >
+                  <ChevronDown size={16} className="rotate-90" />
+                </button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((page) => {
+                      // Show first, last, current, and neighbors
+                      if (page === 1 || page === totalPages) return true;
+                      if (Math.abs(page - currentPage) <= 1) return true;
+                      return false;
+                    })
+                    .map((page, idx, arr) => {
+                      const showEllipsis = idx > 0 && page - arr[idx - 1] > 1;
+                      return (
+                        <span key={page} className="flex items-center gap-1">
+                          {showEllipsis && (
+                            <span className="px-1 text-xs text-notion-text-tertiary">…</span>
+                          )}
+                          <button
+                            onClick={() => setCurrentPage(page)}
+                            className={`flex h-8 w-8 items-center justify-center rounded-lg text-sm font-medium transition-colors ${
+                              page === currentPage
+                                ? 'bg-notion-accent text-white'
+                                : 'border border-notion-border bg-white text-notion-text-secondary hover:bg-notion-sidebar'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        </span>
+                      );
+                    })}
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-notion-border bg-white text-notion-text-secondary transition-colors hover:bg-notion-sidebar disabled:opacity-40 disabled:hover:bg-white"
+                >
+                  <ChevronDown size={16} className="-rotate-90" />
+                </button>
+
+                <span className="ml-2 text-xs text-notion-text-tertiary">
+                  {t('papersByTag.pageInfo', {
+                    current: currentPage,
+                    total: totalPages,
+                    count: totalPapers,
+                  })}
+                </span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -1394,6 +1607,90 @@ export function PapersByTag({
         onClose={() => setShowTagManagement(false)}
         onRefresh={fetchPapers}
       />
+
+      {/* Duplicate Detection Modal */}
+      <AnimatePresence>
+        {showDuplicateModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={() => setShowDuplicateModal(false)}
+            onKeyDown={(e) => e.key === 'Escape' && setShowDuplicateModal(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="max-h-[70vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-notion-text">
+                {t('papers.duplicates.title')}
+              </h3>
+              <p className="mt-1 text-sm text-notion-text-secondary">
+                {t('papers.duplicates.description')}
+              </p>
+
+              <div className="mt-4 space-y-4">
+                {duplicateGroups.map((group, i) => (
+                  <div key={i} className="rounded-lg border border-notion-border p-3">
+                    <p className="mb-2 text-xs font-medium text-notion-text-tertiary">
+                      {t('papers.duplicates.reasonTitle')}
+                    </p>
+                    {group.papers.map((paper) => (
+                      <div key={paper.id} className="flex items-center justify-between py-1.5">
+                        <div className="mr-2 min-w-0 flex-1">
+                          <p className="truncate text-sm text-notion-text">{paper.title}</p>
+                          <p className="truncate text-xs text-notion-text-tertiary">
+                            {paper.shortId}
+                          </p>
+                        </div>
+                        <button
+                          onClick={async () => {
+                            if (!confirm(t('papers.duplicates.deleteConfirm'))) return;
+                            try {
+                              await ipc.deletePaper(paper.id);
+                              setDuplicateGroups((prev) =>
+                                prev
+                                  .map((g) => ({
+                                    ...g,
+                                    papers: g.papers.filter((p) => p.id !== paper.id),
+                                  }))
+                                  .filter((g) => g.papers.length >= 2),
+                              );
+                              void fetchPapers();
+                              void fetchCounts();
+                            } catch {
+                              // silent
+                            }
+                          }}
+                          className="flex-shrink-0 rounded-lg p-1.5 text-notion-text-tertiary transition-colors hover:bg-red-50 hover:text-red-500"
+                          title={t('common.delete')}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={() => setShowDuplicateModal(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+                >
+                  {t('common.close')}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1406,6 +1703,7 @@ function PaperCard({
   autoTaggingPaperId,
   indexingPaperId,
   analyzingPaperId,
+  extractingMetadataPaperId,
   canAutoTag,
   canIndex,
   onDelete,
@@ -1414,6 +1712,7 @@ function PaperCard({
   onAutoTag,
   onIndex,
   onAnalyze,
+  onExtractMetadata,
   onOpen,
   isSelectMode,
   isSelected,
@@ -1427,6 +1726,7 @@ function PaperCard({
   autoTaggingPaperId: string | null;
   indexingPaperId: string | null;
   analyzingPaperId: string | null;
+  extractingMetadataPaperId: string | null;
   canAutoTag: boolean;
   canIndex: boolean;
   onDelete: (id: string) => void;
@@ -1435,6 +1735,7 @@ function PaperCard({
   onAutoTag: (id: string) => void;
   onIndex: (id: string) => void;
   onAnalyze: (paper: PaperItem) => void;
+  onExtractMetadata: (paper: PaperItem) => void;
   onOpen: (shortId: string, state?: unknown) => void;
   isSelectMode: boolean;
   isSelected: boolean;
@@ -1492,10 +1793,21 @@ function PaperCard({
           )}
         </AnimatePresence>
 
-        {/* Icon */}
-        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50">
+        {/* Icon — click to open reader directly */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!isSelectMode && paper.pdfPath) {
+              onOpen(paper.shortId, { from: '/papers', openReader: true });
+            } else if (!isSelectMode) {
+              onOpen(paper.shortId, { from: '/papers' });
+            }
+          }}
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-blue-50 transition-colors hover:bg-blue-100"
+          title={paper.pdfPath ? t('papers.openReader') : t('papers.openDetail')}
+        >
           <FileText size={16} className="text-blue-500" />
-        </div>
+        </button>
 
         {/* Clickable content area */}
         <button
@@ -1518,6 +1830,15 @@ function PaperCard({
                 {authorsSnippet}
                 {hasMoreAuthors ? ' et al.' : ''}
               </span>
+            )}
+            {paper.createdAt && (
+              <>
+                <span className="text-xs text-notion-border">·</span>
+                <span className="text-xs text-notion-text-tertiary">
+                  {t('papersByTag.importedAt', 'Imported')}{' '}
+                  {new Date(paper.createdAt).toLocaleDateString()}
+                </span>
+              </>
             )}
             <ProcessingBadge status={paper.processingStatus} t={t} />
           </div>
@@ -1546,6 +1867,17 @@ function PaperCard({
             {paper.indexedAt && (
               <span className="rounded-full bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-600">
                 indexed
+              </span>
+            )}
+            {paper.lastReadPage != null && paper.totalPages != null && paper.totalPages > 0 && (
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-xs font-medium ${
+                  paper.lastReadPage >= paper.totalPages
+                    ? 'bg-green-50 text-green-600'
+                    : 'bg-amber-50 text-amber-600'
+                }`}
+              >
+                p.{paper.lastReadPage}/{paper.totalPages}
               </span>
             )}
           </div>
@@ -1623,13 +1955,32 @@ function PaperCard({
                   onAnalyze(paper);
                 }}
                 disabled={analyzingPaperId === paper.id}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-secondary hover:bg-amber-50 hover:text-amber-600 disabled:opacity-100"
-                title="Analyze paper"
+                className="css-tooltip flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-secondary hover:bg-amber-50 hover:text-amber-600 disabled:opacity-100"
+                data-tip={t('papers.analyze', 'Auto Tag')}
               >
                 {analyzingPaperId === paper.id ? (
                   <Loader2 size={14} className="animate-spin text-amber-600" />
                 ) : (
                   <Sparkles size={14} />
+                )}
+              </button>
+            )}
+            {/* Extract metadata button - show if paper has PDF */}
+            {(paper.pdfPath || paper.pdfUrl) && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  onExtractMetadata(paper);
+                }}
+                disabled={extractingMetadataPaperId === paper.id}
+                className="css-tooltip flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-secondary hover:bg-purple-50 hover:text-purple-600 disabled:opacity-100"
+                data-tip={t('papers.extractMetadata', 'Extract metadata')}
+              >
+                {extractingMetadataPaperId === paper.id ? (
+                  <Loader2 size={14} className="animate-spin text-purple-600" />
+                ) : (
+                  <FilePenLine size={14} />
                 )}
               </button>
             )}
@@ -1640,8 +1991,8 @@ function PaperCard({
                   onRetry(paper.id);
                 }}
                 disabled={retryingPaperId === paper.id}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-tertiary hover:bg-amber-50 hover:text-amber-700 disabled:opacity-100"
-                title="Retry processing"
+                className="css-tooltip flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-tertiary hover:bg-amber-50 hover:text-amber-700 disabled:opacity-100"
+                data-tip={t('papers.retryProcessing', 'Retry processing')}
               >
                 {retryingPaperId === paper.id ? (
                   <Loader2 size={14} className="animate-spin text-amber-600" />
@@ -1657,8 +2008,8 @@ function PaperCard({
                   onDownload(paper);
                 }}
                 disabled={downloadingPdf === paper.id}
-                className="flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-tertiary hover:bg-blue-50 hover:text-blue-600 disabled:opacity-100"
-                title="Download PDF"
+                className="css-tooltip flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-tertiary hover:bg-blue-50 hover:text-blue-600 disabled:opacity-100"
+                data-tip={t('papers.downloadPdf', 'Download PDF')}
               >
                 {downloadingPdf === paper.id ? (
                   <Loader2 size={14} className="animate-spin text-blue-500" />
@@ -1670,8 +2021,8 @@ function PaperCard({
             <button
               onClick={handleDeleteClick}
               disabled={deleting === paper.id}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-tertiary hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
-              title="Delete paper"
+              className="css-tooltip flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-tertiary hover:bg-red-50 hover:text-red-600 disabled:opacity-50"
+              data-tip={t('common.delete')}
             >
               {deleting === paper.id ? (
                 <Loader2 size={14} className="animate-spin" />
@@ -1686,31 +2037,54 @@ function PaperCard({
         {isNew && <span className="h-2 w-2 flex-shrink-0 rounded-full bg-red-500" />}
       </div>
 
-      {/* Delete confirmation row */}
+      {/* Delete confirmation modal */}
       <AnimatePresence>
         {showDeleteConfirm && (
           <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="overflow-hidden"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onClick={() => setShowDeleteConfirm(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setShowDeleteConfirm(false);
+            }}
           >
-            <div className="flex items-center justify-end gap-2 bg-red-50/40 px-4 py-2">
-              <span className="text-xs text-red-600">Delete this paper?</span>
-              <button
-                onClick={handleConfirmDelete}
-                className="rounded bg-red-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-red-700"
-              >
-                Delete
-              </button>
-              <button
-                onClick={() => setShowDeleteConfirm(false)}
-                className="rounded px-2 py-0.5 text-xs font-medium text-notion-text-secondary hover:bg-notion-sidebar"
-              >
-                Cancel
-              </button>
-            </div>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.15 }}
+              className="mx-4 max-w-sm rounded-xl bg-white p-6 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-notion-text">
+                {t('papers.deleteConfirmTitle')}
+              </h3>
+              <p className="mt-2 text-sm font-medium text-notion-text">
+                {cleanArxivTitle(paper.title)}
+              </p>
+              <p className="mt-2 text-sm text-notion-text-secondary">
+                {t('papers.deleteConfirmMessage')}
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleConfirmDelete}
+                  disabled={deleting === paper.id}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                >
+                  {deleting === paper.id && <Loader2 size={14} className="animate-spin" />}
+                  {t('common.delete')}
+                </button>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

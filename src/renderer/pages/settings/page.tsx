@@ -49,6 +49,7 @@ import {
   Download,
   AlertTriangle,
   Search,
+  LogIn,
 } from 'lucide-react';
 import { ResponsiveLine } from '@nivo/line';
 import { ModelCombobox } from '../../components/model-combobox';
@@ -581,6 +582,179 @@ function LanguageSettings() {
   );
 }
 
+// ─── Overleaf Settings ──────────────────────────────────────────────────────────
+
+function OverleafSettings() {
+  const { t } = useTranslation();
+  const [cookie, setCookie] = useState('');
+  const [hasCookie, setHasCookie] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [autoDetecting, setAutoDetecting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
+  const [showCookie, setShowCookie] = useState(false);
+
+  useEffect(() => {
+    ipc.getOverleafSession().then(({ hasCookie: has, masked }) => {
+      setHasCookie(has);
+      if (masked) setCookie(masked);
+    });
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await ipc.setOverleafSession(cookie);
+      setHasCookie(true);
+      setTestResult(null);
+    } catch (e) {
+      setTestResult({ ok: false, msg: String(e) });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const { valid } = await ipc.testOverleafSession();
+      setTestResult({
+        ok: valid,
+        msg: valid ? t('settings.overleaf.testSuccess') : t('settings.overleaf.testFailed'),
+      });
+    } catch (e) {
+      setTestResult({ ok: false, msg: String(e) });
+    } finally {
+      setTesting(false);
+      setTimeout(() => setTestResult(null), 3000);
+    }
+  };
+
+  const handleClear = async () => {
+    setSaving(true);
+    try {
+      await ipc.setOverleafSession('');
+      setCookie('');
+      setHasCookie(false);
+      setTestResult(null);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAutoDetect = async () => {
+    setAutoDetecting(true);
+    setTestResult(null);
+    try {
+      const result = await ipc.openOverleafLoginWindow();
+      if (result.success && result.autoDetected) {
+        // Refresh session state
+        const { hasCookie: has, masked } = await ipc.getOverleafSession();
+        setHasCookie(has);
+        if (masked) setCookie(masked);
+        setTestResult({ ok: true, msg: t('settings.overleaf.autoDetectSuccess') });
+      } else {
+        setTestResult({ ok: false, msg: t('settings.overleaf.autoDetectFailed') });
+      }
+    } catch (e) {
+      setTestResult({ ok: false, msg: String(e) });
+    } finally {
+      setAutoDetecting(false);
+      setTimeout(() => setTestResult(null), 3000);
+    }
+  };
+
+  return (
+    <div>
+      <p className="mb-5 text-sm text-notion-text-secondary">
+        {t('settings.overleaf.description')}
+      </p>
+
+      <div className="rounded-xl border border-notion-border bg-white p-5">
+        <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+          {t('settings.overleaf.sessionCookie')}
+        </label>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              type={showCookie ? 'text' : 'password'}
+              value={cookie}
+              onChange={(e) => setCookie(e.target.value)}
+              placeholder={t('settings.overleaf.cookiePlaceholder')}
+              className="w-full rounded-lg border border-notion-border bg-notion-sidebar px-3 py-2.5 pr-10 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+            <button
+              onClick={() => setShowCookie(!showCookie)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary hover:text-notion-text"
+            >
+              {showCookie ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+          <button
+            onClick={handleSave}
+            disabled={saving || !cookie.trim()}
+            className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2.5 text-sm font-medium text-white hover:opacity-80 disabled:opacity-50"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : null}
+            {t('common.save')}
+          </button>
+        </div>
+        <p className="mt-2 text-xs text-notion-text-tertiary">
+          {t('settings.overleaf.cookieHelp')}
+        </p>
+
+        <div className="mt-4 flex items-center gap-3">
+          <button
+            onClick={handleAutoDetect}
+            disabled={autoDetecting}
+            className="inline-flex items-center gap-2 rounded-lg bg-notion-accent px-3 py-2 text-sm font-medium text-white hover:opacity-80 disabled:opacity-50"
+          >
+            {autoDetecting ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
+            {autoDetecting ? t('settings.overleaf.detecting') : t('settings.overleaf.autoDetect')}
+          </button>
+          <button
+            onClick={handleTest}
+            disabled={testing || !hasCookie}
+            className="inline-flex items-center gap-2 rounded-lg border border-notion-border bg-white px-3 py-2 text-sm text-notion-text transition-colors hover:bg-notion-sidebar-hover disabled:opacity-50"
+          >
+            {testing ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
+            {testing ? t('common.testing') : t('common.test')}
+          </button>
+          {hasCookie && (
+            <button
+              onClick={handleClear}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 disabled:opacity-50"
+            >
+              {t('common.clear')}
+            </button>
+          )}
+          {testResult && (
+            <span className={testResult.ok ? 'text-sm text-green-600' : 'text-sm text-red-600'}>
+              {testResult.msg}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <details className="mt-4 rounded-lg border border-notion-border bg-white/70">
+        <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-notion-text-secondary">
+          {t('settings.overleaf.howToGetCookie')}
+        </summary>
+        <div className="border-t border-notion-border px-4 py-3 text-xs text-notion-text-secondary">
+          <ol className="list-decimal list-inside space-y-1.5">
+            <li>{t('settings.overleaf.step1')}</li>
+            <li>{t('settings.overleaf.step2')}</li>
+            <li>{t('settings.overleaf.step3')}</li>
+            <li>{t('settings.overleaf.step4')}</li>
+          </ol>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 // ─── Developer Settings ─────────────────────────────────────────────────────────
 
 function DeveloperSettings() {
@@ -802,11 +976,17 @@ function EditorSettings() {
 // ─── Storage Settings ─────────────────────────────────────────────────────────
 
 function StorageSettings() {
+  const { t } = useTranslation();
   const [storageDir, setStorageDir] = useState('');
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingDir, setPendingDir] = useState('');
   const [error, setError] = useState<string | null>(null);
+  // Backup state
+  const [backingUp, setBackingUp] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [backupResult, setBackupResult] = useState<string | null>(null);
+  const [backupError, setBackupError] = useState<string | null>(null);
 
   useEffect(() => {
     ipc
@@ -927,6 +1107,70 @@ function StorageSettings() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Backup & Restore */}
+      <div className="mt-6 rounded-xl border border-notion-border bg-white p-5">
+        <h3 className="mb-3 text-sm font-semibold text-notion-text">
+          {t('settings.backup.title')}
+        </h3>
+        <p className="mb-4 text-xs text-notion-text-tertiary">{t('settings.backup.description')}</p>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              setBackingUp(true);
+              setBackupResult(null);
+              setBackupError(null);
+              try {
+                const result = await ipc.createBackup();
+                if (result) {
+                  const sizeMB = (result.sizeBytes / 1024 / 1024).toFixed(1);
+                  setBackupResult(
+                    t('settings.backup.success', {
+                      papers: result.paperCount,
+                      size: sizeMB,
+                    }),
+                  );
+                }
+              } catch (e) {
+                setBackupError(e instanceof Error ? e.message : String(e));
+              } finally {
+                setBackingUp(false);
+              }
+            }}
+            disabled={backingUp || restoring}
+            className="inline-flex items-center gap-2 rounded-lg bg-notion-text px-4 py-2 text-sm font-medium text-white hover:opacity-80 disabled:opacity-50"
+          >
+            {backingUp ? <Loader2 size={14} className="animate-spin" /> : <Download size={14} />}
+            {backingUp ? t('settings.backup.creating') : t('settings.backup.create')}
+          </button>
+          <button
+            onClick={async () => {
+              setRestoring(true);
+              setBackupResult(null);
+              setBackupError(null);
+              try {
+                const result = await ipc.restoreBackup();
+                if (result) {
+                  setBackupResult(
+                    t('settings.backup.restoreSuccess', { papers: result.paperCount }),
+                  );
+                }
+              } catch (e) {
+                setBackupError(e instanceof Error ? e.message : String(e));
+              } finally {
+                setRestoring(false);
+              }
+            }}
+            disabled={backingUp || restoring}
+            className="inline-flex items-center gap-2 rounded-lg border border-notion-border px-4 py-2 text-sm font-medium text-notion-text-secondary hover:bg-notion-sidebar disabled:opacity-50"
+          >
+            {restoring ? <Loader2 size={14} className="animate-spin" /> : <HardDrive size={14} />}
+            {restoring ? t('settings.backup.restoring') : t('settings.backup.restore')}
+          </button>
+        </div>
+        {backupResult && <p className="mt-3 text-xs text-green-600">{backupResult}</p>}
+        {backupError && <p className="mt-3 text-xs text-red-600">{backupError}</p>}
+      </div>
     </div>
   );
 }
@@ -1055,6 +1299,7 @@ function AddModelModal({
   ) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const backend = KIND_BACKEND[defaultKind];
   const [name, setName] = useState('');
   const [provider, setProvider] = useState<'anthropic' | 'openai' | 'gemini' | 'custom'>('openai');
@@ -1070,6 +1315,7 @@ function AddModelModal({
     success: boolean;
     error?: string;
     output?: string;
+    latencyMs?: number;
     diagnostics?: CliTestDiagnostics;
     logFile?: string;
   } | null>(null);
@@ -1352,8 +1598,11 @@ function AddModelModal({
                   )}
                   <span className="leading-snug">
                     {testResult.success
-                      ? testResult.output || 'Connection successful!'
-                      : testResult.error || 'Connection failed'}
+                      ? testResult.output ||
+                        (testResult.latencyMs
+                          ? t('settings.models.connectedWithLatency', { ms: testResult.latencyMs })
+                          : t('settings.models.connected'))
+                      : testResult.error || t('settings.models.connectionFailed')}
                   </span>
                 </motion.div>
               </AnimatePresence>
@@ -1380,10 +1629,10 @@ function AddModelModal({
                 {testing ? (
                   <span className="flex items-center gap-1.5">
                     <Loader2 size={14} className="animate-spin" />
-                    Testing...
+                    {t('settings.models.testing')}
                   </span>
                 ) : (
-                  'Test Connection'
+                  t('settings.models.testConnection')
                 )}
               </button>
             )}
@@ -1413,6 +1662,7 @@ function EditModelModal({
   onSave: (config: Omit<ModelConfig, 'hasApiKey'> & { apiKey?: string }) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const backend = model.backend;
   const [name, setName] = useState(model.name);
   const [provider, setProvider] = useState<'anthropic' | 'openai' | 'gemini' | 'custom'>(
@@ -1430,6 +1680,7 @@ function EditModelModal({
     success: boolean;
     error?: string;
     output?: string;
+    latencyMs?: number;
     diagnostics?: CliTestDiagnostics;
     logFile?: string;
   } | null>(null);
@@ -1749,8 +2000,11 @@ function EditModelModal({
                   )}
                   <span className="leading-snug">
                     {testResult.success
-                      ? testResult.output || 'Connection successful!'
-                      : testResult.error || 'Connection failed'}
+                      ? testResult.output ||
+                        (testResult.latencyMs
+                          ? t('settings.models.connectedWithLatency', { ms: testResult.latencyMs })
+                          : t('settings.models.connected'))
+                      : testResult.error || t('settings.models.connectionFailed')}
                   </span>
                 </motion.div>
               </AnimatePresence>
@@ -1777,10 +2031,10 @@ function EditModelModal({
                 {testing ? (
                   <span className="flex items-center gap-1.5">
                     <Loader2 size={14} className="animate-spin" />
-                    Testing...
+                    {t('settings.models.testing')}
                   </span>
                 ) : (
-                  'Test Connection'
+                  t('settings.models.testConnection')
                 )}
               </button>
             )}
@@ -1812,11 +2066,13 @@ function ModelCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation();
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
     error?: string;
     output?: string;
+    latencyMs?: number;
     diagnostics?: CliTestDiagnostics;
     logFile?: string;
   } | null>(null);
@@ -1857,7 +2113,7 @@ function ModelCard({
             <span className="text-sm font-semibold text-notion-text truncate">{model.name}</span>
             {isActive && (
               <span className="shrink-0 rounded-full bg-blue-100 px-2 py-0.5 text-2xs font-medium text-blue-700">
-                Active
+                {t('settings.models.active')}
               </span>
             )}
           </div>
@@ -1874,10 +2130,10 @@ function ModelCard({
               {testing ? (
                 <span className="flex items-center gap-1">
                   <Loader2 size={12} className="animate-spin" />
-                  Testing...
+                  {t('settings.models.testing')}
                 </span>
               ) : (
-                'Test'
+                t('settings.models.test')
               )}
             </button>
           )}
@@ -1886,7 +2142,7 @@ function ModelCard({
               onClick={onSetActive}
               className="rounded-lg border border-notion-border px-3 py-1.5 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar hover:text-notion-text"
             >
-              Activate
+              {t('settings.models.activate')}
             </button>
           )}
           <button
@@ -1928,8 +2184,11 @@ function ModelCard({
               )}
               <span className="leading-snug">
                 {testResult.success
-                  ? testResult.output || 'Connection successful!'
-                  : testResult.error || 'Connection failed'}
+                  ? testResult.output ||
+                    (testResult.latencyMs
+                      ? t('settings.models.connectedWithLatency', { ms: testResult.latencyMs })
+                      : t('settings.models.connected'))
+                  : testResult.error || t('settings.models.connectionFailed')}
               </span>
             </motion.div>
           </AnimatePresence>
@@ -2538,16 +2797,26 @@ const SITE_ICONS: Record<string, React.ElementType> = {
   YouTube: YouTubeIcon,
 };
 
-const PROXY_SCOPE_OPTIONS: Array<{
-  key: keyof ProxyScope;
-  label: string;
-  desc: string;
-  Icon: React.ElementType;
-}> = [
-  { key: 'pdfDownload', label: 'PDF Downloads', desc: 'Fetch papers via proxy', Icon: HardDrive },
-  { key: 'aiApi', label: 'AI API Calls', desc: 'Route LLM requests via proxy', Icon: Cpu },
-  { key: 'cliTools', label: 'Agents', desc: 'Inject proxy env into CLI agents', Icon: Bot },
-];
+const PROXY_SCOPE_OPTIONS = [
+  {
+    key: 'pdfDownload' as keyof ProxyScope,
+    labelKey: 'settings.proxy.scopePdfDownloads' as const,
+    descKey: 'settings.proxy.scopePdfDownloadsDesc' as const,
+    Icon: HardDrive,
+  },
+  {
+    key: 'aiApi' as keyof ProxyScope,
+    labelKey: 'settings.proxy.scopeAiApi' as const,
+    descKey: 'settings.proxy.scopeAiApiDesc' as const,
+    Icon: Cpu,
+  },
+  {
+    key: 'cliTools' as keyof ProxyScope,
+    labelKey: 'settings.proxy.scopeAgents' as const,
+    descKey: 'settings.proxy.scopeAgentsDesc' as const,
+    Icon: Bot,
+  },
+] as const;
 
 const PROXY_SCHEMES = ['http', 'https', 'socks5'] as const;
 type ProxyScheme = (typeof PROXY_SCHEMES)[number];
@@ -2570,6 +2839,7 @@ function buildProxyUrl(scheme: ProxyScheme, host: string, port: string): string 
 }
 
 function ProxySettings() {
+  const { t } = useTranslation();
   const [proxyEnabled, setProxyEnabled] = useState(false);
   const [scheme, setScheme] = useState<ProxyScheme>('http');
   const [host, setHost] = useState('127.0.0.1');
@@ -2663,7 +2933,7 @@ function ProxySettings() {
       >
         <div className="mb-3 flex items-center justify-between">
           <label className="text-xs font-medium text-notion-text-secondary">
-            HTTP / SOCKS Proxy
+            {t('settings.proxy.httpSocksProxy')}
           </label>
           {/* Pill toggle */}
           <button
@@ -2772,9 +3042,11 @@ function ProxySettings() {
 
       {/* Proxy Scope */}
       <div className="rounded-xl border border-notion-border bg-white p-5">
-        <p className="mb-3 text-xs font-medium text-notion-text-secondary">Apply Proxy To</p>
+        <p className="mb-3 text-xs font-medium text-notion-text-secondary">
+          {t('settings.proxy.applyProxyTo')}
+        </p>
         <div className="grid grid-cols-3 gap-2">
-          {PROXY_SCOPE_OPTIONS.map(({ key, label, desc, Icon }) => (
+          {PROXY_SCOPE_OPTIONS.map(({ key, labelKey, descKey, Icon }) => (
             <button
               key={key}
               type="button"
@@ -2792,7 +3064,7 @@ function ProxySettings() {
               <span
                 className={`min-w-0 flex-1 truncate text-sm font-medium ${proxyScope[key] ? 'text-blue-700' : 'text-notion-text'}`}
               >
-                {label}
+                {t(labelKey)}
               </span>
               <div
                 className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
@@ -2808,7 +3080,9 @@ function ProxySettings() {
 
       {/* Test site cards — always visible */}
       <div className="rounded-xl border border-notion-border bg-white p-5">
-        <p className="mb-3 text-xs font-medium text-notion-text-secondary">Connectivity Check</p>
+        <p className="mb-3 text-xs font-medium text-notion-text-secondary">
+          {t('settings.proxy.connectivityCheck')}
+        </p>
         <div className="grid grid-cols-3 gap-2">
           {Object.entries(SITE_ICONS).map(([name, SiteIcon]) => {
             const result = testResults?.find((r) => r.name === name);
@@ -2871,7 +3145,7 @@ function ProxySettings() {
           className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg border border-notion-border bg-white px-4 py-2 text-sm font-medium text-notion-text shadow-sm transition-all hover:border-notion-text-tertiary hover:shadow disabled:cursor-not-allowed disabled:opacity-40"
         >
           {testing ? <Loader2 size={14} className="animate-spin" /> : <Globe size={14} />}
-          {testing ? 'Testing…' : 'Test Connection'}
+          {testing ? t('settings.proxy.testing') : t('settings.proxy.testConnection')}
         </button>
       </div>
     </div>
@@ -3071,8 +3345,8 @@ function EmbeddingCard({
           embeddingApiBase: config.embeddingApiBase,
           embeddingApiKey: config.embeddingApiKey,
         }),
-        5000,
-        'Embedding test timed out after 5 seconds',
+        30_000,
+        'Embedding test timed out after 30 seconds',
       );
       setTestResult(result);
       testSuccessTimerRef.current = setTimeout(() => setTestResult(null), 3000);
@@ -3232,10 +3506,18 @@ function SemanticSection() {
 }
 
 function EmbeddingSection() {
+  const { t } = useTranslation();
   const [configs, setConfigs] = useState<EmbeddingConfig[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [addingConfig, setAddingConfig] = useState(false);
   const [editingConfig, setEditingConfig] = useState<EmbeddingConfig | null>(null);
+  const [rebuildStatus, setRebuildStatus] = useState<{
+    active: boolean;
+    total: number;
+    completed: number;
+    failed: number;
+    currentPaperTitle?: string;
+  } | null>(null);
   const reload = () => {
     void ipc.listEmbeddingConfigs().then(({ configs: c, activeId: a }) => {
       setConfigs(c);
@@ -3245,6 +3527,25 @@ function EmbeddingSection() {
 
   useEffect(() => {
     reload();
+    // Fetch initial rebuild status
+    void ipc.getEmbeddingRebuildStatus().then((s) => {
+      // Only show status if a batch is actively running
+      if (s.active) setRebuildStatus(s);
+    });
+    // Listen for rebuild progress
+    const unsub = onIpc('embedding:rebuildStatus', (_event: unknown, payload: unknown) => {
+      const status = payload as {
+        active: boolean;
+        total: number;
+        completed: number;
+        failed: number;
+        currentPaperTitle?: string;
+      };
+      setRebuildStatus(status);
+    });
+    return () => {
+      unsub();
+    };
   }, []);
 
   const handleSetActive = async (id: string) => {
@@ -3262,6 +3563,75 @@ function EmbeddingSection() {
     setEditingConfig(null);
     reload();
   };
+
+  const [dimensionMatchInfo, setDimensionMatchInfo] = useState<{
+    match: boolean;
+    dim: number;
+  } | null>(null);
+  const [showPaperPicker, setShowPaperPicker] = useState(false);
+  const [allPapers, setAllPapers] = useState<
+    { id: string; title: string; indexedAt?: string | null }[]
+  >([]);
+  const [selectedPaperIds, setSelectedPaperIds] = useState<Set<string>>(new Set());
+
+  const [rebuildLoading, setRebuildLoading] = useState(false);
+  const handleRebuildAll = async (force = false) => {
+    if (rebuildLoading || isRebuilding) return;
+    setRebuildLoading(true);
+    setDimensionMatchInfo(null);
+    try {
+      const result = await ipc.rebuildAllEmbeddings({ force });
+      if (result.dimensionMatch && result.currentDimension) {
+        setDimensionMatchInfo({ match: true, dim: result.currentDimension });
+      }
+    } finally {
+      setRebuildLoading(false);
+    }
+  };
+
+  const handleCancelRebuild = async () => {
+    await ipc.cancelEmbeddingRebuild();
+  };
+
+  const handleOpenPaperPicker = async () => {
+    try {
+      const papers = await ipc.listPapers();
+      setAllPapers(papers.map((p) => ({ id: p.id, title: p.title, indexedAt: p.indexedAt })));
+      setSelectedPaperIds(new Set());
+      setShowPaperPicker(true);
+    } catch (err) {
+      console.error('[EmbeddingSection] Failed to load papers:', err);
+    }
+  };
+
+  const handleRebuildSelected = async () => {
+    if (selectedPaperIds.size === 0) return;
+    setShowPaperPicker(false);
+    await ipc.rebuildSelectedEmbeddings([...selectedPaperIds]);
+  };
+
+  const togglePaper = (id: string) => {
+    setSelectedPaperIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAll = () => {
+    if (selectedPaperIds.size === allPapers.length) {
+      setSelectedPaperIds(new Set());
+    } else {
+      setSelectedPaperIds(new Set(allPapers.map((p) => p.id)));
+    }
+  };
+
+  const isRebuilding = rebuildStatus?.active ?? false;
+  const rebuildProgress =
+    rebuildStatus && rebuildStatus.total > 0
+      ? Math.round(((rebuildStatus.completed + rebuildStatus.failed) / rebuildStatus.total) * 100)
+      : 0;
 
   return (
     <div className="space-y-4">
@@ -3311,6 +3681,103 @@ function EmbeddingSection() {
             ))
           )}
         </div>
+
+        {/* Rebuild all index */}
+        {activeId && (
+          <div className="border-t border-notion-border px-5 py-4">
+            {isRebuilding ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs text-notion-text-secondary">
+                    <Loader2 size={12} className="animate-spin" />
+                    <span>
+                      {t('settings.embedding.rebuilding')} (
+                      {rebuildStatus!.completed + rebuildStatus!.failed}/{rebuildStatus!.total})
+                    </span>
+                  </div>
+                  <button
+                    onClick={handleCancelRebuild}
+                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-notion-text-tertiary transition-colors hover:bg-red-50 hover:text-red-500"
+                  >
+                    <X size={10} />
+                    {t('settings.embedding.cancelRebuild')}
+                  </button>
+                </div>
+                <div className="h-1.5 overflow-hidden rounded-full bg-notion-sidebar">
+                  <div
+                    className="h-full rounded-full bg-notion-accent transition-all duration-300"
+                    style={{ width: `${rebuildProgress}%` }}
+                  />
+                </div>
+                {rebuildStatus!.currentPaperTitle && (
+                  <p className="truncate text-xs text-notion-text-tertiary">
+                    {rebuildStatus!.currentPaperTitle}
+                  </p>
+                )}
+                {rebuildStatus!.failed > 0 && (
+                  <p className="text-xs text-red-500">
+                    {rebuildStatus!.failed} {t('settings.embedding.rebuildFailed')}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-notion-text-secondary">
+                    {t('settings.embedding.rebuildDescription')}
+                  </p>
+                  {rebuildStatus && !rebuildStatus.active && rebuildStatus.total > 0 && (
+                    <p
+                      className={`mt-1 text-xs ${rebuildStatus.failed > 0 ? 'text-orange-500' : 'text-green-600'}`}
+                    >
+                      {t('settings.embedding.rebuildDone', {
+                        completed: rebuildStatus.completed,
+                        total: rebuildStatus.total,
+                      })}
+                      {rebuildStatus.failed > 0 &&
+                        ` (${rebuildStatus.failed} ${t('settings.embedding.rebuildFailed')})`}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleOpenPaperPicker}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border px-3 py-1.5 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar hover:text-notion-text"
+                  >
+                    {t('settings.embedding.rebuildSelected')}
+                  </button>
+                  <button
+                    onClick={() => handleRebuildAll(false)}
+                    disabled={rebuildLoading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-notion-border px-3 py-1.5 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar hover:text-notion-text disabled:opacity-50"
+                  >
+                    {rebuildLoading ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={12} />
+                    )}
+                    {t('settings.embedding.rebuildAll')}
+                  </button>
+                </div>
+                {dimensionMatchInfo && (
+                  <div className="flex items-center justify-between rounded-lg bg-notion-sidebar/50 px-3 py-2">
+                    <p className="text-xs text-notion-text-secondary">
+                      {t('settings.embedding.dimensionMatch', {
+                        dim: dimensionMatchInfo.dim,
+                      })}
+                    </p>
+                    <button
+                      onClick={() => handleRebuildAll(true)}
+                      className="text-xs font-medium text-notion-accent hover:underline"
+                    >
+                      {t('settings.embedding.forceRebuild')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {addingConfig && (
@@ -3323,6 +3790,96 @@ function EmbeddingSection() {
           onClose={() => setEditingConfig(null)}
         />
       )}
+
+      {/* Paper picker modal for selective rebuild */}
+      {showPaperPicker &&
+        createPortal(
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setShowPaperPicker(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex max-h-[70vh] w-full max-w-lg flex-col rounded-xl bg-white p-6 shadow-xl"
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-notion-text">
+                  {t('settings.embedding.selectPapers')}
+                </h2>
+                <button
+                  onClick={() => setShowPaperPicker(false)}
+                  className="rounded-lg p-1.5 text-notion-text-tertiary transition-colors hover:bg-notion-sidebar hover:text-notion-text"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="mb-3 flex items-center justify-between">
+                <button
+                  onClick={toggleAll}
+                  className="text-xs font-medium text-notion-accent hover:underline"
+                >
+                  {selectedPaperIds.size === allPapers.length
+                    ? t('settings.embedding.deselectAll')
+                    : t('settings.embedding.selectAll')}
+                </button>
+                <span className="text-xs text-notion-text-tertiary">
+                  {selectedPaperIds.size}/{allPapers.length}
+                </span>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                <div className="space-y-1">
+                  {allPapers.map((paper) => (
+                    <label
+                      key={paper.id}
+                      className="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-notion-sidebar"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedPaperIds.has(paper.id)}
+                        onChange={() => togglePaper(paper.id)}
+                        className="h-3.5 w-3.5 rounded border-notion-border text-notion-accent focus:ring-notion-accent"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-notion-text">{paper.title}</p>
+                      </div>
+                      {paper.indexedAt && (
+                        <span className="shrink-0 rounded bg-notion-tag-blue px-1.5 py-0.5 text-[10px] text-notion-accent">
+                          indexed
+                        </span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowPaperPicker(false)}
+                  className="rounded-lg border border-notion-border px-4 py-2 text-xs font-medium text-notion-text-secondary transition-colors hover:bg-notion-sidebar"
+                >
+                  {t('settings.embedding.cancelRebuild')}
+                </button>
+                <button
+                  onClick={handleRebuildSelected}
+                  disabled={selectedPaperIds.size === 0}
+                  className="rounded-lg bg-notion-accent px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-notion-accent/90 disabled:opacity-50"
+                >
+                  {t('settings.embedding.rebuildCount', { count: selectedPaperIds.size })}
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -3374,6 +3931,8 @@ function renderSection(id: SectionId) {
       return <EditorSettings />;
     case 'general.semantic':
       return <SemanticSection />;
+    case 'general.overleaf':
+      return <OverleafSettings />;
     case 'general.dev':
       return <DeveloperSettings />;
     case 'models':
@@ -3462,7 +4021,7 @@ export function SettingsPage() {
                     />
                     <Icon size={12} className="shrink-0 text-notion-text-tertiary" />
                     <span className="text-[11px] font-semibold uppercase tracking-widest text-notion-text-tertiary">
-                      {t(`settings.nav.${group.id}`)}
+                      {(t as any)(`settings.nav.${group.id}`)}
                     </span>
                   </button>
 
@@ -3486,7 +4045,7 @@ export function SettingsPage() {
                                 : 'text-notion-text-secondary'
                           } hover:text-notion-text`}
                         >
-                          {t(`settings.nav.${item.id.replace('.', '_')}`)}
+                          {(t as any)(`settings.nav.${item.id.replace('.', '_')}`)}
                         </button>
                       );
                     })}
@@ -3510,10 +4069,10 @@ export function SettingsPage() {
                   <section key={result.id} id={`section-${result.id}`}>
                     <div className="mb-4 flex items-baseline gap-2">
                       <h2 className="text-sm font-semibold text-notion-text">
-                        {t(`settings.${result.id.replace(/\./g, '_')}.title`)}
+                        {(t as any)(`settings.${result.id.replace(/\./g, '_')}.title`)}
                       </h2>
                       <span className="text-xs text-notion-text-tertiary">
-                        {t(`settings.nav.${result.group}`)}
+                        {(t as any)(`settings.nav.${result.group}`)}
                       </span>
                     </div>
                     {renderSection(result.id)}
@@ -3526,10 +4085,10 @@ export function SettingsPage() {
             <section>
               <div className="mb-5">
                 <h2 className="text-sm font-semibold text-notion-text">
-                  {t(`settings.${activeSection.replace(/\./g, '_')}.title`)}
+                  {(t as any)(`settings.${activeSection.replace(/\./g, '_')}.title`)}
                 </h2>
                 <p className="mt-0.5 text-xs text-notion-text-tertiary">
-                  {t(`settings.${activeSection.replace(/\./g, '_')}.description`)}
+                  {(t as any)(`settings.${activeSection.replace(/\./g, '_')}.description`)}
                 </p>
               </div>
               {renderSection(activeSection)}

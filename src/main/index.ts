@@ -6,6 +6,7 @@ import { setupPapersIpc } from './ipc/papers.ipc';
 import { setupReadingIpc } from './ipc/reading.ipc';
 import { setupIngestIpc } from './ipc/ingest.ipc';
 import { setupProjectsIpc } from './ipc/projects.ipc';
+import { setupHighlightsIpc } from './ipc/highlights.ipc';
 import { appendLog, getLogFilePath } from './services/app-log.service';
 import { setupProvidersIpc } from './ipc/providers.ipc';
 import { setupCliToolsIpc } from './ipc/cli-tools.ipc';
@@ -21,15 +22,23 @@ import { stopAllRunners } from './services/agent-runner-registry';
 import { setupCitationsIpc } from './ipc/citations.ipc';
 import { setupUserProfileIpc } from './ipc/user-profile.ipc';
 import { setupAcpChatIpc } from './ipc/acp-chat.ipc';
+import { setupZoteroIpc } from './ipc/zotero.ipc';
+import { setupDiscoveryIpc } from './ipc/discovery.ipc';
+import { setupBackupIpc } from './ipc/backup.ipc';
+import { setupReaderAiIpc } from './ipc/reader-ai.ipc';
+import { setupTtsIpc } from './ipc/tts.ipc';
 import { ensureStorageDir, getDbPath, getStorageDir } from './store/storage-path';
 import {
   getSemanticSearchSettings,
   hasLanguagePreference,
   setLanguage,
+  getActiveEmbeddingConfig,
+  setSemanticSearchSettings,
 } from './store/app-settings-store';
 import { PapersRepository } from '@db';
 import { resumeAutomaticPaperProcessing } from './services/paper-processing.service';
 import { resumeAutomaticCitationExtraction } from './services/citation-processing.service';
+import { resumeAutomaticReferenceExtraction } from './services/reference-extraction-bg.service';
 import { stopOllamaService, warmupOllamaService } from './services/ollama.service';
 import { closeVecStore } from '../db/vec-store';
 import * as vecIndex from './services/vec-index.service';
@@ -308,8 +317,8 @@ async function ensureDatabase() {
 
 function createWindow() {
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
-  const isDev =
-    !!devServerUrl || process.env.NODE_ENV === 'development' || process.env.ELECTRON_DEV === '1';
+  // Only use ELECTRON_DEV to determine dev mode (not NODE_ENV, which may be set in .env)
+  const isDev = !!devServerUrl || process.env.ELECTRON_DEV === '1';
 
   // __dirname is dist/main/ — go up to assets/
   const iconPath = path.join(__dirname, '../../assets/icon.icns');
@@ -328,6 +337,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false, // needed for preload to use Node.js APIs
+      webviewTag: true, // needed for in-app browser (publisher websites)
     },
   });
 
@@ -385,6 +395,12 @@ function setupWindowControls(win: BrowserWindow) {
     }
   });
   ipcMain.handle('window:isMaximized', () => win.isMaximized());
+
+  // Open URL in system default browser
+  ipcMain.handle('browser:open', (_event, url: string, _title?: string) => {
+    shell.openExternal(url);
+    return true;
+  });
 }
 
 function setupFileIpc() {
@@ -430,6 +446,18 @@ app.whenReady().then(async () => {
   }
 
   await ensureDatabase();
+
+  // Clean up expired temporary papers from Discovery
+  import('./services/temporary-papers.service')
+    .then(({ cleanupTemporaryPapers }) => {
+      cleanupTemporaryPapers().catch((err) =>
+        console.error('[startup] Temporary papers cleanup failed:', err),
+      );
+    })
+    .catch((err) => {
+      console.error('[startup] Failed to load temporary papers service:', err);
+    });
+
   try {
     await startAgentLocalService();
   } catch (err) {
@@ -456,6 +484,7 @@ app.whenReady().then(async () => {
   setupReadingIpc();
   setupIngestIpc();
   setupProjectsIpc();
+  setupHighlightsIpc();
   setupProvidersIpc();
   setupCliToolsIpc();
   setupModelsIpc();
@@ -469,9 +498,14 @@ app.whenReady().then(async () => {
     .initialize()
     .catch((err) => console.error('[AgentTodo] Failed to initialize scheduler:', err));
   setupCitationsIpc();
+  setupBackupIpc();
   setupUserProfileIpc();
   setupAcpChatIpc();
   setupFileIpc();
+  setupZoteroIpc();
+  setupDiscoveryIpc();
+  setupReaderAiIpc();
+  setupTtsIpc();
 
   // Initialize vec index (background, non-blocking)
   void (async () => {
@@ -521,13 +555,48 @@ app.whenReady().then(async () => {
     }
   })();
 
+  // Sync active embedding config into semanticSearch settings on startup
+  // (fixes stale baseUrl/apiKey if user switched configs in a previous session)
+  const activeEmbedConfig = getActiveEmbeddingConfig();
+  if (activeEmbedConfig) {
+    setSemanticSearchSettings({
+      embeddingProvider: activeEmbedConfig.provider,
+      embeddingModel: activeEmbedConfig.embeddingModel,
+      embeddingApiBase: activeEmbedConfig.embeddingApiBase,
+      embeddingApiKey: activeEmbedConfig.embeddingApiKey,
+    });
+    // Fix stale model name in VecStore (e.g. "test-model" from old data)
+    const vecStatus = vecIndex.getStatus();
+    if (vecStatus.model && vecStatus.model !== activeEmbedConfig.embeddingModel) {
+      console.log(
+        `[startup] VecStore model mismatch: "${vecStatus.model}" → "${activeEmbedConfig.embeddingModel}", resetting index and clearing old embeddings`,
+      );
+      // Clear and reinitialize VecStore with the new model's dimension
+      vecIndex.clearAndReinitialize(activeEmbedConfig.embeddingModel);
+      // Clear old embeddings from DB so they get re-generated with the new model
+      const repo = new PapersRepository();
+      await repo.clearAllIndexedAt();
+      await paperEmbeddingService.rebuildAllEmbeddings();
+    }
+
+    console.log(
+      `[startup] Synced active embedding config "${activeEmbedConfig.name}" → baseUrl=${activeEmbedConfig.embeddingApiBase ?? '<default>'}`,
+    );
+  }
+
   resumeAutomaticPaperProcessing().catch((err) =>
     console.error('[startup] Failed to resume paper processing:', err),
   );
 
   // Start automatic citation extraction (background, after paper processing)
-  resumeAutomaticCitationExtraction().catch((err) =>
-    console.error('[startup] Failed to resume citation extraction:', err),
+  // TODO: Re-enable when needed
+  // resumeAutomaticCitationExtraction().catch((err) =>
+  //   console.error('[startup] Failed to resume citation extraction:', err),
+  // );
+
+  // Start automatic PDF reference extraction (background)
+  resumeAutomaticReferenceExtraction().catch((err) =>
+    console.error('[startup] Failed to resume reference extraction:', err),
   );
 
   const win = createWindow();
