@@ -1,6 +1,7 @@
 # Changelog
 
 <<<<<<< HEAD
+
 ## 0.0.4 (2026-03-23)
 
 ### test: Skip Windows-specific tests on macOS and Linux
