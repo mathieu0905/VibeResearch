@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-03-23 (68)
+
+### fix: Remove high-severity flatted audit finding
+
+**Summary**: Cleared the pre-push `npm audit` high-severity finding by updating the vulnerable transitive `flatted` dependency used by the lint toolchain and verified the release branch remains mergeable.
+
+**Changes**:
+
+1. Updated the lockfile to resolve `flatted` to a patched release in the ESLint dependency chain
+2. Re-ran repository validation checks after the dependency update
+3. Verified the feature branch is aligned with the latest `origin/main` before opening a PR
+
+**Test validation**: Passed `npm run lint`, `npm run test`, and `npm audit`; verified the branch is `0` commits behind and `1` commit ahead of `origin/main` before PR creation.
+
 ## 2026-03-23 (67)
 
 ### fix: Stabilize Windows release packaging
