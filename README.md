@@ -29,8 +29,8 @@
 
 CitationClaw is community-driven and PR-friendly.
 
-- Open an issue: <https://github.com/VisionXLab/CitationClaw/issues>
-- Submit a PR: <https://github.com/VisionXLab/CitationClaw/pulls>
+- Open an issue: <https://github.com/Noietch/ResearchClaw/issues>
+- Submit a PR: <https://github.com/Noietch/ResearchClaw/pulls>
 - Good first tasks: docs, UI polish, skill metadata, retry robustness
 
 ## Feature
