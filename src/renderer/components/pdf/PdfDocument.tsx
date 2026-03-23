@@ -597,33 +597,53 @@ export function PdfDocument({
   useEffect(() => {
     const scrollContainer = scrollRef.current;
     if (!scrollContainer) return;
+
     const handleWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
+
       const oldScale = actualScaleRef.current;
-      const delta = -e.deltaY * 0.01;
+      // Smoother delta calculation - smaller steps for finer control
+      const delta = -e.deltaY * 0.005;
       const newScale = Math.min(5, Math.max(0.25, oldScale + delta));
-      if (newScale === oldScale) return;
+
+      if (Math.abs(newScale - oldScale) < 0.001) return; // Skip tiny changes
 
       const rect = scrollContainer.getBoundingClientRect();
-      // Mouse position relative to the container viewport
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-      // Mouse position in document coordinates (before zoom)
-      const docX = scrollContainer.scrollLeft + mouseX;
-      const docY = scrollContainer.scrollTop + mouseY;
+
+      // Document coordinates before zoom
+      const scrollLeft = scrollContainer.scrollLeft;
+      const scrollTop = scrollContainer.scrollTop;
+      const docX = scrollLeft + mouseX;
+      const docY = scrollTop + mouseY;
+
       // Scale ratio
       const ratio = newScale / oldScale;
 
+      // Mark that we're zooming (prevents scroll position save)
       cursorZoomInProgress.current = true;
+
+      // Update scale immediately
       viewport.setCustomScale(newScale);
 
-      // Adjust scroll so the point under the cursor stays fixed
+      // Adjust scroll position immediately to keep mouse point fixed
+      // Use requestAnimationFrame to ensure DOM has updated
       requestAnimationFrame(() => {
-        scrollContainer.scrollLeft = docX * ratio - mouseX;
-        scrollContainer.scrollTop = docY * ratio - mouseY;
+        const newScrollLeft = docX * ratio - mouseX;
+        const newScrollTop = docY * ratio - mouseY;
+
+        scrollContainer.scrollLeft = newScrollLeft;
+        scrollContainer.scrollTop = newScrollTop;
+
+        // Reset zoom flag after a short delay
+        setTimeout(() => {
+          cursorZoomInProgress.current = false;
+        }, 50);
       });
     };
+
     scrollContainer.addEventListener('wheel', handleWheel, { passive: false });
     return () => scrollContainer.removeEventListener('wheel', handleWheel);
   }, [viewport]);

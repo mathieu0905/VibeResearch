@@ -50,6 +50,8 @@ export const PdfPage = memo(function PdfPage({
   const textLayerInstanceRef = useRef<TextLayer | null>(null);
   const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null);
   const [linkRects, setLinkRects] = useState<LinkRect[]>([]);
+  const lastRenderedScaleRef = useRef<number>(scale);
+  const renderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Load page object
   useEffect(() => {
@@ -159,9 +161,33 @@ export const PdfPage = memo(function PdfPage({
   }, [scale, document]);
 
   useEffect(() => {
-    if (isVisible && pageRef.current) {
+    if (!isVisible || !pageRef.current) return;
+
+    // Throttle rendering during zoom: only re-render if scale changed significantly
+    const scaleDiff = Math.abs(scale - lastRenderedScaleRef.current);
+    const shouldRender = scaleDiff > 0.05 || scaleDiff === 0; // Re-render if >5% change or first render
+
+    if (shouldRender) {
+      // Clear any pending render timeout
+      if (renderTimeoutRef.current) {
+        clearTimeout(renderTimeoutRef.current);
+        renderTimeoutRef.current = null;
+      }
+
+      lastRenderedScaleRef.current = scale;
       renderPage();
+    } else {
+      // Schedule a deferred render for the final scale value
+      if (renderTimeoutRef.current) {
+        clearTimeout(renderTimeoutRef.current);
+      }
+      renderTimeoutRef.current = setTimeout(() => {
+        lastRenderedScaleRef.current = scale;
+        renderPage();
+        renderTimeoutRef.current = null;
+      }, 150);
     }
+
     return () => {
       if (renderTaskRef.current) {
         renderTaskRef.current.cancel();
@@ -171,8 +197,12 @@ export const PdfPage = memo(function PdfPage({
         textLayerInstanceRef.current.cancel();
         textLayerInstanceRef.current = null;
       }
+      if (renderTimeoutRef.current) {
+        clearTimeout(renderTimeoutRef.current);
+        renderTimeoutRef.current = null;
+      }
     };
-  }, [isVisible, renderPage, pageSize]);
+  }, [isVisible, renderPage, pageSize, scale]);
 
   // Highlight search matches in the text layer DOM
   useEffect(() => {
