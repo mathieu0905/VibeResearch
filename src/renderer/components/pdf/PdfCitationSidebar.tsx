@@ -249,18 +249,26 @@ export function PdfCitationSidebar({
     (ref: Reference) => {
       if (!onGoToPage || !citationData) return;
 
-      // Strategy 1: Find the exact marker for this reference number in the reference section
-      // Reference section is typically in the last 40% of the document
-      const refSectionStart = Math.floor(document.numPages * 0.6);
+      // Find all markers for this reference number (sorted by page)
+      const allMarkers = citationData.markers
+        .filter((m) => m.numbers.includes(ref.number))
+        .sort((a, b) => a.pageNumber - b.pageNumber);
 
-      // Find all markers for this reference number in the reference section
-      const refMarkers = citationData.markers.filter(
-        (m) => m.pageNumber >= refSectionStart && m.numbers.includes(ref.number),
-      );
+      if (allMarkers.length > 0) {
+        // Cycle through all occurrences
+        let nextIndex = 0;
+        if (activeRefNumber === ref.number) {
+          // Same reference clicked again → go to next occurrence
+          nextIndex = (jumpIndex + 1) % allMarkers.length;
+        } else {
+          // Different reference → start from first occurrence
+          nextIndex = 0;
+        }
 
-      if (refMarkers.length > 0) {
-        // Use the last occurrence (likely the reference list entry, not an in-text citation)
-        const targetMarker = refMarkers[refMarkers.length - 1];
+        setActiveRefNumber(ref.number);
+        setJumpIndex(nextIndex);
+
+        const targetMarker = allMarkers[nextIndex];
         onGoToPage(targetMarker.pageNumber, true, 0);
         return;
       }
@@ -302,7 +310,7 @@ export function PdfCitationSidebar({
         onGoToPage(targetPage, true, yFraction);
       }
     },
-    [onGoToPage, citationData, document.numPages],
+    [onGoToPage, citationData, document.numPages, activeRefNumber, jumpIndex],
   );
 
   // Handle citation click
@@ -343,6 +351,10 @@ export function PdfCitationSidebar({
   // Map of ref number -> matched paper shortId (null = checked but not found)
   const [localMatches, setLocalMatches] = useState<Map<number, string | null>>(new Map());
   const [checkingRef, setCheckingRef] = useState<number | null>(null);
+
+  // Track current jump position for cycling through citation occurrences
+  const [activeRefNumber, setActiveRefNumber] = useState<number | null>(null);
+  const [jumpIndex, setJumpIndex] = useState<number>(0);
 
   useEffect(() => {
     if (!selectedRef) return;
@@ -419,58 +431,77 @@ export function PdfCitationSidebar({
 
             {showAllCitations && (
               <div className="p-1">
-                {citationData.references.map((ref) => (
-                  <div
-                    key={ref.number}
-                    className="group flex items-start gap-1 rounded-md px-2 py-1.5 hover:bg-blue-50"
-                  >
-                    {/* Click text area → jump to reference location in PDF */}
-                    <button
-                      onClick={() => handleRefClick(ref)}
-                      className="flex-1 min-w-0 flex items-start gap-2 text-left"
-                      title={t('pdf.citation.jumpToRef')}
+                {citationData.references.map((ref) => {
+                  const refMarkers = citationData.markers.filter((m) =>
+                    m.numbers.includes(ref.number),
+                  );
+                  const isActive = activeRefNumber === ref.number;
+                  const totalOccurrences = refMarkers.length;
+
+                  return (
+                    <div
+                      key={ref.number}
+                      className={`group flex items-start gap-1 rounded-md px-2 py-1.5 ${
+                        isActive ? 'bg-blue-100' : 'hover:bg-blue-50'
+                      }`}
                     >
-                      <span className="flex-shrink-0 text-xs font-bold text-blue-600 w-6">
-                        [{ref.number}]
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs text-notion-text line-clamp-2 group-hover:text-blue-600">
-                          {ref.title || ref.text.slice(0, 80) + '...'}
-                        </p>
-                        {ref.authors && (
-                          <p className="text-[10px] text-notion-text-tertiary mt-0.5 truncate">
-                            {ref.authors}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-1 mt-0.5 flex-wrap">
-                          {ref.venue && (
-                            <span className="inline-block rounded bg-purple-50 px-1 py-0.5 text-[9px] text-purple-600 truncate max-w-[150px]">
-                              {ref.venue}
-                            </span>
-                          )}
-                          {ref.year && (
-                            <span className="text-[10px] text-notion-text-tertiary">
-                              {ref.year}
-                            </span>
-                          )}
-                          {ref.arxivId && (
-                            <span className="inline-block rounded bg-blue-50 px-1 py-0.5 text-[9px] text-blue-600">
-                              arXiv
+                      {/* Click text area → jump to reference location in PDF */}
+                      <button
+                        onClick={() => handleRefClick(ref)}
+                        className="flex-1 min-w-0 flex items-start gap-2 text-left"
+                        title={
+                          totalOccurrences > 0
+                            ? `${t('pdf.citation.jumpToRef')} (${totalOccurrences} ${t('pdf.citation.occurrences')})`
+                            : t('pdf.citation.jumpToRef')
+                        }
+                      >
+                        <div className="flex-shrink-0 flex flex-col items-center w-6">
+                          <span className="text-xs font-bold text-blue-600">[{ref.number}]</span>
+                          {isActive && totalOccurrences > 1 && (
+                            <span className="text-[9px] text-blue-500 font-medium">
+                              {jumpIndex + 1}/{totalOccurrences}
                             </span>
                           )}
                         </div>
-                      </div>
-                    </button>
-                    {/* Search icon → open detail panel */}
-                    <button
-                      onClick={() => setSelectedRef(ref)}
-                      className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded hover:bg-notion-sidebar-hover opacity-0 group-hover:opacity-100 mt-0.5"
-                      title={t('pdf.citation.searchPaper')}
-                    >
-                      <Search size={12} className="text-notion-text-tertiary" />
-                    </button>
-                  </div>
-                ))}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-notion-text line-clamp-2 group-hover:text-blue-600">
+                            {ref.title || ref.text.slice(0, 80) + '...'}
+                          </p>
+                          {ref.authors && (
+                            <p className="text-[10px] text-notion-text-tertiary mt-0.5 truncate">
+                              {ref.authors}
+                            </p>
+                          )}
+                          <div className="flex items-center gap-1 mt-0.5 flex-wrap">
+                            {ref.venue && (
+                              <span className="inline-block rounded bg-purple-50 px-1 py-0.5 text-[9px] text-purple-600 truncate max-w-[150px]">
+                                {ref.venue}
+                              </span>
+                            )}
+                            {ref.year && (
+                              <span className="text-[10px] text-notion-text-tertiary">
+                                {ref.year}
+                              </span>
+                            )}
+                            {ref.arxivId && (
+                              <span className="inline-block rounded bg-blue-50 px-1 py-0.5 text-[9px] text-blue-600">
+                                arXiv
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </button>
+                      {/* Search icon → open detail panel */}
+                      <button
+                        onClick={() => setSelectedRef(ref)}
+                        className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded hover:bg-notion-sidebar-hover opacity-0 group-hover:opacity-100 mt-0.5"
+                        title={t('pdf.citation.searchPaper')}
+                      >
+                        <Search size={12} className="text-notion-text-tertiary" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </>

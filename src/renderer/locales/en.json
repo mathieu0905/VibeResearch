@@ -872,6 +872,8 @@
       "imported": "Imported",
       "downloaded": "Downloaded",
       "read": "Read",
+      "jumpToRef": "Jump to reference",
+      "occurrences": "occurrences",
       "jumpToRef": "Jump to reference in PDF",
       "noPdf": "No open access PDF available",
       "openWebsite": "Open publisher website"

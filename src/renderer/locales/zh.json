@@ -872,7 +872,8 @@
       "imported": "已导入",
       "downloaded": "已下载",
       "read": "阅读",
-      "jumpToRef": "跳转到PDF中的引用",
+      "jumpToRef": "跳转到引用",
+      "occurrences": "处出现",
       "noPdf": "无开放获取PDF",
       "openWebsite": "打开出版商网站"
     },

@@ -2,6 +2,22 @@
 
 ## 0.0.4 (2026-03-23)
 
+### feat: Citation multi-location cycling navigation
+
+**Summary**: Added ability to cycle through all occurrences of a citation by repeatedly clicking it in the citation sidebar. Previously, clicking a reference would only jump to one location. Now users can navigate through all in-text citations and the reference list entry.
+
+**Changes**:
+
+1. Track active reference number and jump index in component state
+2. Find all markers for a reference (sorted by page number)
+3. Cycle through occurrences on repeated clicks: citation [1] → citation [2] → ... → reference list → back to [1]
+4. Visual indicator shows current position (e.g., "2/5" below reference number)
+5. Active reference highlighted with blue background
+6. Tooltip shows total occurrences count
+7. Added i18n strings: `pdf.citation.jumpToRef`, `pdf.citation.occurrences`
+
+**Test validation**: Passed `npm run lint`.
+
 ### fix: Improved citation jump-to-reference accuracy
 
 **Summary**: Fixed citation reference jump logic that was using inaccurate estimation. Previously, clicking a reference in the citation sidebar would estimate the page location based on reference number ratio, often jumping to the wrong page. Now uses actual citation marker positions extracted from the PDF.
