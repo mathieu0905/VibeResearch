@@ -2,17 +2,31 @@
 
 ## 0.0.7 (2026-03-24)
 
+### feat: Enhanced search — search by author, venue, and abstract
+
+Expanded search functionality across all search paths (library, semantic, agentic):
+
+1. **Author search**: All search methods now match against author names. Added `searchByAuthor` tool to agentic search.
+2. **Venue/journal search**: Added `venue` field to Paper model. Papers imported from OpenAlex/DOI now store journal/conference name. Search haystack includes venue.
+3. **Abstract search**: `listPaginated` now searches abstract at DB level (previously only title + authors).
+4. **Improved search placeholders**: Updated i18n placeholders to hint at expanded search capabilities.
+
+**Files changed**: `search-match.ts`, `papers.repository.ts`, `agentic-search.service.ts`, `papers.service.ts`, `download.service.ts`, `schema.prisma`, `en.json`, `zh.json`, `search-utils.test.ts`
+
 ### feat: Folder drag-and-drop import and WeChat file import
 
 Added two new import capabilities to the Local/PDF tab:
 
 1. **Folder import**: Users can now drag & drop entire folders onto the import zone, or click "Choose folder" to select a folder — all PDFs within (recursively) are discovered and added to the import list.
-2. **WeChat file import**: On macOS, the app scans WeChat's local file storage for recently received PDFs (last 30 days). These appear in a dropdown similar to "Recent Downloads", allowing one-click selection.
+2. **WeChat file import**: A "WeChat" button opens a native file picker pre-navigated to the user's actual WeChat file directory. Path is auto-detected per platform:
+   - macOS: reads `xwechat_files/{wxid}/msg/file/` from the sandbox container
+   - Windows: reads `FileSavePath` from registry (`HKCU\Software\Tencent\WeChat`), falls back to `Documents\WeChat Files`
+   - Linux: checks common paths (`Documents/WeChat Files`, etc.)
 
 **Changes**:
 
-- Backend: Added `papers:scanFolderForPdfs`, `papers:selectFolderForPdfs`, `papers:scanWeChatFiles` IPC handlers
-- Frontend: Updated `handleDrop` to detect folders and recursively scan for PDFs; added folder picker button; added WeChat files dropdown in local tab
+- Backend: Added `papers:scanFolderForPdfs`, `papers:selectFolderForPdfs`, `papers:pickWeChatFiles` IPC handlers; `detectWeChatFileDir()` reads system config to locate actual WeChat directory
+- Frontend: Updated `handleDrop` to detect folders and recursively scan for PDFs; added folder picker + WeChat picker buttons
 - i18n: Added en/zh translation keys for new UI elements
 
 **Files changed**: `papers.ipc.ts`, `import-modal.tsx`, `use-ipc.ts`, `en.json`, `zh.json`

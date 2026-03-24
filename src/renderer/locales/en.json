@@ -322,7 +322,7 @@
     "noPapersHint": "Import papers from your Chrome history or upload PDFs to get started."
   },
   "search": {
-    "placeholder": "Search papers…",
+    "placeholder": "Search by title, author, venue, tag…",
     "noResults": "No results for \"{{query}}\"",
     "title": "Search",
     "heroReading": "What are you reading today?",

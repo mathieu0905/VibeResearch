@@ -818,7 +818,11 @@ export const ipc = {
   scanFolderForPdfs: (folderPath: string) =>
     invoke<string[]>('papers:scanFolderForPdfs', folderPath),
   selectFolderForPdfs: () => invoke<string[] | null>('papers:selectFolderForPdfs'),
-  pickWeChatFiles: () => invoke<string[] | null>('papers:pickWeChatFiles'),
+  scanWeChatFiles: (days?: number) =>
+    invoke<{
+      dir: string | null;
+      files: Array<{ filePath: string; fileName: string; modifiedTime: string; fileSize: number }>;
+    }>('papers:scanWeChatFiles', days),
   downloadPaper: (input: string, tags?: string[], isTemporary?: boolean) =>
     invoke<{
       paper: PaperItem;

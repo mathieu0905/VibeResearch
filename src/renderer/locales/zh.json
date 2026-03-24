@@ -322,7 +322,7 @@
     "noPapersHint": "从 Chrome 历史记录导入论文或上传 PDF 开始使用。"
   },
   "search": {
-    "placeholder": "搜索论文…",
+    "placeholder": "搜索标题、作者、期刊、标签…",
     "noResults": "未找到「{{query}}」相关结果",
     "title": "搜索",
     "heroReading": "今天读什么？",

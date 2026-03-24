@@ -1,6 +1,8 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, dialog } from 'electron';
 import { createStreamingPort } from '../services/streaming-port.service';
 import path from 'path';
+import fs from 'fs/promises';
+import os from 'os';
 import { PapersRepository } from '@db';
 import { PapersService } from '../services/papers.service';
 import { DownloadService } from '../services/download.service';
@@ -46,6 +48,115 @@ function getAgenticSearchService() {
 function getSemanticSearchService() {
   if (!semanticSearchService) semanticSearchService = new SemanticSearchService();
   return semanticSearchService;
+}
+
+/**
+ * Detect the actual WeChat file receive directory by reading system config.
+ *
+ * macOS: Traverse the sandbox container to find `xwechat_files/{wxid}/msg/file`
+ *        (the most recently modified wxid account dir is chosen).
+ * Windows: Read registry `HKCU\Software\Tencent\WeChat` → FileSavePath,
+ *          falling back to `Documents\WeChat Files`.
+ * Linux: Check common paths.
+ *
+ * Returns undefined if WeChat is not installed or path cannot be determined.
+ */
+async function detectWeChatFileDir(): Promise<string | undefined> {
+  const homeDir = os.homedir();
+  const platform = process.platform;
+
+  if (platform === 'darwin') {
+    // macOS: files live under xwechat_files/{wxid}/msg/file/{YYYY-MM}/
+    const xwechatBase = path.join(
+      homeDir,
+      'Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files',
+    );
+    try {
+      await fs.access(xwechatBase);
+      const entries = await fs.readdir(xwechatBase, { withFileTypes: true });
+      // Find wxid_* account directories
+      const wxidDirs = entries
+        .filter((e) => e.isDirectory() && e.name.startsWith('wxid_'))
+        .map((e) => path.join(xwechatBase, e.name, 'msg', 'file'));
+
+      // Pick the first wxid dir that has msg/file
+      for (const dir of wxidDirs) {
+        try {
+          await fs.access(dir);
+          return dir;
+        } catch {
+          // try next
+        }
+      }
+      // Fallback to the base xwechat_files dir
+      return xwechatBase;
+    } catch {
+      // xwechat_files doesn't exist, try legacy path
+      const legacyBase = path.join(
+        homeDir,
+        'Library/Containers/com.tencent.xinWeChat/Data/Library/Application Support/com.tencent.xinWeChat',
+      );
+      try {
+        await fs.access(legacyBase);
+        return legacyBase;
+      } catch {
+        return undefined;
+      }
+    }
+  }
+
+  if (platform === 'win32') {
+    // Windows: try reading FileSavePath from registry
+    try {
+      const { execSync } = await import('child_process');
+      const regOutput = execSync('reg query "HKCU\\Software\\Tencent\\WeChat" /v FileSavePath', {
+        encoding: 'utf-8',
+        timeout: 3000,
+      });
+      const match = regOutput.match(/FileSavePath\s+REG_SZ\s+(.+)/);
+      if (match) {
+        const regPath = match[1].trim();
+        try {
+          await fs.access(regPath);
+          return regPath;
+        } catch {
+          // registry path exists but folder doesn't
+        }
+      }
+    } catch {
+      // Registry key doesn't exist or reg command failed
+    }
+    // Fallback: common Windows paths
+    const fallbacks = [
+      path.join(homeDir, 'Documents', 'WeChat Files'),
+      path.join(homeDir, 'Documents', '微信文件'),
+    ];
+    for (const p of fallbacks) {
+      try {
+        await fs.access(p);
+        return p;
+      } catch {
+        // try next
+      }
+    }
+    return undefined;
+  }
+
+  // Linux fallbacks
+  const linuxPaths = [
+    path.join(homeDir, 'Documents/WeChat Files'),
+    path.join(homeDir, 'Documents/微信文件'),
+    path.join(homeDir, '.local/share/wechat'),
+  ];
+  for (const p of linuxPaths) {
+    try {
+      await fs.access(p);
+      return p;
+    } catch {
+      // try next
+    }
+  }
+  return undefined;
 }
 
 export function setupPapersIpc() {
@@ -249,6 +360,136 @@ export function setupPapersIpc() {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[papers:importLocalPdfs] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  // Scan a folder recursively for PDF files
+  ipcMain.handle(
+    'papers:scanFolderForPdfs',
+    async (_, folderPath: string): Promise<IpcResult<string[]>> => {
+      try {
+        const pdfs: string[] = [];
+        async function walk(dir: string) {
+          const entries = await fs.readdir(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+              await walk(full);
+            } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.pdf')) {
+              pdfs.push(full);
+            }
+          }
+        }
+        await walk(folderPath);
+        return ok(pdfs);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[papers:scanFolderForPdfs] Error:', msg);
+        return err(msg);
+      }
+    },
+  );
+
+  // Select a folder via native dialog and scan for PDFs
+  ipcMain.handle('papers:selectFolderForPdfs', async (): Promise<IpcResult<string[] | null>> => {
+    try {
+      const result = await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        title: 'Select Folder to Import PDFs',
+      });
+      if (result.canceled || result.filePaths.length === 0) return ok(null);
+
+      const folderPath = result.filePaths[0];
+      const pdfs: string[] = [];
+      async function walk(dir: string) {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            await walk(full);
+          } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.pdf')) {
+            pdfs.push(full);
+          }
+        }
+      }
+      await walk(folderPath);
+      return ok(pdfs);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[papers:selectFolderForPdfs] Error:', msg);
+      return err(msg);
+    }
+  });
+
+  // Auto-detect WeChat file dir and scan for recent PDFs
+  ipcMain.handle(
+    'papers:scanWeChatFiles',
+    async (
+      _,
+      days: number = 30,
+    ): Promise<
+      IpcResult<{
+        dir: string | null;
+        files: Array<{
+          filePath: string;
+          fileName: string;
+          modifiedTime: string;
+          fileSize: number;
+        }>;
+      }>
+    > => {
+      try {
+        const dir = await detectWeChatFileDir();
+        if (!dir) return ok({ dir: null, files: [] });
+
+        const cutoff = Date.now() - days * 86400000;
+        const files: Array<{
+          filePath: string;
+          fileName: string;
+          modifiedTime: string;
+          fileSize: number;
+        }> = [];
+
+        async function walkForPdfs(d: string, maxDepth: number = 4) {
+          if (maxDepth <= 0) return;
+          try {
+            const entries = await fs.readdir(d, { withFileTypes: true });
+            for (const entry of entries) {
+              const full = path.join(d, entry.name);
+              if (entry.isDirectory()) {
+                await walkForPdfs(full, maxDepth - 1);
+              } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.pdf')) {
+                try {
+                  const stat = await fs.stat(full);
+                  if (stat.mtimeMs >= cutoff) {
+                    files.push({
+                      filePath: full,
+                      fileName: entry.name,
+                      modifiedTime: stat.mtime.toISOString(),
+                      fileSize: stat.size,
+                    });
+                  }
+                } catch {
+                  // skip files we can't stat
+                }
+              }
+            }
+          } catch {
+            // skip dirs we can't read
+          }
+        }
+
+        await walkForPdfs(dir);
+        files.sort(
+          (a, b) => new Date(b.modifiedTime).getTime() - new Date(a.modifiedTime).getTime(),
+        );
+
+        return ok({ dir, files });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[papers:scanWeChatFiles] Error:', msg);
         return err(msg);
       }
     },
