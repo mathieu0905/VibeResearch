@@ -339,7 +339,11 @@
     "citations": "{{count}} citations",
     "noCitations": "No citation data",
     "onlineNoResults": "No online results found",
-    "libraryResults": "Library Results"
+    "libraryResults": "Library Results",
+    "keywordMatches": "Keyword Matches",
+    "semanticMatches": "Related by Similarity",
+    "semanticSearching": "Searching for similar papers…",
+    "semanticUnavailable": "Semantic search is not available. Try indexing your papers first."
   },
   "papers": {
     "library": "Library",

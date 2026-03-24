@@ -129,6 +129,7 @@ const searchBoxVariants = {
 
 type SearchMode = 'search' | 'agentic';
 type ResultTab = 'library' | 'online';
+type LibrarySubTab = 'keyword' | 'semantic';
 
 // Fuse.js fallback config for title/tag typo tolerance when exact token matching finds nothing
 const FUSE_OPTIONS: IFuseOptions<PaperItem> = {
@@ -269,6 +270,7 @@ export function SearchContent() {
   const [importedIds, setImportedIds] = useState<Set<string>>(searchCache.importedIds);
   const [importErrors, setImportErrors] = useState<Map<string, string>>(new Map());
   const [resultTab, setResultTab] = useState<ResultTab>(searchCache.resultTab);
+  const [librarySubTab, setLibrarySubTab] = useState<LibrarySubTab>('keyword');
   const agenticAbortRef = useRef<AbortController | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const fuseRef = useRef<Fuse<PaperItem> | null>(null);
@@ -313,16 +315,16 @@ export function SearchContent() {
           prev.map((paper) => mergeSemanticPaper(paper, latestById.get(paper.id))),
         );
 
-        if (query.trim() && searchMode === 'search' && !!semanticFallbackReason) {
+        // Refresh keyword search results with latest paper data
+        if (query.trim() && searchMode === 'search') {
           setPapers(
             getNormalSearchResults(latestPapers, query, new Fuse(latestPapers, FUSE_OPTIONS)),
           );
-          return;
+        } else {
+          setPapers((prev) =>
+            prev.map((paper) => mergePaperSnapshot(paper, latestById.get(paper.id))),
+          );
         }
-
-        setPapers((prev) =>
-          prev.map((paper) => mergePaperSnapshot(paper, latestById.get(paper.id))),
-        );
       });
     });
   }, [query, reloadPapers, searchMode, semanticFallbackReason]);
@@ -435,28 +437,24 @@ export function SearchContent() {
       setSemanticPapers([]);
       setSemanticFallbackReason(null);
 
+      // Always run keyword search (instant) alongside semantic search
+      doNormalSearch(q);
+
       // Fire online search in parallel
       void doOnlineSearch(q);
 
       try {
         const result = await ipc.semanticSearch(q.trim(), 18);
         if (result.mode === 'fallback') {
-          setSemanticFallbackReason(
-            result.fallbackReason ??
-              'Semantic search is unavailable. Showing normal results instead.',
-          );
-          doNormalSearch(q);
+          setSemanticFallbackReason(result.fallbackReason ?? 'Semantic search is unavailable.');
           return;
         }
         setSemanticPapers(result.papers);
       } catch (error) {
         console.error('Semantic search failed:', error);
         setSemanticFallbackReason(
-          error instanceof Error
-            ? error.message
-            : 'Semantic search failed. Showing normal results instead.',
+          error instanceof Error ? error.message : 'Semantic search failed.',
         );
-        doNormalSearch(q);
       } finally {
         setLoading(false);
       }
@@ -627,8 +625,25 @@ export function SearchContent() {
   );
 
   const semanticUsingFallback = searchMode === 'search' && !!semanticFallbackReason;
+
+  // Keyword (exact) matches — always available in search mode
+  const keywordPapers = searchMode === 'search' ? papers : [];
+
+  // Semantic matches — deduplicate against keyword results
+  const keywordIds = new Set(keywordPapers.map((p) => p.id));
+  const dedupedSemanticPapers =
+    searchMode === 'search' && !semanticUsingFallback
+      ? semanticPapers.filter((p) => !keywordIds.has(p.id))
+      : [];
+
+  // For agentic mode, display papers as before
   const displayPapers =
-    searchMode === 'agentic' ? agenticPapers : !semanticUsingFallback ? semanticPapers : papers;
+    searchMode === 'agentic' ? agenticPapers : [...keywordPapers, ...dedupedSemanticPapers];
+
+  const totalLibraryCount =
+    searchMode === 'agentic'
+      ? agenticPapers.length
+      : keywordPapers.length + dedupedSemanticPapers.length;
 
   return (
     <div className="flex h-full flex-col">
@@ -995,9 +1010,9 @@ export function SearchContent() {
                     <span className="flex items-center gap-1.5">
                       <FileText size={14} />
                       {t('search.libraryResults')}
-                      {displayPapers.length > 0 && (
+                      {totalLibraryCount > 0 && (
                         <span className="ml-0.5 rounded-full bg-notion-sidebar px-1.5 py-0.5 text-xs">
-                          {displayPapers.length}
+                          {totalLibraryCount}
                         </span>
                       )}
                     </span>
@@ -1056,66 +1071,199 @@ export function SearchContent() {
               {/* Library tab content (or agentic results) */}
               {(searchMode === 'agentic' || resultTab === 'library') && (
                 <>
-                  {displayPapers.length > 0 ? (
-                    <motion.div
-                      key="library-grid"
-                      className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-                      variants={containerVariants}
-                      initial="hidden"
-                      animate="visible"
-                    >
-                      <AnimatePresence mode="popLayout">
-                        {searchMode === 'agentic'
-                          ? agenticPapers.map((paper) => (
-                              <AgenticPaperCard
-                                key={paper.id}
-                                paper={paper}
-                                deleting={deleting}
-                                retryingPaperId={retryingPaperId}
-                                onDelete={handleDeleteRequest}
-                                onRetry={handleRetryProcessing}
-                              />
-                            ))
-                          : !semanticUsingFallback
-                            ? semanticPapers.map((paper) => (
-                                <SemanticPaperCard
-                                  key={paper.id}
-                                  paper={paper}
-                                  deleting={deleting}
-                                  retryingPaperId={retryingPaperId}
-                                  onDelete={handleDeleteRequest}
-                                  onRetry={handleRetryProcessing}
-                                />
-                              ))
-                            : papers.map((paper) => (
-                                <PaperCard
-                                  key={paper.id}
-                                  paper={paper}
-                                  deleting={deleting}
-                                  retryingPaperId={retryingPaperId}
-                                  onDelete={handleDeleteRequest}
-                                  onRetry={handleRetryProcessing}
-                                />
-                              ))}
-                      </AnimatePresence>
-                    </motion.div>
-                  ) : (
-                    !loading && (
+                  {searchMode === 'agentic' ? (
+                    /* Agentic mode — single grid */
+                    agenticPapers.length > 0 ? (
                       <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="flex flex-col items-center justify-center py-16 text-center"
+                        key="agentic-grid"
+                        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                        variants={containerVariants}
+                        initial="hidden"
+                        animate="visible"
                       >
-                        <p className="text-base text-notion-text-secondary">
-                          {t('searchContent.noMatch')}
-                        </p>
-                        <p className="mt-1 text-sm text-notion-text-tertiary">
-                          {searchMode === 'agentic'
-                            ? 'Try a different description'
-                            : 'Try different keywords or wait for indexing to finish'}
-                        </p>
+                        <AnimatePresence mode="popLayout">
+                          {agenticPapers.map((paper) => (
+                            <AgenticPaperCard
+                              key={paper.id}
+                              paper={paper}
+                              deleting={deleting}
+                              retryingPaperId={retryingPaperId}
+                              onDelete={handleDeleteRequest}
+                              onRetry={handleRetryProcessing}
+                            />
+                          ))}
+                        </AnimatePresence>
                       </motion.div>
+                    ) : (
+                      !loading && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="flex flex-col items-center justify-center py-16 text-center"
+                        >
+                          <p className="text-base text-notion-text-secondary">
+                            {t('searchContent.noMatch')}
+                          </p>
+                          <p className="mt-1 text-sm text-notion-text-tertiary">
+                            Try a different description
+                          </p>
+                        </motion.div>
+                      )
                     )
+                  ) : (
+                    /* Search mode — sub-tabs: Keyword / Similarity */
+                    <>
+                      {/* Sub-tab bar */}
+                      <div className="mb-4 flex items-center gap-1">
+                        <button
+                          onClick={() => setLibrarySubTab('keyword')}
+                          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                            librarySubTab === 'keyword'
+                              ? 'bg-notion-sidebar-hover text-notion-text'
+                              : 'text-notion-text-tertiary hover:bg-notion-sidebar hover:text-notion-text-secondary'
+                          }`}
+                        >
+                          <Search size={12} />
+                          {t('search.keywordMatches')}
+                          <span
+                            className={`rounded-full px-1.5 py-0.5 text-xs ${
+                              librarySubTab === 'keyword'
+                                ? 'bg-notion-sidebar text-notion-text-secondary'
+                                : 'bg-notion-sidebar text-notion-text-tertiary'
+                            }`}
+                          >
+                            {keywordPapers.length}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => setLibrarySubTab('semantic')}
+                          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                            librarySubTab === 'semantic'
+                              ? 'bg-blue-50 text-blue-700'
+                              : 'text-notion-text-tertiary hover:bg-notion-sidebar hover:text-notion-text-secondary'
+                          }`}
+                        >
+                          <Sparkles size={12} />
+                          {t('search.semanticMatches')}
+                          {loading ? (
+                            <Loader2 size={11} className="animate-spin text-blue-500" />
+                          ) : (
+                            <span
+                              className={`rounded-full px-1.5 py-0.5 text-xs ${
+                                librarySubTab === 'semantic'
+                                  ? 'bg-blue-100 text-blue-600'
+                                  : 'bg-notion-sidebar text-notion-text-tertiary'
+                              }`}
+                            >
+                              {dedupedSemanticPapers.length}
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Keyword sub-tab content */}
+                      {librarySubTab === 'keyword' && (
+                        <>
+                          {keywordPapers.length > 0 ? (
+                            <motion.div
+                              key="keyword-grid"
+                              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                              variants={containerVariants}
+                              initial="hidden"
+                              animate="visible"
+                            >
+                              <AnimatePresence mode="popLayout">
+                                {keywordPapers.map((paper) => (
+                                  <PaperCard
+                                    key={paper.id}
+                                    paper={paper}
+                                    deleting={deleting}
+                                    retryingPaperId={retryingPaperId}
+                                    onDelete={handleDeleteRequest}
+                                    onRetry={handleRetryProcessing}
+                                  />
+                                ))}
+                              </AnimatePresence>
+                            </motion.div>
+                          ) : (
+                            !loading && (
+                              <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex flex-col items-center justify-center py-16 text-center"
+                              >
+                                <p className="text-sm text-notion-text-secondary">
+                                  {t('searchContent.noMatch')}
+                                </p>
+                              </motion.div>
+                            )
+                          )}
+                        </>
+                      )}
+
+                      {/* Semantic sub-tab content */}
+                      {librarySubTab === 'semantic' && (
+                        <>
+                          {loading && (
+                            <motion.div
+                              initial={{ opacity: 0 }}
+                              animate={{ opacity: 1 }}
+                              className="flex items-center justify-center gap-2 py-16"
+                            >
+                              <Loader2 size={16} className="animate-spin text-blue-500" />
+                              <span className="text-sm text-notion-text-tertiary">
+                                {t('search.semanticSearching')}
+                              </span>
+                            </motion.div>
+                          )}
+                          {!loading && dedupedSemanticPapers.length > 0 && (
+                            <motion.div
+                              key="semantic-grid"
+                              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+                              variants={containerVariants}
+                              initial="hidden"
+                              animate="visible"
+                            >
+                              <AnimatePresence mode="popLayout">
+                                {dedupedSemanticPapers.map((paper) => (
+                                  <SemanticPaperCard
+                                    key={paper.id}
+                                    paper={paper}
+                                    deleting={deleting}
+                                    retryingPaperId={retryingPaperId}
+                                    onDelete={handleDeleteRequest}
+                                    onRetry={handleRetryProcessing}
+                                  />
+                                ))}
+                              </AnimatePresence>
+                            </motion.div>
+                          )}
+                          {!loading &&
+                            dedupedSemanticPapers.length === 0 &&
+                            (semanticUsingFallback ? (
+                              <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex flex-col items-center justify-center py-16 text-center"
+                              >
+                                <p className="text-sm text-notion-text-secondary">
+                                  {t('search.semanticUnavailable')}
+                                </p>
+                              </motion.div>
+                            ) : (
+                              <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                className="flex flex-col items-center justify-center py-16 text-center"
+                              >
+                                <p className="text-sm text-notion-text-secondary">
+                                  {t('searchContent.noMatch')}
+                                </p>
+                              </motion.div>
+                            ))}
+                        </>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -1307,6 +1455,13 @@ function PaperCard({
           {cleanArxivTitle(paper.title)}
         </h3>
 
+        {paper.authors && paper.authors.length > 0 && (
+          <p className="line-clamp-1 text-xs text-notion-text-secondary">
+            {paper.authors.slice(0, 3).join(', ')}
+            {paper.authors.length > 3 && ' et al.'}
+          </p>
+        )}
+
         <div className="flex flex-wrap gap-1.5">
           {paper.submittedAt && (
             <span className="rounded bg-notion-sidebar px-1.5 py-0.5 text-xs text-notion-text-secondary">
@@ -1318,20 +1473,13 @@ function PaperCard({
               })}
             </span>
           )}
+          {paper.venue && (
+            <span className="truncate max-w-[160px] rounded bg-purple-50 px-1.5 py-0.5 text-xs text-purple-600">
+              {paper.venue}
+            </span>
+          )}
           <ProcessingBadge status={paper.processingStatus} />
         </div>
-
-        {paper.processingStatus === 'failed' && paper.processingError && (
-          <p className="line-clamp-3 break-all text-xs text-red-700/90">{paper.processingError}</p>
-        )}
-
-        <div className="flex flex-wrap gap-1.5"></div>
-
-        {paper.processingStatus === 'failed' && paper.processingError && (
-          <p className="line-clamp-3 break-all text-xs text-red-700/90">{paper.processingError}</p>
-        )}
-
-        <div className="flex flex-wrap gap-1.5"></div>
 
         {paper.processingStatus === 'failed' && paper.processingError && (
           <p className="line-clamp-3 break-all text-xs text-red-700/90">{paper.processingError}</p>
@@ -1473,6 +1621,13 @@ function SemanticPaperCard({
           {cleanArxivTitle(paper.title)}
         </h3>
 
+        {paper.authors && paper.authors.length > 0 && (
+          <p className="line-clamp-1 text-xs text-notion-text-secondary">
+            {paper.authors.slice(0, 3).join(', ')}
+            {paper.authors.length > 3 && ' et al.'}
+          </p>
+        )}
+
         {paper.relevanceReason && (
           <p className="line-clamp-3 text-xs leading-5 text-notion-text-secondary">
             {paper.relevanceReason}
@@ -1487,6 +1642,11 @@ function SemanticPaperCard({
                 month: 'short',
                 day: 'numeric',
               })}
+            </span>
+          )}
+          {paper.venue && (
+            <span className="truncate max-w-[160px] rounded bg-purple-50 px-1.5 py-0.5 text-xs text-purple-600">
+              {paper.venue}
             </span>
           )}
           <ProcessingBadge status={paper.processingStatus} />
@@ -1627,6 +1787,13 @@ function AgenticPaperCard({
           {cleanArxivTitle(paper.title)}
         </h3>
 
+        {paper.authors && paper.authors.length > 0 && (
+          <p className="line-clamp-1 text-xs text-notion-text-secondary">
+            {paper.authors.slice(0, 3).join(', ')}
+            {paper.authors.length > 3 && ' et al.'}
+          </p>
+        )}
+
         {paper.relevanceReason && (
           <p className="text-xs text-blue-600 line-clamp-1">{paper.relevanceReason}</p>
         )}
@@ -1640,6 +1807,11 @@ function AgenticPaperCard({
                 day: 'numeric',
                 timeZone: 'UTC',
               })}
+            </span>
+          )}
+          {paper.venue && (
+            <span className="truncate max-w-[160px] rounded bg-purple-50 px-1.5 py-0.5 text-xs text-purple-600">
+              {paper.venue}
             </span>
           )}
           <ProcessingBadge status={paper.processingStatus} />

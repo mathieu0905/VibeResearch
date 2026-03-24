@@ -339,7 +339,11 @@
     "citations": "{{count}} 次引用",
     "noCitations": "无引用数据",
     "onlineNoResults": "未找到在线结果",
-    "libraryResults": "本地文献库结果"
+    "libraryResults": "本地文献库结果",
+    "keywordMatches": "关键词匹配",
+    "semanticMatches": "相似度推荐",
+    "semanticSearching": "正在搜索相关论文…",
+    "semanticUnavailable": "语义搜索不可用，请先索引论文。"
   },
   "papers": {
     "library": "文献库",
