@@ -14,6 +14,7 @@ import type {
   AgentTodoRunItem,
   AgentTodoMessageItem,
   AgentToolKind,
+  CcSwitchProvider,
   GraphData,
   UserProfileState,
   UserProfile,
@@ -22,6 +23,22 @@ import type {
 } from '@shared';
 
 export type { TaskResultItem, ExperimentReportItem };
+
+/** Auto-updater status */
+export type UpdateStatus =
+  | { state: 'idle' }
+  | { state: 'checking' }
+  | { state: 'available'; info: { version: string; releaseDate?: string; releaseNotes?: string } }
+  | {
+      state: 'not-available';
+      info: { version: string; releaseDate?: string; releaseNotes?: string };
+    }
+  | {
+      state: 'downloading';
+      progress: { percent: number; bytesPerSecond: number; transferred: number; total: number };
+    }
+  | { state: 'downloaded'; info: { version: string; releaseDate?: string; releaseNotes?: string } }
+  | { state: 'error'; message: string };
 
 /** Discovered paper from arXiv */
 export interface DiscoveredPaper {
@@ -190,6 +207,7 @@ export interface PaperItem {
   authors?: string[];
   submittedAt?: string;
   abstract?: string;
+  venue?: string | null;
   tagNames?: string[];
   categorizedTags?: Array<{ name: string; category: string }>;
   pdfUrl?: string;
@@ -291,6 +309,7 @@ export interface AgenticSearchPaper {
   submittedAt?: string;
   tagNames?: string[];
   abstract?: string;
+  venue?: string | null;
   relevanceReason?: string;
   processingStatus?: string;
 }
@@ -314,6 +333,7 @@ export interface SemanticSearchPaper {
   submittedAt?: string | null;
   tagNames?: string[];
   abstract?: string | null;
+  venue?: string | null;
   relevanceReason?: string;
   similarityScore: number;
   finalScore: number;
@@ -467,7 +487,16 @@ export interface CliTool {
   version?: string;
 }
 
-export type ProviderKind = 'anthropic' | 'openai' | 'gemini' | 'custom';
+export type ProviderKind =
+  | 'anthropic'
+  | 'openai'
+  | 'gemini'
+  | 'openrouter'
+  | 'deepseek'
+  | 'zhipu'
+  | 'minimax'
+  | 'moonshot'
+  | 'custom';
 
 export type ModelKind = 'agent' | 'lightweight';
 export type ModelBackend = 'api' | 'cli';
@@ -633,7 +662,16 @@ export interface ModelConfig {
   id: string;
   name: string;
   backend: ModelBackend;
-  provider?: 'anthropic' | 'openai' | 'gemini' | 'custom';
+  provider?:
+    | 'anthropic'
+    | 'openai'
+    | 'gemini'
+    | 'openrouter'
+    | 'deepseek'
+    | 'zhipu'
+    | 'minimax'
+    | 'moonshot'
+    | 'custom';
   model?: string;
   baseURL?: string;
   command?: string;
@@ -780,6 +818,14 @@ export const ipc = {
     invoke<PaperItem>('papers:importLocalPdf', filePath, isTemporary),
   importLocalPdfs: (filePaths: string[]) =>
     invoke<{ total: number; success: number; failed: number }>('papers:importLocalPdfs', filePaths),
+  scanFolderForPdfs: (folderPath: string) =>
+    invoke<string[]>('papers:scanFolderForPdfs', folderPath),
+  selectFolderForPdfs: () => invoke<string[] | null>('papers:selectFolderForPdfs'),
+  scanWeChatFiles: (days?: number) =>
+    invoke<{
+      dir: string | null;
+      files: Array<{ filePath: string; fileName: string; modifiedTime: string; fileSize: number }>;
+    }>('papers:scanWeChatFiles', days),
   downloadPaper: (input: string, tags?: string[], isTemporary?: boolean) =>
     invoke<{
       paper: PaperItem;
@@ -824,7 +870,7 @@ export const ipc = {
   refreshAllAlphaXiv: () => invoke<{ updated: number; total: number }>('papers:refreshAllAlphaXiv'),
   getAiSummary: (shortId: string) => invoke<string | null>('papers:getAiSummary', shortId),
   deleteAiSummary: (shortId: string) => invoke<boolean>('papers:deleteAiSummary', shortId),
-  /** Fire-and-forget: starts generation, results arrive via papers:aiSummaryChunk/Done/Error events */
+  /** Fire-and-forget: starts background job, results arrive via IPC events + MessagePort */
   startAiSummary: (input: {
     paperId: string;
     shortId: string;
@@ -836,6 +882,22 @@ export const ipc = {
   }) => {
     const api = getElectronAPI();
     api?.send('papers:generateAiSummary:start', input);
+  },
+  /** Cancel a running AI summary background job */
+  cancelAiSummary: (paperId: string) => invoke<boolean>('papers:cancelAiSummary', paperId),
+  /** Get active job status for recovery after navigation */
+  getAiSummaryStatus: (paperId: string) =>
+    invoke<{
+      status: 'running' | 'completed' | 'failed';
+      phase: string;
+      accumulatedText: string;
+      summary: string | null;
+      error: string | null;
+    } | null>('papers:getAiSummaryStatus', paperId),
+  /** Re-attach streaming port when remounting during active job */
+  reattachAiSummaryPort: (paperId: string) => {
+    const api = getElectronAPI();
+    api?.send('papers:reattachAiSummaryPort', paperId);
   },
   matchReference: (ref: { arxivId?: string; doi?: string; title?: string }) =>
     invoke<PaperItem | null>('papers:matchReference', ref),
@@ -869,6 +931,8 @@ export const ipc = {
   // Zotero import
   zoteroDetect: (customDbPath?: string) =>
     invoke<{ found: boolean; dbPath?: string; storageDir?: string }>('zotero:detect', customDbPath),
+  zoteroCollections: (dbPath?: string) =>
+    invoke<Array<{ name: string; itemCount: number }>>('zotero:collections', dbPath),
   zoteroScan: (opts?: { dbPath?: string; collection?: string }) =>
     invoke<ZoteroScanResult>('zotero:scan', opts),
   zoteroImport: (items: ZoteroScannedItem[]) =>
@@ -1339,7 +1403,16 @@ export const ipc = {
   getAgentConfigContents: (tool: AgentToolKind) =>
     invoke<AgentConfigContents>('models:getAgentConfigContents', tool),
   testModelConnection: (params: {
-    provider: 'anthropic' | 'openai' | 'gemini' | 'custom';
+    provider:
+      | 'anthropic'
+      | 'openai'
+      | 'gemini'
+      | 'openrouter'
+      | 'deepseek'
+      | 'zhipu'
+      | 'minimax'
+      | 'moonshot'
+      | 'custom';
     model: string;
     apiKey?: string;
     baseURL?: string;
@@ -1421,6 +1494,11 @@ export const ipc = {
 
   // Agent Tasks
   detectAgents: () => invoke<DetectedAgentItem[]>('agent-todo:detect-agents'),
+  scanCcSwitch: () => invoke<CcSwitchProvider[]>('agent-todo:scan-ccswitch'),
+  importCcSwitch: (providerIds: string[]) =>
+    invoke<{ imported: number; failed: string[] }>('agent-todo:import-ccswitch', providerIds),
+  getCcSwitchProvider: (providerId: string) =>
+    invoke<AddAgentInput>('agent-todo:get-ccswitch-provider', providerId),
   listAgents: () => invoke<AgentConfigItem[]>('agent-todo:list-agents'),
   addAgent: (input: AddAgentInput) => invoke<AgentConfigItem>('agent-todo:add-agent', input),
   updateAgent: (id: string, input: Partial<AddAgentInput>) =>
@@ -1748,6 +1826,12 @@ export const ipc = {
     ),
   ttsDefaultVoice: (language: string) => invoke<{ voice: string }>('tts:defaultVoice', language),
   ttsCleanCache: () => invoke<{ success: boolean }>('tts:cleanCache'),
+
+  // Auto-updater
+  updaterGetStatus: () => invoke<UpdateStatus>('updater:getStatus'),
+  updaterCheckForUpdates: () => invoke<UpdateStatus>('updater:checkForUpdates'),
+  updaterDownloadUpdate: () => invoke<{ success: boolean }>('updater:downloadUpdate'),
+  updaterQuitAndInstall: () => invoke<void>('updater:quitAndInstall'),
 };
 
 /** Subscribe to IPC events from main process */

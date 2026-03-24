@@ -15,6 +15,7 @@ export interface CreatePaperParams {
   sourceUrl?: string;
   submittedAt?: Date | null;
   abstract?: string;
+  venue?: string;
   pdfUrl?: string;
   pdfPath?: string;
   doi?: string;
@@ -82,6 +83,7 @@ export class PapersRepository {
         sourceUrl: params.sourceUrl,
         submittedAt: params.submittedAt,
         abstract: params.abstract,
+        venue: params.venue,
         pdfUrl: params.pdfUrl,
         pdfPath: params.pdfPath,
         doi: params.doi,
@@ -164,7 +166,7 @@ export class PapersRepository {
 
     const mapped = papers.map((paper) => mapPaper(paper));
 
-    // Post-query filtering: match q against both title and tag names
+    // Post-query filtering: match q against title, authors, tags, venue, and abstract
     if (query?.q) {
       return mapped.filter((paper) => matchesNormalSearchQuery(paper, query.q!));
     }
@@ -230,12 +232,17 @@ export class PapersRepository {
       conditions.push({ createdAt: { gte: startDate } });
     }
 
-    // Text search filter — match title or authors at DB level
+    // Text search filter — match title, authors, venue, or abstract at DB level
     if (query?.q) {
       const q = query.q.trim();
       if (q) {
         conditions.push({
-          OR: [{ title: { contains: q } }, { authorsJson: { contains: q } }],
+          OR: [
+            { title: { contains: q } },
+            { authorsJson: { contains: q } },
+            { venue: { contains: q } },
+            { abstract: { contains: q } },
+          ],
         });
       }
     }
@@ -295,33 +302,53 @@ export class PapersRepository {
   }
 
   async getCounts() {
-    const [total, untagged, unindexed, missingAbstract, withPdf, years] = await Promise.all([
-      this.prisma.paper.count({ where: { isTemporary: false } }),
-      this.prisma.paper.count({
-        where: { isTemporary: false, tags: { none: {} } },
-      }),
-      this.prisma.paper.count({
-        where: { isTemporary: false, indexedAt: null, abstract: { not: '' } },
-      }),
-      this.prisma.paper.count({
-        where: {
-          isTemporary: false,
-          OR: [{ abstract: null }, { abstract: '' }],
-          NOT: [{ pdfPath: null, pdfUrl: null }],
-        },
-      }),
-      this.prisma.paper.count({
-        where: {
-          isTemporary: false,
-          NOT: [{ pdfPath: null, pdfUrl: null }],
-        },
-      }),
-      this.prisma.paper.findMany({
-        where: { isTemporary: false, submittedAt: { not: null } },
-        select: { submittedAt: true },
-        distinct: ['submittedAt'],
-      }),
-    ]);
+    const ACTIVE_PROCESSING_STATUSES = [
+      'queued',
+      'embedding',
+      'extracting_text',
+      'extracting_metadata',
+      'chunking',
+    ];
+
+    const [total, untagged, unindexed, missingAbstract, withPdf, years, processing] =
+      await Promise.all([
+        this.prisma.paper.count({ where: { isTemporary: false } }),
+        this.prisma.paper.count({
+          where: { isTemporary: false, tags: { none: {} } },
+        }),
+        this.prisma.paper.count({
+          where: {
+            isTemporary: false,
+            indexedAt: null,
+            abstract: { not: '' },
+            processingStatus: { notIn: ACTIVE_PROCESSING_STATUSES },
+          },
+        }),
+        this.prisma.paper.count({
+          where: {
+            isTemporary: false,
+            OR: [{ abstract: null }, { abstract: '' }],
+            NOT: [{ pdfPath: null, pdfUrl: null }],
+          },
+        }),
+        this.prisma.paper.count({
+          where: {
+            isTemporary: false,
+            NOT: [{ pdfPath: null, pdfUrl: null }],
+          },
+        }),
+        this.prisma.paper.findMany({
+          where: { isTemporary: false, submittedAt: { not: null } },
+          select: { submittedAt: true },
+          distinct: ['submittedAt'],
+        }),
+        this.prisma.paper.count({
+          where: {
+            isTemporary: false,
+            processingStatus: { in: ACTIVE_PROCESSING_STATUSES },
+          },
+        }),
+      ]);
 
     // Extract unique years from submittedAt dates
     const yearSet = new Set<number>();
@@ -336,6 +363,7 @@ export class PapersRepository {
       missingAbstract,
       withPdf,
       availableYears: Array.from(yearSet).sort((a, b) => b - a),
+      processing,
     };
   }
 
@@ -550,6 +578,7 @@ export class PapersRepository {
       title?: string;
       authors?: string[];
       abstract?: string;
+      venue?: string | null;
       submittedAt?: Date | null;
       metadataSource?: string | null;
     },
@@ -563,6 +592,9 @@ export class PapersRepository {
     }
     if (data.abstract !== undefined) {
       updateData.abstract = data.abstract;
+    }
+    if (data.venue !== undefined) {
+      updateData.venue = data.venue;
     }
     if (data.submittedAt !== undefined) {
       updateData.submittedAt = data.submittedAt;

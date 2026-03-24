@@ -1,5 +1,138 @@
 # Changelog
 
+## 0.0.7 (2026-03-24)
+
+### fix: Show background processing progress in Library to prevent duplicate actions
+
+After importing papers, background tasks (embedding indexing, enrichment, tagging) run silently — users had no feedback and might click "Index" or re-import unnecessarily.
+
+1. **ProcessingBadge now shows `queued` state**: Each paper card displays a blue "排队中 / Pending" badge while waiting for processing, alongside existing amber badges for `embedding`/`extracting` states.
+2. **Global processing banner**: A sticky blue banner appears below the Library header showing "N papers being indexed and tagged in the background…" whenever any papers are in an active processing state. Dismisses automatically when all complete.
+3. **"Index N" button count no longer inflated**: `unindexedCount` now excludes papers already in active processing (`queued`/`embedding`/`extracting_*`/`chunking`), so the button only shows papers that genuinely need manual action.
+4. **Real-time counter**: The processing count updates via `papers:processingStatus` IPC events without needing full page refetches.
+
+**Files changed**: `papers.repository.ts`, `papers-by-tag.tsx`, `en.json`, `zh.json`
+
+### feat: Show venue (conference/journal) on paper detail page
+
+Added venue display to the paper overview page meta info section. Shows with a MapPin icon in accent color, positioned between the submission date and star rating. Supports both Chinese and English via i18n (`paper.venue`).
+
+**Files changed**: `overview/page.tsx`, `locales/en.json`, `locales/zh.json`
+
+### refactor: AI Summary generation as background job
+
+Refactored AI Summary generation to follow the app's background job pattern (like AcpChatService). Previously, summary generation used `event.sender` directly and would lose progress if the user navigated away. Now:
+
+1. **Background job service** (`ai-summary-job.service.ts`): Tracks job state (running/completed/failed) in memory with accumulated text for recovery.
+2. **BrowserWindow broadcast**: Uses `BrowserWindow.getAllWindows()` instead of `event.sender`, so events reach the renderer even after navigation.
+3. **Recovery on remount**: New `getAiSummaryStatus` IPC handler lets the renderer recover in-progress or completed jobs when the page remounts. `reattachAiSummaryPort` re-establishes the MessagePort for continued streaming.
+4. **Cancel support**: Users can now explicitly cancel a running generation via a Cancel button (previously no cancel UI).
+5. **Custom hook** (`use-ai-summary-stream.ts`): Extracted all streaming logic from the `AbstractSection` component into a reusable hook with recovery, matching the pattern of `use-agent-stream.ts`.
+
+**Files changed**: `ai-summary-job.service.ts` (new), `use-ai-summary-stream.ts` (new), `papers.ipc.ts`, `use-ipc.ts`, `overview/page.tsx`
+
+### fix: Preserve Library pagination when navigating back from article
+
+Previously, clicking a paper on page 2+ and pressing back would reset to page 1. Now the current page is preserved across navigation using module-level state, with proper handling to avoid overriding on first mount.
+
+**Files changed**: `papers-by-tag.tsx`
+
+### feat: Enhanced search — search by author, venue, and abstract
+
+Expanded search functionality across all search paths (library, semantic, agentic):
+
+1. **Author search**: All search methods now match against author names. Added `searchByAuthor` tool to agentic search.
+2. **Venue/journal search**: Added `venue` field to Paper model. Papers imported from OpenAlex/DOI now store journal/conference name. Search haystack includes venue.
+3. **Abstract search**: `listPaginated` now searches abstract at DB level (previously only title + authors).
+4. **Search card UI**: All search result cards (PaperCard, SemanticPaperCard, AgenticPaperCard) now display author names and venue badges. Library list also shows venue.
+5. **Split search results into tabs**: Library search results use two sub-tabs — "Keyword Matches" (fast, exact) and "Related by Similarity" (semantic, deduped). Both run in parallel; keyword results appear instantly while semantic results load in background. Tabs show counts and loading states.
+6. **Improved search placeholders**: Updated i18n placeholders to hint at expanded search capabilities.
+
+**Files changed**: `search-match.ts`, `papers.repository.ts`, `agentic-search.service.ts`, `papers.service.ts`, `download.service.ts`, `schema.prisma`, `en.json`, `zh.json`, `search-utils.test.ts`, `search-content.tsx`, `papers-by-tag.tsx`, `use-ipc.ts`
+
+### feat: Folder drag-and-drop import and WeChat file import
+
+Added two new import capabilities to the Local/PDF tab:
+
+1. **Folder import**: Users can now drag & drop entire folders onto the import zone, or click "Choose folder" to select a folder — all PDFs within (recursively) are discovered and added to the import list.
+2. **WeChat file import**: A "WeChat" button opens a native file picker pre-navigated to the user's actual WeChat file directory. Path is auto-detected per platform:
+   - macOS: reads `xwechat_files/{wxid}/msg/file/` from the sandbox container
+   - Windows: reads `FileSavePath` from registry (`HKCU\Software\Tencent\WeChat`), falls back to `Documents\WeChat Files`
+   - Linux: checks common paths (`Documents/WeChat Files`, etc.)
+
+**Changes**:
+
+- Backend: Added `papers:scanFolderForPdfs`, `papers:selectFolderForPdfs`, `papers:pickWeChatFiles` IPC handlers; `detectWeChatFileDir()` reads system config to locate actual WeChat directory
+- Frontend: Updated `handleDrop` to detect folders and recursively scan for PDFs; added folder picker + WeChat picker buttons
+- i18n: Added en/zh translation keys for new UI elements
+
+**Files changed**: `papers.ipc.ts`, `import-modal.tsx`, `use-ipc.ts`, `en.json`, `zh.json`
+
+### feat: Import agent configs from CC Switch
+
+Added support for importing agent configurations from CC Switch (a popular AI CLI config manager). Users can now click "Import from CC Switch" in Agent Settings to scan `~/.cc-switch/config.json`, preview available Claude/Codex/Gemini providers, and selectively import them as ResearchClaw agents.
+
+**Changes**:
+
+1. New service: `ccswitch-import.service.ts` — reads and parses CC Switch config, maps providers to AddAgentInput
+2. New IPC channels: `agent-todo:scan-ccswitch` and `agent-todo:import-ccswitch`
+3. New UI: Import button + modal with checkboxes, grouped by tool type, with duplicate detection
+4. Added `CcSwitchProvider` shared type
+5. i18n: Added en/zh strings for the import flow
+
+**Files changed**: `agent-todo.ts`, `ccswitch-import.service.ts` (new), `agent-todo.ipc.ts`, `use-ipc.ts`, `AgentSettings.tsx`, `en.json`, `zh.json`
+
+### fix: Mask API keys in error logs and improve error detail
+
+**Changes**:
+
+1. API keys are now masked in both console logs and UI error messages (e.g. `sk-***`)
+2. `responseHeaders` (which may contain `Authorization`) is stripped from logged error objects
+3. Error messages now include HTTP status, URL, upstream error type/code, and cause details
+4. Raw response body included when data parsing fails (truncated to 200 chars)
+
+**Files changed**: `ai-provider.service.ts`
+
+## 0.0.6 (2026-03-24)
+
+### feat: Expand API provider support and fix Base URL UX
+
+Added support for more API providers and fixed the Base URL field to only show for Custom provider.
+
+**Changes**:
+
+1. Added new first-class providers: OpenRouter, DeepSeek, GLM (智谱), MiniMax, Kimi (月之暗面)
+2. Each provider has its own default baseURL — no manual configuration needed
+3. Base URL field now only appears when "Custom (OpenAI-compatible)" is selected
+4. Switching providers automatically clears the Base URL to prevent stale values
+5. Updated provider types across: model-config-store, cli-tools-store, provider-store, use-ipc, models.service, ai-provider.service, settings page
+6. All new providers use OpenAI-compatible chat completions via `@ai-sdk/openai`
+
+**Files changed**: `model-config-store.ts`, `cli-tools-store.ts`, `provider-store.ts`, `ai-provider.service.ts`, `models.service.ts`, `use-ipc.ts`, `settings/page.tsx`
+
+**Test validation**: `npm run lint` passed. All 626 tests pass (50 skipped).
+
+## 0.0.5 (2026-03-23)
+
+### feat: Auto-update from GitHub Releases
+
+Added in-app auto-update support using `electron-updater`. The app now checks for new versions from GitHub Releases on startup and provides a Settings UI to check, download, and install updates without leaving the app.
+
+**Changes**:
+
+1. Added `electron-updater` dependency
+2. `electron-builder.yml`: Added `publish` config pointing to GitHub (`Noietch/VibeResearch`)
+3. `src/main/services/auto-updater.service.ts`: New service wrapping `electron-updater` (check, download, quit-and-install), broadcasts status to renderer via IPC
+4. `src/main/ipc/updater.ipc.ts`: IPC handlers for `updater:getStatus`, `updater:checkForUpdates`, `updater:downloadUpdate`, `updater:quitAndInstall`
+5. `src/main/index.ts`: Integrated updater service and IPC setup
+6. `src/renderer/hooks/use-ipc.ts`: Added `UpdateStatus` type and updater IPC client methods
+7. `src/renderer/pages/settings/`: Added "Update" section in Settings with version display, check/download/install buttons, progress bar
+8. `vite.config.ts`: Inject `__APP_VERSION__` from package.json
+9. i18n: Added English and Chinese translations for all update UI strings
+10. Updated `settings-nav.test.ts` to account for the new section
+
+**Test validation**: `npm run lint` passed. All tests pass (38/38 settings-nav tests).
+
 ## 0.0.4 (2026-03-23)
 
 ### perf: Optimize trackpad pinch-to-zoom for smooth 60fps rendering
@@ -155,6 +288,28 @@
 4. Removed all custom notion-accent color references
 
 **Test validation**: Passed `npm run lint` — all files formatted correctly.
+
+### fix: Zotero import mass failure due to SQLite concurrency
+
+**Summary**: Fixed Zotero import where all items would fail (e.g. 655/655 failed). Root causes:
+
+1. **SQLite BUSY errors**: `CONCURRENCY=8` workers writing simultaneously to SQLite caused database lock contention. Prisma doesn't retry on `SQLITE_BUSY`. Reduced to `CONCURRENCY=1` with exponential backoff retry (3 attempts).
+2. **ShortId mismatch**: Dedup check in `zotero.service.ts` used `zotero-{key}` format, but `papers.service.ts` generated `local-{ts}-{rand}` for the same paper. Now passes explicit `shortId` through `upsertFromIngest` → `create` to keep IDs consistent.
+3. **Silent failures**: Import errors only logged to console. Now tracks `failedItems` with error messages and exposes them in `ZoteroImportStatus`.
+4. **Chrome import concurrency**: Also reduced `ingest.service.ts` from `CONCURRENCY=8` to `2` as a preventive measure.
+5. **Collection pre-selection**: Added `zotero:collections` IPC to list Zotero collections before scan. Users can now select a specific collection before scanning, avoiding loading the entire library.
+
+**Changes**:
+
+1. `zotero.service.ts`: CONCURRENCY 8→1, added `withRetry()`, track `failedItems` in status, added `listZoteroCollections()`
+2. `papers.service.ts`: Added optional `shortId` param to `CreatePaperInput` and `upsertFromIngest`
+3. `ingest.service.ts`: CONCURRENCY 8→2
+4. `zotero.ipc.ts`: Added `zotero:collections` handler
+5. `use-ipc.ts`: Added `zoteroCollections()` client method
+6. `import-modal.tsx`: Collection selector shown in initial step (before scan)
+7. `en.json` / `zh.json`: Added `selectCollection` i18n key
+
+**Test validation**: `npm run lint` and `npm run test` passed (58 files, 626 tests).
 
 ### feat: Multi-note annotations with AI note separation
 

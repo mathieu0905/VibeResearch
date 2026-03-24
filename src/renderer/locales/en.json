@@ -65,7 +65,8 @@
       "general_editor": "Editor",
       "general_semantic": "Semantic Search",
       "general_overleaf": "Overleaf",
-      "general_dev": "Developer Mode"
+      "general_dev": "Developer Mode",
+      "general_update": "Update"
     },
     "general_language": {
       "title": "Language / 语言",
@@ -206,6 +207,33 @@
       "description": "Enable developer mode to show welcome modal on every startup.",
       "toggleLabel": "Show welcome modal on every startup"
     },
+    "update": {
+      "title": "Update",
+      "description": "Check for new versions and update the application from GitHub Releases.",
+      "currentVersion": "Current version",
+      "idle": "Click the button below to check for updates.",
+      "checking": "Checking for updates…",
+      "upToDate": "You are on the latest version.",
+      "newVersion": "New version {{version}} is available!",
+      "downloading": "Downloading update…",
+      "readyToInstall": "Update downloaded and ready to install.",
+      "restartHint": "The app will restart to apply the update.",
+      "checkButton": "Check for Updates",
+      "downloadButton": "Download Update",
+      "installButton": "Restart & Install",
+      "newVersionAvailable": "New version {{version}} is available!",
+      "downloadNow": "Click to download now",
+      "upToDateMessage": "You're up to date!",
+      "checkLater": "Check again later for updates",
+      "checkingToast": "Checking for updates...",
+      "pleaseWait": "Please wait a moment",
+      "checkFailed": "Failed to check for updates",
+      "tryAgain": "Please try again later"
+    },
+    "general_update": {
+      "title": "Update",
+      "description": "Check for new versions and update the application."
+    },
     "models": {
       "title": "Models & Usage",
       "description": "Configure AI models for lightweight tasks and embeddings.",
@@ -263,7 +291,15 @@
       "command": "Command",
       "commandPlaceholder": "e.g. claude --dangerously-skip-permissions",
       "commandHelp": "Full command including any flags for silent / non-interactive mode",
-      "envVars": "Environment Variables (optional)"
+      "envVars": "Environment Variables (optional)",
+      "importCcSwitch": "Import from CC Switch",
+      "ccSwitchTitle": "Import from CC Switch",
+      "ccSwitchDesc": "Choose a provider to fill the agent form",
+      "ccSwitchNotFound": "CC Switch config not found (~/.cc-switch/config.json)",
+      "ccSwitchNoProviders": "No providers found in CC Switch config",
+      "ccSwitchCurrent": "Active",
+      "ccSwitchExists": "Exists",
+      "orManual": "or add manually"
     },
     "storage": {
       "title": "Data Directory",
@@ -286,7 +322,7 @@
     "noPapersHint": "Import papers from your Chrome history or upload PDFs to get started."
   },
   "search": {
-    "placeholder": "Search papers…",
+    "placeholder": "Search by title, author, venue, tag…",
     "noResults": "No results for \"{{query}}\"",
     "title": "Search",
     "heroReading": "What are you reading today?",
@@ -303,7 +339,11 @@
     "citations": "{{count}} citations",
     "noCitations": "No citation data",
     "onlineNoResults": "No online results found",
-    "libraryResults": "Library Results"
+    "libraryResults": "Library Results",
+    "keywordMatches": "Keyword Matches",
+    "semanticMatches": "Related by Similarity",
+    "semanticSearching": "Searching for similar papers…",
+    "semanticUnavailable": "Semantic search is not available. Try indexing your papers first."
   },
   "papers": {
     "library": "Library",
@@ -373,7 +413,12 @@
     "inputPlaceholder": "Enter arXiv ID, DOI, URL, or path…",
     "or": "or",
     "dragDropPdf": "Drag & drop PDFs here",
+    "dragDropPdfOrFolder": "Drag & drop PDFs or folders here",
     "choosePdf": "Choose PDF files",
+    "chooseFolder": "Choose folder",
+    "wechatFiles": "WeChat received files",
+    "folderScanFailed": "Failed to scan folder for PDFs",
+    "onlyPdfSupported": "Only PDF files are supported. Please drop .pdf files.",
     "orImportByIdUrl": "or import by ID / URL",
     "clearPdfFirst": "Clear selected PDFs first",
     "import": "Import",
@@ -402,6 +447,7 @@
       "scanLibrary": "Scan library",
       "scanDesc": "Scan your Zotero library for papers",
       "scanning": "Scanning Zotero library…",
+      "selectCollection": "Collection (optional)",
       "filterByCollection": "Filter by collection",
       "allCollections": "All collections",
       "scanFailed": "Failed to scan Zotero library"
@@ -641,12 +687,14 @@
       "topic": "Topic"
     },
     "status": {
+      "pending": "Pending",
       "extracting": "Extracting",
       "metadata": "Metadata",
       "chunking": "Chunking",
       "indexing": "Indexing",
       "needsRetry": "Needs retry"
     },
+    "backgroundProcessing": "{{count}} paper(s) being indexed and tagged in the background…",
     "sort": {
       "lastRead": "Last Read",
       "importDate": "Import Date",
@@ -781,7 +829,8 @@
     "aiSummaryWaitingLLM": "Waiting for LLM response...",
     "aiSummaryLocal": "AI Summary",
     "noAbstract": "No abstract available. Click \"Generate AI Summary\" to create one from the paper text.",
-    "importForAiSummary": "Import to library to generate AI summary"
+    "importForAiSummary": "Import to library to generate AI summary",
+    "venue": "Venue"
   },
   "reader": {
     "annotations": "Annotations",

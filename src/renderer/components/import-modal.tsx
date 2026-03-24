@@ -34,6 +34,8 @@ import {
   Leaf,
   RefreshCw,
   ChevronDown,
+  FolderOpen,
+  MessageCircle,
 } from 'lucide-react';
 
 // Animation variants
@@ -138,6 +140,18 @@ export function ImportModal({
   const [downloadsLoaded, setDownloadsLoaded] = useState(false);
   const [downloadsDropdownOpen, setDownloadsDropdownOpen] = useState(false);
   const downloadsDropdownRef = useRef<HTMLDivElement>(null);
+  // WeChat files state
+  interface WeChatFileItem {
+    filePath: string;
+    fileName: string;
+    modifiedTime: string;
+    fileSize: number;
+  }
+  const [wechatFiles, setWechatFiles] = useState<WeChatFileItem[]>([]);
+  const [wechatLoading, setWechatLoading] = useState(false);
+  const [wechatLoaded, setWechatLoaded] = useState(false);
+  const [wechatDropdownOpen, setWechatDropdownOpen] = useState(false);
+
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [error, setError] = useState('');
@@ -152,6 +166,9 @@ export function ImportModal({
   const [zoteroDbPath, setZoteroDbPath] = useState<string>('');
   const [zoteroDetected, setZoteroDetected] = useState<boolean | null>(null);
   const [zoteroCollectionFilter, setZoteroCollectionFilter] = useState<string>('');
+  const [zoteroCollections, setZoteroCollections] = useState<
+    Array<{ name: string; itemCount: number }>
+  >([]);
 
   // BibTeX state
   const [bibtexEntries, setBibtexEntries] = useState<ParsedPaperEntry[]>([]);
@@ -264,7 +281,14 @@ export function ImportModal({
         .zoteroDetect()
         .then((result) => {
           setZoteroDetected(result.found);
-          if (result.found && result.dbPath) setZoteroDbPath(result.dbPath);
+          if (result.found && result.dbPath) {
+            setZoteroDbPath(result.dbPath);
+            // Pre-load collections list (lightweight query)
+            ipc
+              .zoteroCollections(result.dbPath)
+              .then(setZoteroCollections)
+              .catch(() => setZoteroCollections([]));
+          }
         })
         .catch(() => setZoteroDetected(false));
     }
@@ -388,7 +412,7 @@ export function ImportModal({
   }, []);
 
   const handleDrop = useCallback(
-    (e: React.DragEvent) => {
+    async (e: React.DragEvent) => {
       e.preventDefault();
       e.stopPropagation();
       setIsDragOver(false);
@@ -407,17 +431,41 @@ export function ImportModal({
         return;
       }
 
-      const pdfFiles = files
-        .filter((f) => f.name.toLowerCase().endsWith('.pdf'))
-        .map((f) => (f as File & { path?: string }).path)
-        .filter((p): p is string => !!p);
+      // Separate PDFs and folders
+      const pdfFiles: string[] = [];
+      const folderPaths: string[] = [];
 
-      if (pdfFiles.length === 0 && files.length > 0) {
-        setError('Only PDF files are supported. Please drop .pdf files.');
+      for (const file of files) {
+        const filePath = (file as File & { path?: string }).path;
+        if (!filePath) continue;
+        if (file.name.toLowerCase().endsWith('.pdf')) {
+          pdfFiles.push(filePath);
+        } else if (file.type === '' || !file.type) {
+          // Likely a folder (folders have no type)
+          folderPaths.push(filePath);
+        }
+      }
+
+      // Scan folders for PDFs
+      if (folderPaths.length > 0) {
+        try {
+          for (const folder of folderPaths) {
+            const pdfs = await ipc.scanFolderForPdfs(folder);
+            pdfFiles.push(...pdfs);
+          }
+        } catch {
+          setError(t('importModal.folderScanFailed'));
+        }
+      }
+
+      if (pdfFiles.length === 0 && files.length > 0 && folderPaths.length === 0) {
+        setError(t('importModal.onlyPdfSupported'));
         return;
       }
 
-      addPdfFiles(pdfFiles);
+      if (pdfFiles.length > 0) {
+        addPdfFiles(pdfFiles);
+      }
     },
     [addPdfFiles, tab, t],
   );
@@ -760,6 +808,30 @@ export function ImportModal({
     }
   }, []);
 
+  const loadWeChatFiles = useCallback(async () => {
+    setWechatLoading(true);
+    try {
+      const result = await ipc.scanWeChatFiles(30);
+      setWechatFiles(result.files);
+      setWechatLoaded(true);
+    } catch {
+      // Silent fail — WeChat may not be installed
+    } finally {
+      setWechatLoading(false);
+    }
+  }, []);
+
+  const handleSelectFolder = useCallback(async () => {
+    try {
+      const pdfs = await ipc.selectFolderForPdfs();
+      if (pdfs && pdfs.length > 0) {
+        addPdfFiles(pdfs);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to scan folder');
+    }
+  }, [addPdfFiles]);
+
   const handleTabChange = useCallback(
     (newTab: Tab) => {
       setTab(newTab);
@@ -785,8 +857,18 @@ export function ImportModal({
       if (newTab === 'local' && !downloadsLoaded) {
         loadRecentDownloads();
       }
+      if (newTab === 'local' && !wechatLoaded) {
+        loadWeChatFiles();
+      }
     },
-    [overleafProjects.length, loadOverleafProjects, downloadsLoaded, loadRecentDownloads],
+    [
+      overleafProjects.length,
+      loadOverleafProjects,
+      downloadsLoaded,
+      loadRecentDownloads,
+      wechatLoaded,
+      loadWeChatFiles,
+    ],
   );
 
   // Reset to initial state
@@ -802,6 +884,12 @@ export function ImportModal({
     setBibtexErrorDetail('');
     setBibtexErrorExpanded(false);
   }, []);
+
+  // Load recent downloads and WeChat files on initial mount (default tab is 'local')
+  useEffect(() => {
+    if (!downloadsLoaded) loadRecentDownloads();
+    if (!wechatLoaded) loadWeChatFiles();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get the current action button for footer
   const getFooterButtons = () => {
@@ -1374,6 +1462,95 @@ export function ImportModal({
                         </div>
                       )}
 
+                      {/* WeChat recent files — dropdown */}
+                      {(wechatLoading || wechatFiles.length > 0) && (
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() => setWechatDropdownOpen((v) => !v)}
+                            className="flex w-full items-center justify-between rounded-lg border border-notion-border bg-white px-3 py-2 text-sm text-notion-text hover:border-notion-accent/30 transition-colors"
+                          >
+                            <span className="flex items-center gap-2">
+                              <MessageCircle size={14} className="text-green-500" />
+                              <span className="font-medium">{t('importModal.wechatFiles')}</span>
+                              {wechatFiles.length > 0 && (
+                                <span className="rounded-full bg-notion-sidebar px-1.5 py-0.5 text-[10px] text-notion-text-tertiary">
+                                  {wechatFiles.length}
+                                </span>
+                              )}
+                            </span>
+                            <span className="flex items-center gap-1">
+                              {wechatLoading && (
+                                <Loader2
+                                  size={12}
+                                  className="animate-spin text-notion-text-tertiary"
+                                />
+                              )}
+                              <ChevronDown
+                                size={14}
+                                className={`text-notion-text-tertiary transition-transform duration-150 ${wechatDropdownOpen ? 'rotate-180' : ''}`}
+                              />
+                            </span>
+                          </button>
+                          <AnimatePresence>
+                            {wechatDropdownOpen && !wechatLoading && wechatFiles.length > 0 && (
+                              <motion.div
+                                initial={{ opacity: 0, y: -4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -4 }}
+                                transition={{ duration: 0.12 }}
+                                className="absolute left-0 right-0 z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-notion-border bg-white shadow-lg"
+                              >
+                                <div className="flex items-center justify-end border-b border-notion-border px-3 py-1">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setWechatLoaded(false);
+                                      loadWeChatFiles();
+                                    }}
+                                    className="flex items-center gap-1 text-[10px] text-notion-text-tertiary hover:text-notion-text"
+                                  >
+                                    <RefreshCw size={10} />
+                                    {t('common.refresh', 'Refresh')}
+                                  </button>
+                                </div>
+                                {wechatFiles.map((wf) => (
+                                  <div
+                                    key={wf.filePath}
+                                    className="group flex items-center gap-2 border-b border-notion-border px-3 py-1.5 last:border-b-0 hover:bg-notion-accent-light cursor-pointer"
+                                    onClick={() => {
+                                      setLocalPdfFiles((prev) =>
+                                        prev.includes(wf.filePath) ? prev : [...prev, wf.filePath],
+                                      );
+                                    }}
+                                  >
+                                    <FileText size={14} className="flex-shrink-0 text-red-400" />
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm text-notion-text">
+                                        {wf.fileName}
+                                      </p>
+                                      <p className="text-[10px] text-notion-text-tertiary">
+                                        {formatRelativeTime(wf.modifiedTime)}
+                                        {wf.fileSize > 0 &&
+                                          ` · ${(wf.fileSize / 1024 / 1024).toFixed(1)} MB`}
+                                      </p>
+                                    </div>
+                                    {localPdfFiles.includes(wf.filePath) ? (
+                                      <Check size={14} className="flex-shrink-0 text-green-500" />
+                                    ) : (
+                                      <Download
+                                        size={14}
+                                        className="flex-shrink-0 text-notion-text-tertiary opacity-0 group-hover:opacity-100"
+                                      />
+                                    )}
+                                  </div>
+                                ))}
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )}
+
                       {/* Drag & drop zone */}
                       <div
                         onDragOver={handleDragOver}
@@ -1390,19 +1567,29 @@ export function ImportModal({
                           className={`mb-2 ${isDragOver ? 'text-blue-500' : 'text-notion-text-tertiary'}`}
                         />
                         <p className="text-sm text-notion-text-secondary">
-                          {t('importModal.dragDropPdf')}
+                          {t('importModal.dragDropPdfOrFolder')}
                         </p>
                         <p className="mt-1 text-xs text-notion-text-tertiary">
                           {t('importModal.or')}
                         </p>
-                        <button
-                          type="button"
-                          onClick={handleSelectLocalPdf}
-                          className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-white border border-notion-border px-3 py-1.5 text-sm font-medium text-notion-text hover:bg-notion-sidebar-hover transition-colors"
-                        >
-                          <FileText size={14} />
-                          {t('importModal.choosePdf')}
-                        </button>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleSelectLocalPdf}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-notion-border px-3 py-1.5 text-sm font-medium text-notion-text hover:bg-notion-sidebar-hover transition-colors"
+                          >
+                            <FileText size={14} />
+                            {t('importModal.choosePdf')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSelectFolder}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-white border border-notion-border px-3 py-1.5 text-sm font-medium text-notion-text hover:bg-notion-sidebar-hover transition-colors"
+                          >
+                            <FolderOpen size={14} />
+                            {t('importModal.chooseFolder')}
+                          </button>
+                        </div>
                       </div>
 
                       {localPdfFiles.length > 0 && (
@@ -1573,6 +1760,28 @@ export function ImportModal({
                           <p className="text-xs text-notion-text-tertiary truncate">
                             {zoteroDbPath}
                           </p>
+
+                          {/* Collection selector before scan */}
+                          {zoteroCollections.length > 0 && (
+                            <div>
+                              <label className="mb-1 block text-xs font-medium text-notion-text-secondary">
+                                {t('importModal.zotero.selectCollection')}
+                              </label>
+                              <select
+                                value={zoteroCollectionFilter}
+                                onChange={(e) => setZoteroCollectionFilter(e.target.value)}
+                                className="w-full rounded-lg border border-notion-border bg-notion-sidebar px-3 py-1.5 text-sm text-notion-text outline-none"
+                              >
+                                <option value="">{t('importModal.zotero.allCollections')}</option>
+                                {zoteroCollections.map((c) => (
+                                  <option key={c.name} value={c.name}>
+                                    {c.name} ({c.itemCount})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
+
                           <p className="text-sm text-notion-text-secondary">
                             {t('importModal.zotero.scanDesc')}
                           </p>

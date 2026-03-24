@@ -21,7 +21,9 @@ import {
   type SemanticSearchSettings,
   type SemanticEmbeddingTestResult,
   type EmbeddingConfig,
+  type UpdateStatus,
 } from '../../hooks/use-ipc';
+import { useToast } from '../../components/toast';
 import {
   Settings,
   Check,
@@ -150,6 +152,11 @@ const PROVIDER_ENV_DEFAULTS: Record<ProviderKind, string> = {
   anthropic: 'ANTHROPIC_API_KEY=',
   openai: 'OPENAI_API_KEY=',
   gemini: 'GEMINI_API_KEY=',
+  openrouter: 'OPENROUTER_API_KEY=',
+  deepseek: 'DEEPSEEK_API_KEY=',
+  zhipu: 'ZHIPU_API_KEY=',
+  minimax: 'MINIMAX_API_KEY=',
+  moonshot: 'MOONSHOT_API_KEY=',
   custom: '',
 };
 
@@ -1200,12 +1207,26 @@ const KIND_BACKEND: Record<ModelKind, ModelBackend> = {
 };
 
 const API_PROVIDER_OPTIONS: Array<{
-  id: 'anthropic' | 'openai' | 'gemini' | 'custom';
+  id:
+    | 'anthropic'
+    | 'openai'
+    | 'gemini'
+    | 'openrouter'
+    | 'deepseek'
+    | 'zhipu'
+    | 'minimax'
+    | 'moonshot'
+    | 'custom';
   label: string;
 }> = [
   { id: 'anthropic', label: 'Anthropic (Claude)' },
   { id: 'openai', label: 'OpenAI (GPT)' },
   { id: 'gemini', label: 'Google Gemini' },
+  { id: 'openrouter', label: 'OpenRouter' },
+  { id: 'deepseek', label: 'DeepSeek' },
+  { id: 'zhipu', label: 'GLM (智谱)' },
+  { id: 'minimax', label: 'MiniMax' },
+  { id: 'moonshot', label: 'Kimi (月之暗面)' },
   { id: 'custom', label: 'Custom (OpenAI-compatible)' },
 ];
 
@@ -1302,7 +1323,17 @@ function AddModelModal({
   const { t } = useTranslation();
   const backend = KIND_BACKEND[defaultKind];
   const [name, setName] = useState('');
-  const [provider, setProvider] = useState<'anthropic' | 'openai' | 'gemini' | 'custom'>('openai');
+  const [provider, setProvider] = useState<
+    | 'anthropic'
+    | 'openai'
+    | 'gemini'
+    | 'openrouter'
+    | 'deepseek'
+    | 'zhipu'
+    | 'minimax'
+    | 'moonshot'
+    | 'custom'
+  >('openai');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [baseURL, setBaseURL] = useState('');
@@ -1469,6 +1500,7 @@ function AddModelModal({
                               onClick={() => {
                                 setProvider(opt.id);
                                 setModel('');
+                                if (opt.id !== 'custom') setBaseURL('');
                                 setProviderOpen(false);
                               }}
                               className={`flex w-full items-center justify-between px-3 py-2.5 text-left text-sm transition-colors hover:bg-notion-sidebar ${provider === opt.id ? 'bg-blue-50 text-blue-700' : 'text-notion-text'}`}
@@ -1494,29 +1526,20 @@ function AddModelModal({
                     />
                   </div>
 
-                  {/* Base URL (optional override) */}
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
-                      Base URL{' '}
-                      <span className="font-normal text-notion-text-tertiary">
-                        (optional, for proxy/custom endpoint)
-                      </span>
-                    </label>
-                    <input
-                      value={baseURL}
-                      onChange={(e) => setBaseURL(e.target.value)}
-                      placeholder={
-                        provider === 'anthropic'
-                          ? 'https://api.anthropic.com (default)'
-                          : provider === 'openai'
-                            ? 'https://api.openai.com/v1 (default)'
-                            : provider === 'gemini'
-                              ? 'https://generativelanguage.googleapis.com (default)'
-                              : 'https://your-proxy.example.com/v1'
-                      }
-                      className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                    />
-                  </div>
+                  {/* Base URL (only for custom provider) */}
+                  {provider === 'custom' && (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                        Base URL
+                      </label>
+                      <input
+                        value={baseURL}
+                        onChange={(e) => setBaseURL(e.target.value)}
+                        placeholder="https://your-proxy.example.com/v1"
+                        className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                  )}
 
                   {/* API Key */}
                   <div>
@@ -1665,9 +1688,17 @@ function EditModelModal({
   const { t } = useTranslation();
   const backend = model.backend;
   const [name, setName] = useState(model.name);
-  const [provider, setProvider] = useState<'anthropic' | 'openai' | 'gemini' | 'custom'>(
-    model.provider ?? 'openai',
-  );
+  const [provider, setProvider] = useState<
+    | 'anthropic'
+    | 'openai'
+    | 'gemini'
+    | 'openrouter'
+    | 'deepseek'
+    | 'zhipu'
+    | 'minimax'
+    | 'moonshot'
+    | 'custom'
+  >(model.provider ?? 'openai');
   const [modelName, setModelName] = useState(model.model ?? '');
   const [apiKey, setApiKey] = useState('');
   const [baseURL, setBaseURL] = useState(model.baseURL ?? '');
@@ -1896,29 +1927,20 @@ function EditModelModal({
                     />
                   </div>
 
-                  {/* Base URL (optional override) */}
-                  <div>
-                    <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
-                      Base URL{' '}
-                      <span className="font-normal text-notion-text-tertiary">
-                        (optional, for proxy/custom endpoint)
-                      </span>
-                    </label>
-                    <input
-                      value={baseURL}
-                      onChange={(e) => setBaseURL(e.target.value)}
-                      placeholder={
-                        provider === 'anthropic'
-                          ? 'https://api.anthropic.com (default)'
-                          : provider === 'openai'
-                            ? 'https://api.openai.com/v1 (default)'
-                            : provider === 'gemini'
-                              ? 'https://generativelanguage.googleapis.com (default)'
-                              : 'https://your-proxy.example.com/v1'
-                      }
-                      className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
-                    />
-                  </div>
+                  {/* Base URL (only for custom provider) */}
+                  {provider === 'custom' && (
+                    <div>
+                      <label className="mb-1.5 block text-xs font-medium text-notion-text-secondary">
+                        Base URL
+                      </label>
+                      <input
+                        value={baseURL}
+                        onChange={(e) => setBaseURL(e.target.value)}
+                        placeholder="https://your-proxy.example.com/v1"
+                        className="w-full rounded-lg border border-notion-border bg-white px-3 py-2.5 font-mono text-sm text-notion-text placeholder-notion-text-tertiary outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      />
+                    </div>
+                  )}
 
                   {/* API Key */}
                   <div>
@@ -3902,6 +3924,182 @@ type SearchableItem = {
   keywords: string[];
 };
 
+// ─── Update Settings ──────────────────────────────────────────────────────────
+
+function UpdateSettings() {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const [status, setStatus] = useState<UpdateStatus>({ state: 'idle' });
+
+  useEffect(() => {
+    ipc
+      .updaterGetStatus()
+      .then(setStatus)
+      .catch(() => {});
+    const unsub = onIpc('updater:status', (newStatus: unknown) => {
+      setStatus(newStatus as UpdateStatus);
+    });
+    return unsub;
+  }, []);
+
+  const [checking, setChecking] = useState(false);
+
+  const handleCheck = async () => {
+    setChecking(true);
+    try {
+      const result = await ipc.updaterCheckForUpdates();
+      setStatus(result);
+      if (result.state === 'not-available') {
+        toast(t('settings.update.upToDate'), 'success');
+      } else if (result.state === 'available') {
+        toast(t('settings.update.newVersionAvailable', { version: result.info.version }), 'info');
+      } else if (result.state === 'error') {
+        toast(result.message || t('settings.update.checkFailed'), 'error');
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t('settings.update.checkFailed');
+      setStatus({ state: 'error', message: msg });
+      toast(msg, 'error');
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      await ipc.updaterDownloadUpdate();
+    } catch {
+      setStatus({ state: 'error', message: 'Failed to download update' });
+    }
+  };
+
+  const handleInstall = () => {
+    ipc.updaterQuitAndInstall();
+  };
+
+  const versionInfo =
+    status.state === 'available' ||
+    status.state === 'not-available' ||
+    status.state === 'downloaded'
+      ? status.info
+      : null;
+
+  return (
+    <div>
+      <p className="mb-5 text-sm text-notion-text-secondary">{t('settings.update.description')}</p>
+
+      <div className="rounded-lg border border-notion-border bg-white p-4">
+        {/* Current version */}
+        <div className="mb-4 flex items-center gap-2">
+          <span className="text-sm text-notion-text-tertiary">
+            {t('settings.update.currentVersion')}:
+          </span>
+          <span className="text-sm font-medium text-notion-text">{__APP_VERSION__}</span>
+        </div>
+
+        {/* Status display */}
+        <div className="mb-4">
+          {status.state === 'idle' && (
+            <p className="text-sm text-notion-text-tertiary">{t('settings.update.idle')}</p>
+          )}
+          {status.state === 'checking' && (
+            <div className="flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin text-notion-accent" />
+              <p className="text-sm text-notion-text-secondary">{t('settings.update.checking')}</p>
+            </div>
+          )}
+          {status.state === 'not-available' && (
+            <div className="flex items-center gap-2">
+              <Check size={14} className="text-green-600" />
+              <p className="text-sm text-notion-text-secondary">{t('settings.update.upToDate')}</p>
+            </div>
+          )}
+          {status.state === 'available' && versionInfo && (
+            <div className="rounded-md border border-notion-accent/20 bg-notion-accent-light p-3">
+              <p className="text-sm font-medium text-notion-text">
+                {t('settings.update.newVersion', { version: versionInfo.version })}
+              </p>
+              {versionInfo.releaseDate && (
+                <p className="mt-1 text-xs text-notion-text-tertiary">
+                  {new Date(versionInfo.releaseDate).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          )}
+          {status.state === 'downloading' && (
+            <div>
+              <div className="flex items-center gap-2">
+                <Download size={14} className="text-notion-accent" />
+                <p className="text-sm text-notion-text-secondary">
+                  {t('settings.update.downloading')}
+                </p>
+                <span className="text-sm font-medium text-notion-text">
+                  {Math.round(status.progress.percent)}%
+                </span>
+              </div>
+              <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-notion-border">
+                <div
+                  className="h-full rounded-full bg-notion-accent transition-all duration-300"
+                  style={{ width: `${status.progress.percent}%` }}
+                />
+              </div>
+            </div>
+          )}
+          {status.state === 'downloaded' && (
+            <div className="rounded-md border border-green-200 bg-green-50 p-3">
+              <p className="text-sm font-medium text-green-700">
+                {t('settings.update.readyToInstall')}
+              </p>
+              <p className="mt-1 text-xs text-green-600">{t('settings.update.restartHint')}</p>
+            </div>
+          )}
+          {status.state === 'error' && (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={14} className="text-red-500" />
+                <p className="text-sm text-red-600">{status.message}</p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2">
+          {(status.state === 'idle' ||
+            status.state === 'checking' ||
+            status.state === 'not-available' ||
+            status.state === 'error') && (
+            <button
+              onClick={handleCheck}
+              disabled={checking}
+              className="flex items-center gap-2 rounded-lg bg-notion-sidebar-hover px-3 py-1.5 text-sm text-notion-text transition-colors hover:bg-notion-border disabled:opacity-50"
+            >
+              {checking && <Loader2 size={14} className="animate-spin" />}
+              {t('settings.update.checkButton')}
+            </button>
+          )}
+          {status.state === 'available' && (
+            <button
+              onClick={handleDownload}
+              className="rounded-lg bg-notion-accent px-3 py-1.5 text-sm text-white transition-colors hover:bg-notion-accent/90"
+            >
+              {t('settings.update.downloadButton')}
+            </button>
+          )}
+          {status.state === 'downloaded' && (
+            <button
+              onClick={handleInstall}
+              className="rounded-lg bg-green-600 px-3 py-1.5 text-sm text-white transition-colors hover:bg-green-700"
+            >
+              {t('settings.update.installButton')}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SEARCH_INDEX: SearchableItem[] = NAV_GROUPS.flatMap((g) =>
   g.items.map((item) => ({
     id: item.id,
@@ -3935,6 +4133,8 @@ function renderSection(id: SectionId) {
       return <OverleafSettings />;
     case 'general.dev':
       return <DeveloperSettings />;
+    case 'general.update':
+      return <UpdateSettings />;
     case 'models':
       return <ModelsSettings />;
     case 'agents':
@@ -3946,9 +4146,11 @@ function renderSection(id: SectionId) {
 
 export function SettingsPage() {
   const { t } = useTranslation();
+  const { toast } = useToast();
   const [activeSection, setActiveSection] = useState<SectionId>('general.proxy');
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [updateAvailable, setUpdateAvailable] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Fuse.js search results
@@ -3966,6 +4168,21 @@ export function SettingsPage() {
       setActiveSection(searchResults[0].id);
     }
   }, [searchResults, isSearching]);
+
+  // Listen for update status changes
+  useEffect(() => {
+    const unsub = onIpc('updater:status', (newStatus: unknown) => {
+      const status = newStatus as UpdateStatus;
+      if (status.state === 'available') {
+        setUpdateAvailable(true);
+        // Show toast notification for new version
+        toast(t('settings.update.newVersionAvailable', { version: status.info.version }), 'info');
+      } else if (status.state === 'downloaded') {
+        setUpdateAvailable(true);
+      }
+    });
+    return unsub;
+  }, [t]);
 
   const handleToggleGroup = (groupId: string) => {
     setCollapsed((prev) => toggleCollapsed(prev, groupId));
@@ -4033,6 +4250,11 @@ export function SettingsPage() {
                         isSearching && searchResults.some((r) => r.id === item.id);
                       const isHighlighted =
                         isSearching && activeSection === item.id && isSearchMatch;
+                      // Show red dot on Update menu when update is available and not currently viewing it
+                      const showRedDot =
+                        item.id === 'general.update' &&
+                        updateAvailable &&
+                        activeSection !== 'general.update';
                       return (
                         <button
                           key={item.id}
@@ -4045,7 +4267,12 @@ export function SettingsPage() {
                                 : 'text-notion-text-secondary'
                           } hover:text-notion-text`}
                         >
-                          {(t as any)(`settings.nav.${item.id.replace('.', '_')}`)}
+                          <span className="flex-1">
+                            {(t as any)(`settings.nav.${item.id.replace('.', '_')}`)}
+                          </span>
+                          {showRedDot && (
+                            <span className="ml-1.5 h-2 w-2 rounded-full bg-red-500" />
+                          )}
                         </button>
                       );
                     })}

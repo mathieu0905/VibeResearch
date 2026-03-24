@@ -65,7 +65,8 @@
       "general_editor": "编辑器",
       "general_semantic": "语义搜索",
       "general_overleaf": "Overleaf",
-      "general_dev": "开发者模式"
+      "general_dev": "开发者模式",
+      "general_update": "更新"
     },
     "general_language": {
       "title": "Language / 语言",
@@ -206,6 +207,33 @@
       "description": "启用开发者模式，每次启动时显示欢迎弹窗。",
       "toggleLabel": "每次启动时显示欢迎弹窗"
     },
+    "update": {
+      "title": "更新",
+      "description": "从 GitHub Releases 检查新版本并更新应用程序。",
+      "currentVersion": "当前版本",
+      "idle": "点击下方按钮检查更新。",
+      "checking": "正在检查更新…",
+      "upToDate": "当前已是最新版本。",
+      "newVersion": "发现新版本 {{version}}！",
+      "downloading": "正在下载更新…",
+      "readyToInstall": "更新已下载，准备安装。",
+      "restartHint": "应用将重启以安装更新。",
+      "checkButton": "检查更新",
+      "downloadButton": "下载更新",
+      "installButton": "重启并安装",
+      "newVersionAvailable": "发现新版本 {{version}}！",
+      "downloadNow": "点击立即下载",
+      "upToDateMessage": "当前已是最新版本！",
+      "checkLater": "稍后再次检查更新",
+      "checkingToast": "正在检查更新...",
+      "pleaseWait": "请稍候",
+      "checkFailed": "检查更新失败",
+      "tryAgain": "请稍后重试"
+    },
+    "general_update": {
+      "title": "更新",
+      "description": "检查新版本并更新应用程序。"
+    },
     "models": {
       "title": "模型与用量",
       "description": "配置用于轻量任务和 Embedding 的 AI 模型。",
@@ -263,7 +291,15 @@
       "command": "命令",
       "commandPlaceholder": "例如 claude --dangerously-skip-permissions",
       "commandHelp": "完整命令，包含静默/非交互模式所需的参数",
-      "envVars": "环境变量（可选）"
+      "envVars": "环境变量（可选）",
+      "importCcSwitch": "从 CC Switch 导入",
+      "ccSwitchTitle": "从 CC Switch 导入",
+      "ccSwitchDesc": "选择一个配置填入表单",
+      "ccSwitchNotFound": "未找到 CC Switch 配置（~/.cc-switch/config.json）",
+      "ccSwitchNoProviders": "CC Switch 配置中未找到服务商",
+      "ccSwitchCurrent": "当前",
+      "ccSwitchExists": "已存在",
+      "orManual": "或手动添加"
     },
     "storage": {
       "title": "数据目录",
@@ -286,7 +322,7 @@
     "noPapersHint": "从 Chrome 历史记录导入论文或上传 PDF 开始使用。"
   },
   "search": {
-    "placeholder": "搜索论文…",
+    "placeholder": "搜索标题、作者、期刊、标签…",
     "noResults": "未找到「{{query}}」相关结果",
     "title": "搜索",
     "heroReading": "今天读什么？",
@@ -303,7 +339,11 @@
     "citations": "{{count}} 次引用",
     "noCitations": "无引用数据",
     "onlineNoResults": "未找到在线结果",
-    "libraryResults": "本地文献库结果"
+    "libraryResults": "本地文献库结果",
+    "keywordMatches": "关键词匹配",
+    "semanticMatches": "相似度推荐",
+    "semanticSearching": "正在搜索相关论文…",
+    "semanticUnavailable": "语义搜索不可用，请先索引论文。"
   },
   "papers": {
     "library": "文献库",
@@ -373,7 +413,12 @@
     "inputPlaceholder": "输入 arXiv ID、DOI、URL 或路径…",
     "or": "或",
     "dragDropPdf": "拖放 PDF 文件到这里",
+    "dragDropPdfOrFolder": "拖放 PDF 文件或文件夹到这里",
     "choosePdf": "选择 PDF 文件",
+    "chooseFolder": "选择文件夹",
+    "wechatFiles": "微信接收的文件",
+    "folderScanFailed": "扫描文件夹中的 PDF 失败",
+    "onlyPdfSupported": "仅支持 PDF 文件，请拖放 .pdf 文件。",
     "orImportByIdUrl": "或通过 ID / URL 导入",
     "clearPdfFirst": "请先清除已选的 PDF",
     "import": "导入",
@@ -402,6 +447,7 @@
       "scanLibrary": "扫描文献库",
       "scanDesc": "扫描 Zotero 文献库中的论文",
       "scanning": "正在扫描 Zotero…",
+      "selectCollection": "选择分集目录（可选）",
       "filterByCollection": "按收藏夹筛选",
       "allCollections": "所有收藏夹",
       "scanFailed": "扫描 Zotero 文献库失败"
@@ -641,12 +687,14 @@
       "topic": "主题"
     },
     "status": {
+      "pending": "排队中",
       "extracting": "提取中",
       "metadata": "元数据",
       "chunking": "分块中",
       "indexing": "索引中",
       "needsRetry": "需要重试"
     },
+    "backgroundProcessing": "{{count}} 篇论文正在后台处理（索引/打标签）…",
     "sort": {
       "lastRead": "最近阅读",
       "importDate": "导入时间",
@@ -781,7 +829,8 @@
     "aiSummaryWaitingLLM": "等待 LLM 响应...",
     "aiSummaryLocal": "AI 解读",
     "noAbstract": "暂无摘要。点击「生成 AI 解读」从论文全文自动生成。",
-    "importForAiSummary": "导入到资料库后可生成 AI 解读"
+    "importForAiSummary": "导入到资料库后可生成 AI 解读",
+    "venue": "会议/期刊"
   },
   "reader": {
     "annotations": "批注",

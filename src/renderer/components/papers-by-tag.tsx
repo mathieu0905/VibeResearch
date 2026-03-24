@@ -27,7 +27,6 @@ import {
   Copy,
   Check,
   GitCompareArrows,
-  Sparkles,
   Database,
   FilePenLine,
 } from 'lucide-react';
@@ -49,9 +48,10 @@ type CategoryFilter = 'all' | TagCategory;
 // Filter options will be generated inside the component with i18n
 
 function ProcessingBadge({ status, t }: { status?: string; t: TFunction }) {
-  if (!status || status === 'idle' || status === 'queued' || status === 'completed') return null;
+  if (!status || status === 'idle' || status === 'completed') return null;
 
   const styles: Record<string, string> = {
+    queued: 'bg-blue-50 text-blue-600',
     extracting_text: 'bg-amber-50 text-amber-700',
     extracting_metadata: 'bg-amber-50 text-amber-700',
     chunking: 'bg-amber-50 text-amber-700',
@@ -60,6 +60,7 @@ function ProcessingBadge({ status, t }: { status?: string; t: TFunction }) {
   };
 
   const labels: Record<string, string> = {
+    queued: t('papersByTag.status.pending'),
     extracting_text: t('papersByTag.status.extracting'),
     extracting_metadata: t('papersByTag.status.metadata'),
     chunking: t('papersByTag.status.chunking'),
@@ -228,6 +229,9 @@ function YearDropdown({
   );
 }
 
+// Persist current page across navigations (module-level, survives unmount)
+let savedCurrentPage = 1;
+
 export function PapersByTag({
   importStatus: _importStatus,
   onOpenImport,
@@ -239,7 +243,10 @@ export function PapersByTag({
   const [papers, setPapers] = useState<PaperItem[]>([]);
   const [allTags, setAllTags] = useState<TagInfo[]>([]);
   const [loading, setLoading] = useState(true);
+  const [initialLoad, setInitialLoad] = useState(true);
+  const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const isComposingRef = useRef(false);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [importTimeFilter, setImportTimeFilter] = useState<ImportTimeFilter>('all');
@@ -267,6 +274,7 @@ export function PapersByTag({
     missingAbstract: number;
     withPdf: number;
     availableYears: number[];
+    processing: number;
   } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState<string | null>(null);
@@ -308,11 +316,13 @@ export function PapersByTag({
     localStorage.setItem('researchclaw-library-sort', sortBy);
   }, [sortBy]);
 
-  // Single paper auto-tag, index and analyze state
-  const [autoTaggingPaperId, setAutoTaggingPaperId] = useState<string | null>(null);
-  const [indexingPaperId, setIndexingPaperId] = useState<string | null>(null);
-  const [analyzingPaperId, setAnalyzingPaperId] = useState<string | null>(null);
-  const [extractingMetadataPaperId, setExtractingMetadataPaperId] = useState<string | null>(null);
+  // Papers currently being processed (supports concurrent operations)
+  const [autoTaggingIds, setAutoTaggingIds] = useState<Set<string>>(new Set());
+  const [indexingIds, setIndexingIds] = useState<Set<string>>(new Set());
+  const [extractingMetadataIds, setExtractingMetadataIds] = useState<Set<string>>(new Set());
+
+  // Track papers being enriched in the background (auto-enrich + tagging)
+  const [bgEnrichingIds, setBgEnrichingIds] = useState<Set<string>>(new Set());
 
   // Batch operation progress state
   const [batchTagProgress, setBatchTagProgress] = useState<{
@@ -341,7 +351,7 @@ export function PapersByTag({
   } | null>(null);
 
   // Selection mode state
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage, setCurrentPage] = useState(savedCurrentPage);
   const pageSize = 20;
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -353,6 +363,11 @@ export function PapersByTag({
 
   const navigate = useNavigate();
   const toast = useToast();
+
+  // Sync module-level page state so it survives unmount/remount
+  useEffect(() => {
+    savedCurrentPage = currentPage;
+  }, [currentPage]);
 
   // Ref to preserve scroll position across updates
   const preservedScrollTopRef = useRef<number>(0);
@@ -413,6 +428,7 @@ export function PapersByTag({
         // silent
       } finally {
         setLoading(false);
+        setInitialLoad(false);
       }
     },
     [
@@ -516,10 +532,26 @@ export function PapersByTag({
   }, [fetchPapers, fetchCounts]);
 
   useEffect(() => {
+    const ACTIVE_STATUSES = new Set([
+      'queued',
+      'embedding',
+      'extracting_text',
+      'extracting_metadata',
+      'chunking',
+    ]);
     return onIpc('papers:processingStatus', (_event, payload) => {
       const { paperId, status } = payload as { paperId: string; status: string; error?: string };
-      setPapers((prev) =>
-        prev.map((p) =>
+      setPapers((prev) => {
+        const old = prev.find((p) => p.id === paperId);
+        const wasActive = old ? ACTIVE_STATUSES.has(old.processingStatus ?? '') : false;
+        const isActive = ACTIVE_STATUSES.has(status);
+        // Update processing count delta
+        if (wasActive !== isActive) {
+          setPaperCounts((c) =>
+            c ? { ...c, processing: Math.max(0, c.processing + (isActive ? 1 : -1)) } : c,
+          );
+        }
+        return prev.map((p) =>
           p.id === paperId
             ? {
                 ...p,
@@ -527,8 +559,8 @@ export function PapersByTag({
                 indexedAt: status === 'completed' ? new Date().toISOString() : p.indexedAt,
               }
             : p,
-        ),
-      );
+        );
+      });
     });
   }, []);
 
@@ -582,8 +614,24 @@ export function PapersByTag({
     });
   }, [allTags, paperCounts, categoryFilter]);
 
-  // Reset to page 1 when filters or sort change (fetchPapers depends on currentPage and re-fetches)
+  // Debounce: sync searchInput → searchQuery after 300ms, but not while IME is composing
   useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!isComposingRef.current) {
+        setSearchQuery(searchInput);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Reset to page 1 when filters or sort change (fetchPapers depends on currentPage and re-fetches)
+  // Skip first render so we don't override the restored page from savedCurrentPage
+  const filterResetMountRef = useRef(true);
+  useEffect(() => {
+    if (filterResetMountRef.current) {
+      filterResetMountRef.current = false;
+      return;
+    }
     setCurrentPage(1);
   }, [searchQuery, selectedTag, importTimeFilter, yearFilter, sortBy, readingStatusFilter]);
 
@@ -595,6 +643,7 @@ export function PapersByTag({
   const unindexedCount = paperCounts?.unindexed ?? 0;
   const missingAbstractCount = paperCounts?.missingAbstract ?? 0;
   const papersWithPdfCount = paperCounts?.withPdf ?? 0;
+  const processingCount = paperCounts?.processing ?? 0;
 
   const handleBatchAutoTag = useCallback(async () => {
     // Check if lightweight model is configured
@@ -677,6 +726,40 @@ export function PapersByTag({
     });
     return unsubscribe;
   }, [fetchPapers]);
+
+  // Track background enrichment per-paper (auto-enrich after import)
+  useEffect(() => {
+    const unsub1 = onIpc(
+      'enrichment:paperStatus',
+      (_event, data: { paperId: string; active: boolean }) => {
+        setBgEnrichingIds((prev) => {
+          const next = new Set(prev);
+          if (data.active) next.add(data.paperId);
+          else next.delete(data.paperId);
+          return next;
+        });
+      },
+    );
+    // Also track tagging currentPaperId from tagging:status
+    const unsub2 = onIpc('tagging:status', (_event, status) => {
+      const typed = status as TaggingStatus;
+      setBgEnrichingIds((prev) => {
+        const next = new Set(prev);
+        // Remove previously tracked tagging paper
+        for (const id of prev) {
+          if (id.startsWith('tag:')) next.delete(id);
+        }
+        if (typed.active && typed.currentPaperId) {
+          next.add(typed.currentPaperId);
+        }
+        return next;
+      });
+    });
+    return () => {
+      unsub1();
+      unsub2();
+    };
+  }, []);
 
   const handleExtractMetadata = useCallback(async () => {
     const forceRefresh = missingAbstractCount === 0;
@@ -769,11 +852,10 @@ export function PapersByTag({
         toast.warning('Lightweight model not configured. Please set it up in Settings > Models.');
         return;
       }
-      setAutoTaggingPaperId(paperId);
+      setAutoTaggingIds((prev) => new Set(prev).add(paperId));
       try {
         await ipc.tagPaper(paperId);
         toast.success('Auto-tagging started');
-        // Refresh papers after a short delay to show new tags
         setTimeout(() => void fetchPapers(true), 2000);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Auto-tagging failed';
@@ -790,7 +872,11 @@ export function PapersByTag({
           });
         }
       } finally {
-        setAutoTaggingPaperId(null);
+        setAutoTaggingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(paperId);
+          return next;
+        });
       }
     },
     [canAutoTag, fetchPapers, toast, t],
@@ -805,7 +891,7 @@ export function PapersByTag({
         );
         return;
       }
-      setIndexingPaperId(paperId);
+      setIndexingIds((prev) => new Set(prev).add(paperId));
       try {
         await ipc.retryPaperProcessing(paperId);
         setPapers((prev) =>
@@ -819,50 +905,26 @@ export function PapersByTag({
           onClick: () => void handleIndexPaper(paperId),
         });
       } finally {
-        setIndexingPaperId(null);
+        setIndexingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(paperId);
+          return next;
+        });
       }
     },
     [canIndex, toast, t],
   );
 
-  const handleAnalyzePaper = useCallback(
-    async (paper: PaperItem) => {
-      setAnalyzingPaperId(paper.id);
-      try {
-        const pdfUrl = paper.pdfUrl || (paper.pdfPath ? `file://${paper.pdfPath}` : undefined);
-        const result = await ipc.analyzePaper({ paperId: paper.id, pdfUrl });
-        if (result.started) {
-          toast.success('Analysis started - view progress in paper details');
-        } else if (result.alreadyRunning) {
-          toast.info('Analysis already in progress');
-        }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Analysis failed';
-        toast.error(msg, {
-          label: t('common.retry'),
-          onClick: () => void handleAnalyzePaper(paper),
-        });
-      } finally {
-        setAnalyzingPaperId(null);
-      }
-    },
-    [toast, t],
-  );
-
   const handleExtractPaperMetadata = useCallback(
     async (paper: PaperItem) => {
-      if (!paper.pdfPath && !paper.pdfUrl) {
-        toast.warning('Paper has no PDF to extract metadata from');
-        return;
-      }
-      setExtractingMetadataPaperId(paper.id);
+      setExtractingMetadataIds((prev) => new Set(prev).add(paper.id));
       try {
         const result = await ipc.extractPaperMetadata(paper.id);
         if (result.success) {
           toast.success('Metadata extracted successfully');
           void fetchPapers(true);
         } else {
-          toast.warning('Could not extract metadata from PDF');
+          toast.warning('Could not extract metadata');
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Metadata extraction failed';
@@ -871,7 +933,11 @@ export function PapersByTag({
           onClick: () => void handleExtractPaperMetadata(paper),
         });
       } finally {
-        setExtractingMetadataPaperId(null);
+        setExtractingMetadataIds((prev) => {
+          const next = new Set(prev);
+          next.delete(paper.id);
+          return next;
+        });
       }
     },
     [toast, fetchPapers, t],
@@ -934,7 +1000,7 @@ export function PapersByTag({
     }
   }, [selectedIds, toast]);
 
-  if (loading) {
+  if (loading && initialLoad) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 size={24} className="animate-spin text-notion-text-tertiary" />
@@ -1055,6 +1121,14 @@ export function PapersByTag({
         </div>
       </div>
 
+      {/* Background processing banner */}
+      {processingCount > 0 && (
+        <div className="flex items-center gap-2 border-b border-blue-100 bg-blue-50 px-4 py-2 text-xs text-blue-700">
+          <Loader2 size={12} className="shrink-0 animate-spin" />
+          <span>{t('papersByTag.backgroundProcessing', { count: processingCount })}</span>
+        </div>
+      )}
+
       {/* Search bar */}
       <div className="border-b border-notion-border py-3">
         <div className="relative">
@@ -1065,16 +1139,32 @@ export function PapersByTag({
           <input
             type="text"
             placeholder="Search papers..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onCompositionStart={() => {
+              isComposingRef.current = true;
+            }}
+            onCompositionEnd={(e) => {
+              isComposingRef.current = false;
+              // compositionEnd fires before onChange in some browsers,
+              // so read the value directly and trigger debounce
+              setSearchInput((e.target as HTMLInputElement).value);
+            }}
             onKeyDown={(e) => {
-              if (e.key === 'Escape') setSearchQuery('');
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === 'Escape') {
+                setSearchInput('');
+                setSearchQuery('');
+              }
             }}
             className="w-full rounded-xl border border-notion-border bg-notion-sidebar/40 py-2 pl-9 pr-9 text-sm text-notion-text placeholder:text-notion-text-tertiary focus:border-blue-300 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-200 transition-all duration-150"
           />
-          {searchQuery && (
+          {searchInput && (
             <button
-              onClick={() => setSearchQuery('')}
+              onClick={() => {
+                setSearchInput('');
+                setSearchQuery('');
+              }}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary hover:text-notion-text"
             >
               <X size={14} />
@@ -1456,10 +1546,10 @@ export function PapersByTag({
                   deleting={deleting}
                   downloadingPdf={downloadingPdf}
                   retryingPaperId={retryingPaperId}
-                  autoTaggingPaperId={autoTaggingPaperId}
-                  indexingPaperId={indexingPaperId}
-                  analyzingPaperId={analyzingPaperId}
-                  extractingMetadataPaperId={extractingMetadataPaperId}
+                  autoTagging={autoTaggingIds.has(paper.id)}
+                  indexing={indexingIds.has(paper.id)}
+                  extractingMetadata={extractingMetadataIds.has(paper.id)}
+                  bgEnriching={bgEnrichingIds.has(paper.id)}
                   canAutoTag={canAutoTag}
                   canIndex={canIndex}
                   onDelete={handleDelete}
@@ -1467,7 +1557,6 @@ export function PapersByTag({
                   onRetry={handleRetryProcessing}
                   onAutoTag={handleAutoTagPaper}
                   onIndex={handleIndexPaper}
-                  onAnalyze={handleAnalyzePaper}
                   onExtractMetadata={handleExtractPaperMetadata}
                   onOpen={(shortId, state) => navigate(`/papers/${shortId}`, { state })}
                   isSelectMode={isSelectMode}
@@ -1700,10 +1789,10 @@ function PaperCard({
   deleting,
   downloadingPdf,
   retryingPaperId,
-  autoTaggingPaperId,
-  indexingPaperId,
-  analyzingPaperId,
-  extractingMetadataPaperId,
+  autoTagging,
+  indexing,
+  extractingMetadata,
+  bgEnriching,
   canAutoTag,
   canIndex,
   onDelete,
@@ -1711,7 +1800,6 @@ function PaperCard({
   onRetry,
   onAutoTag,
   onIndex,
-  onAnalyze,
   onExtractMetadata,
   onOpen,
   isSelectMode,
@@ -1723,10 +1811,10 @@ function PaperCard({
   deleting: string | null;
   downloadingPdf: string | null;
   retryingPaperId: string | null;
-  autoTaggingPaperId: string | null;
-  indexingPaperId: string | null;
-  analyzingPaperId: string | null;
-  extractingMetadataPaperId: string | null;
+  autoTagging: boolean;
+  indexing: boolean;
+  extractingMetadata: boolean;
+  bgEnriching: boolean;
   canAutoTag: boolean;
   canIndex: boolean;
   onDelete: (id: string) => void;
@@ -1734,7 +1822,6 @@ function PaperCard({
   onRetry: (id: string) => void;
   onAutoTag: (id: string) => void;
   onIndex: (id: string) => void;
-  onAnalyze: (paper: PaperItem) => void;
   onExtractMetadata: (paper: PaperItem) => void;
   onOpen: (shortId: string, state?: unknown) => void;
   isSelectMode: boolean;
@@ -1816,8 +1903,11 @@ function PaperCard({
           }
           className="min-w-0 flex-1 text-left"
         >
-          <span className="block truncate text-sm font-semibold text-notion-text">
+          <span className="flex items-center gap-1.5 truncate text-sm font-semibold text-notion-text">
             {cleanArxivTitle(paper.title)}
+            {bgEnriching && (
+              <Loader2 size={12} className="inline shrink-0 animate-spin text-notion-accent" />
+            )}
           </span>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
             {paper.submittedAt && (
@@ -1830,6 +1920,14 @@ function PaperCard({
                 {authorsSnippet}
                 {hasMoreAuthors ? ' et al.' : ''}
               </span>
+            )}
+            {paper.venue && (
+              <>
+                <span className="text-xs text-notion-border">·</span>
+                <span className="truncate max-w-[160px] text-xs text-purple-600">
+                  {paper.venue}
+                </span>
+              </>
             )}
             {paper.createdAt && (
               <>
@@ -1899,13 +1997,15 @@ function PaperCard({
                 e.preventDefault();
                 onAutoTag(paper.id);
               }}
-              disabled={autoTaggingPaperId === paper.id || !canAutoTag}
-              className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+              disabled={autoTagging || !canAutoTag}
+              className={`css-tooltip flex h-7 w-7 items-center justify-center rounded-lg ${
                 !canAutoTag
                   ? 'text-notion-text-tertiary opacity-50 cursor-not-allowed'
-                  : 'text-notion-text-secondary hover:bg-notion-sidebar hover:text-notion-text'
+                  : paper.categorizedTags?.length
+                    ? 'text-green-500 hover:bg-green-50 hover:text-green-600'
+                    : 'text-notion-text-secondary hover:bg-notion-sidebar hover:text-notion-text'
               } disabled:opacity-100`}
-              title={
+              data-tip={
                 !canAutoTag
                   ? 'Set up lightweight model in Settings'
                   : paper.categorizedTags?.length
@@ -1914,7 +2014,7 @@ function PaperCard({
               }
             >
               {autoTaggingPaperId === paper.id ? (
-                <Loader2 size={14} className="animate-spin text-blue-600" />
+                <Loader2 size={14} className="animate-spin text-notion-accent" />
               ) : (
                 <Tag size={14} />
               )}
@@ -1927,63 +2027,56 @@ function PaperCard({
                   e.preventDefault();
                   onIndex(paper.id);
                 }}
-                disabled={indexingPaperId === paper.id || !canIndex}
-                className={`flex h-7 w-7 items-center justify-center rounded-lg ${
+                disabled={indexing || !canIndex}
+                className={`css-tooltip flex h-7 w-7 items-center justify-center rounded-lg ${
                   !canIndex
                     ? 'text-notion-text-tertiary opacity-50 cursor-not-allowed'
                     : 'text-notion-text-secondary hover:bg-notion-sidebar hover:text-notion-text'
                 } disabled:opacity-100`}
-                title={
+                data-tip={
                   !canIndex
                     ? 'Set up embedding model in Settings'
                     : 'Index paper for semantic search'
                 }
               >
                 {indexingPaperId === paper.id ? (
-                  <Loader2 size={14} className="animate-spin text-blue-600" />
+                  <Loader2 size={14} className="animate-spin text-notion-accent" />
                 ) : (
                   <Database size={14} />
                 )}
               </button>
             )}
-            {/* Analyze button - show if paper has PDF */}
-            {(paper.pdfPath || paper.pdfUrl) && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  onAnalyze(paper);
-                }}
-                disabled={analyzingPaperId === paper.id}
-                className="css-tooltip flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-secondary hover:bg-amber-50 hover:text-amber-600 disabled:opacity-100"
-                data-tip={t('papers.analyze', 'Auto Tag')}
-              >
-                {analyzingPaperId === paper.id ? (
-                  <Loader2 size={14} className="animate-spin text-amber-600" />
-                ) : (
-                  <Sparkles size={14} />
-                )}
-              </button>
-            )}
-            {/* Extract metadata button - show if paper has PDF */}
-            {(paper.pdfPath || paper.pdfUrl) && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  onExtractMetadata(paper);
-                }}
-                disabled={extractingMetadataPaperId === paper.id}
-                className="css-tooltip flex h-7 w-7 items-center justify-center rounded-lg text-notion-text-secondary hover:bg-purple-50 hover:text-purple-600 disabled:opacity-100"
-                data-tip={t('papers.extractMetadata', 'Extract metadata')}
-              >
-                {extractingMetadataPaperId === paper.id ? (
-                  <Loader2 size={14} className="animate-spin text-purple-600" />
-                ) : (
-                  <FilePenLine size={14} />
-                )}
-              </button>
-            )}
+            {/* Extract metadata button */}
+            {(() => {
+              const hasMetadata =
+                Array.isArray(paper.authors) && paper.authors.length > 0 && !!paper.abstract;
+              return (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    onExtractMetadata(paper);
+                  }}
+                  disabled={extractingMetadata}
+                  className={`css-tooltip flex h-7 w-7 items-center justify-center rounded-lg disabled:opacity-100 ${
+                    hasMetadata
+                      ? 'text-purple-400 hover:bg-purple-50 hover:text-purple-600'
+                      : 'text-notion-text-secondary hover:bg-purple-50 hover:text-purple-600'
+                  }`}
+                  data-tip={
+                    hasMetadata
+                      ? t('papers.reExtractMetadata', 'Re-extract metadata')
+                      : t('papers.extractMetadata', 'Extract metadata')
+                  }
+                >
+                  {extractingMetadata ? (
+                    <Loader2 size={14} className="animate-spin text-purple-600" />
+                  ) : (
+                    <FilePenLine size={14} />
+                  )}
+                </button>
+              );
+            })()}
             {paper.processingStatus === 'failed' && (
               <button
                 onClick={(e) => {

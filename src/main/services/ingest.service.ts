@@ -618,7 +618,10 @@ export async function importChromeHistoryAuto(days: number | null = 1) {
   return runImport(entries, papersService);
 }
 
-const CONCURRENCY = 8;
+// SQLite is single-writer; keep concurrency low to avoid SQLITE_BUSY errors.
+// Chrome/arXiv imports include network I/O which naturally staggers writes,
+// but CONCURRENCY=2 is safer than 8 for large batches.
+const CONCURRENCY = 2;
 
 /** Run tasks with a fixed concurrency pool, supporting cancellation */
 async function withConcurrencyCancellable<T>(
